@@ -1,12 +1,12 @@
 defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
-  pipeline :api do
+  pipeline :spec do
     plug :accepts, ["json"]
   end
 
   scope "/api", RadioBeamWeb do
-    pipe_through :api
+    pipe_through :spec
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
