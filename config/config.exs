@@ -8,8 +8,13 @@
 import Config
 
 config :radio_beam,
-  ecto_repos: [RadioBeam.Repo],
-  generators: [timestamp_type: :utc_datetime, binary_id: true]
+  # ecto_repos: [RadioBeam.Repo],
+  generators: [timestamp_type: :utc_datetime, binary_id: true],
+  ### STATIC CONFIG / SUPPORTED FUNCTIONS ###
+  # TOIMPL: m.login.token
+  login_types: %{flows: [%{type: "m.login.password"}]},
+  registration_enabled: true,
+  versions: %{unstable_versions: %{}, versions: ["v1.9"]}
 
 # Configures the endpoint
 config :radio_beam, RadioBeamWeb.Endpoint,
@@ -38,6 +43,10 @@ config :logger, :console,
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+
+# Mnesia database location
+config :mnesia,
+  dir: ~c".mnesia/#{Mix.env()}/#{node()}"
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

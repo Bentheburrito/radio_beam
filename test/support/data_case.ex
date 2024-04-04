@@ -27,8 +27,8 @@ defmodule RadioBeam.DataCase do
     end
   end
 
-  setup tags do
-    RadioBeam.DataCase.setup_sandbox(tags)
+  setup _tags do
+    # RadioBeam.DataCase.setup_sandbox(tags)
     :ok
   end
 

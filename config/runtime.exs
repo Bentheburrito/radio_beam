@@ -1,11 +1,21 @@
 import Config
 
+envfile = ".env"
+
+if Config.config_env() in [:dev, :test] and File.exists?(envfile) do
+  DotenvParser.load_file(envfile)
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration
 # and secrets from environment variables or elsewhere. Do not define
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
+
+config :radio_beam,
+  registration_enabled: System.get_env("ENABLE_REGISTRATION", "false") == "true",
+  server_name: System.fetch_env!("SERVER_NAME")
 
 # ## Using releases
 #
@@ -21,20 +31,24 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
+  # database_url =
+  #   System.get_env("DATABASE_URL") ||
+  #     raise """
+  #     environment variable DATABASE_URL is missing.
+  #     For example: ecto://USER:PASS@HOST/DATABASE
+  #     """
 
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+  # maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
-  config :radio_beam, RadioBeam.Repo,
-    # ssl: true,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6
+  # config :radio_beam, RadioBeam.Repo,
+  #   # ssl: true,
+  #   url: database_url,
+  #   pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+  #   socket_options: maybe_ipv6
+
+  # Mnesia database location
+  config :mnesia,
+    dir: System.get_env("MNESIA_DIR", ~c".mnesia/#{Mix.env()}/#{node()}")
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

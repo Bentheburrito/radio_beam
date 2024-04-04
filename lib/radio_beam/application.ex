@@ -7,9 +7,11 @@ defmodule RadioBeam.Application do
 
   @impl true
   def start(_type, _args) do
+    RadioBeam.Repo.init_mnesia()
+
     children = [
       RadioBeamWeb.Telemetry,
-      RadioBeam.Repo,
+      # RadioBeam.Repo,
       {DNSCluster, query: Application.get_env(:radio_beam, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: RadioBeam.PubSub},
       # Start the Finch HTTP client for sending emails

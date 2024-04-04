@@ -29,4 +29,5 @@ radio_beam-*.tar
 .elixir_ls/
 .DS_Store
 .env
+.mnesia
 

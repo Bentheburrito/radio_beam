@@ -1,14 +1,32 @@
 defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
+  alias RadioBeamWeb.{AuthController, HomeserverInfoController}
+
   pipeline :spec do
     plug :accepts, ["json"]
   end
 
-  scope "/_matrix", RadioBeamWeb do
+  get "/", HomeserverInfoController, :home
+
+  scope "/_matrix" do
     pipe_through :spec
 
-    get "/client/versions", HomeserverInfoController, :versions
+    scope "/client" do
+      get "/versions", HomeserverInfoController, :versions
+
+      scope "/v3" do
+        get "/login", HomeserverInfoController, :login_types
+        post "/register", AuthController, :register
+        ### TOIMPL:
+        # post "/login", AuthController, :login
+        # post "/refresh", AuthController, :refresh
+        # post "/logout/all", AuthController, :logout_all
+        # post "/logout", AuthController, :logout
+
+        # OPTIMPL: /login/get_token
+      end
+    end
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -1,14 +1,14 @@
 import Config
 
 # Configure your database
-config :radio_beam, RadioBeam.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "radio_beam_dev",
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+# config :radio_beam, RadioBeam.Repo,
+#   username: "postgres",
+#   password: "postgres",
+#   hostname: "localhost",
+#   database: "radio_beam_dev",
+#   stacktrace: true,
+#   show_sensitive_data_on_connection_error: true,
+#   pool_size: 10
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
