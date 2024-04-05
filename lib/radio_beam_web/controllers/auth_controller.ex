@@ -48,7 +48,10 @@ defmodule RadioBeamWeb.AuthController do
           {:error, changeset} ->
             # TODO: maybe should just delete the user and have them restart the registration process...
             Logger.error("Error creating user #{user.id}'s device during registration: #{inspect(changeset.errors)}")
-            json(conn, Errors.unknown("Error creating device for user #{user.id}. Please try again by logging in."))
+
+            conn
+            |> put_status(500)
+            |> json(Errors.unknown("Error creating device for user #{user.id}. Please try again by logging in."))
         end
       end
     end
@@ -61,11 +64,16 @@ defmodule RadioBeamWeb.AuthController do
           :ok
 
         "guest" ->
-          json(conn, Errors.unrecognized("This homeserver does not support guest registration at this time."))
+          conn
+          |> put_status(403)
+          |> json(Errors.unrecognized("This homeserver does not support guest registration at this time."))
 
         other ->
           Logger.info("unknown `kind` during registration: #{inspect(other)}")
-          json(conn, Errors.bad_json("Expected 'user' or 'guest' as the kind, got '#{other}'"))
+
+          conn
+          |> put_status(403)
+          |> json(Errors.bad_json("Expected 'user' or 'guest' as the kind, got '#{other}'"))
       end
     else
       conn
@@ -113,7 +121,7 @@ defmodule RadioBeamWeb.AuthController do
   defp required(conn, params, key, error) do
     case Map.fetch(params, key) do
       {:ok, value} -> {:ok, value}
-      :error -> json(conn, error)
+      :error -> conn |> put_status(400) |> json(error)
     end
   end
 
