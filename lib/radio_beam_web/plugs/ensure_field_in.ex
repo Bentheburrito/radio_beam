@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.Plugs.EnsureFieldIn do
   @moduledoc """
-  General-use function plugs
+  Ensures the value under the given `:path` in the request body is a member of 
+  the given `:values`
   """
 
   import Plug.Conn

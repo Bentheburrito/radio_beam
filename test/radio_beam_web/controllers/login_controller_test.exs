@@ -7,7 +7,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
     user_id =
       "@danflahes_employee_#{Enum.random(0..9_999_999_999_999)}:#{Application.get_env(:radio_beam, :server_name)}"
 
-    password = 16 |> :crypto.strong_rand_bytes() |> Base.encode64()
+    password = "b1gSTR@NGpwd"
 
     {:ok, user} = User.new(user_id, password)
     Repo.insert(user)
