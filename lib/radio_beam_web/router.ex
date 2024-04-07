@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
-  alias RadioBeamWeb.{AuthController, HomeserverInfoController}
+  alias RadioBeamWeb.{AuthController, HomeserverInfoController, LoginController}
 
   pipeline :spec do
     plug :accepts, ["json"]
@@ -17,9 +17,9 @@ defmodule RadioBeamWeb.Router do
 
       scope "/v3" do
         get "/login", HomeserverInfoController, :login_types
+        post "/login", LoginController, :login
         post "/register", AuthController, :register
         ### TOIMPL:
-        # post "/login", AuthController, :login
         # post "/refresh", AuthController, :refresh
         # post "/logout/all", AuthController, :logout_all
         # post "/logout", AuthController, :logout

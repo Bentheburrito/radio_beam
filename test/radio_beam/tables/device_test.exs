@@ -18,24 +18,10 @@ defmodule RadioBeam.DeviceTest do
         "user_id" => @user_id,
         "display_name" => "Eye phone",
         "access_token" => Device.generate_token(),
-        "refresh_token" => Device.generate_token(),
-        "status" => :active
+        "refresh_token" => Device.generate_token()
       }
 
       assert {:ok, %Device{user_id: @user_id}} = Device.new(params)
-    end
-
-    test "will not create a device with an invalid status" do
-      params = %{
-        "id" => Device.generate_token(),
-        "user_id" => @user_id,
-        "display_name" => "Eye phone",
-        "access_token" => Device.generate_token(),
-        "refresh_token" => Device.generate_token(),
-        "status" => :what?
-      }
-
-      assert {:error, _} = Device.new(params)
     end
 
     test "will not create a device with an invalid user ID" do
@@ -44,8 +30,7 @@ defmodule RadioBeam.DeviceTest do
         "user_id" => "@does_not:exist.com",
         "display_name" => "Eye phone",
         "access_token" => Device.generate_token(),
-        "refresh_token" => Device.generate_token(),
-        "status" => :active
+        "refresh_token" => Device.generate_token()
       }
 
       assert {:error, _} = Device.new(params)

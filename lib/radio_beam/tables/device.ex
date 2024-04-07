@@ -4,19 +4,6 @@ defmodule RadioBeam.Device do
   access/refresh tokens.
   """
 
-  @typedoc """
-  The status of a device's pair of access/refresh tokens.
-
-  - `:active` means the tokens are currently in use
-  - `:pending` means the tokens have been given to the client, but are waiting
-  to be used before they become active
-
-  If a pair of tokens become inactive/are invalidated (as in a user logs out), 
-  they should be simply deleted from the table.
-  """
-  @type status :: :active | :pending
-  @statuses [:active, :pending]
-
   # note: this is a KW list, because map keys are unordered
   @types [
     id: :string,
@@ -24,8 +11,8 @@ defmodule RadioBeam.Device do
     display_name: :string,
     access_token: :string,
     refresh_token: :string,
-    expires_at: :utc_datetime,
-    status: Ecto.ParameterizedType.init(Ecto.Enum, values: @statuses)
+    prev_refresh_token: :string,
+    expires_at: :utc_datetime
   ]
   @attrs Keyword.keys(@types)
 
@@ -33,13 +20,25 @@ defmodule RadioBeam.Device do
   # because we need to invalidate current tokens when a device with the same ID is registered
   use Memento.Table,
     attributes: @attrs,
-    index: [:user_id, :access_token, :refresh_token],
-    type: :bag
+    index: [:user_id, :access_token, :refresh_token, :prev_refresh_token],
+    type: :set
 
   import Ecto.Changeset
 
   alias Ecto.Changeset
 
+  @typedoc """
+  A user's device.
+
+  `prev_refresh_token` will be `nil` most of the time. It will only have
+  the previos refresh token for a limited window of time: from the time a 
+  client refreshes its device's tokens, to the new token's first use.
+
+  "The old refresh token remains valid until the new access token or refresh 
+  token is used, at which point the old refresh token is revoked. This ensures 
+  that if a client fails to receive or persist the new tokens, it will be able 
+  to repeat the refresh operation."
+  """
   @type t() :: %__MODULE__{}
 
   @spec new(params :: map()) :: {:ok, t()} | {:error, Changeset.t()}
@@ -48,8 +47,7 @@ defmodule RadioBeam.Device do
 
     {%__MODULE__{}, Map.new(@types)}
     |> cast(params, @attrs)
-    |> validate_required(@attrs)
-    |> validate_inclusion(:status, @statuses)
+    |> validate_required(List.delete(@attrs, :prev_refresh_token))
     |> validate_change(:user_id, fn :user_id, user_id ->
       case RadioBeam.Repo.get(RadioBeam.User, user_id) do
         {:ok, nil} -> [user_id: "'#{inspect(user_id)}' does not exist"]

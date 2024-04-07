@@ -30,7 +30,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
           |> Map.put("initial_device_display_name", device_display_name)
         )
 
-      assert %{access_token: _, device_id: ^device_id, expires_in_ms: _, home_server: _, user_id: user_id} =
+      assert %{access_token: _, device_id: ^device_id, expires_in_ms: _, user_id: user_id} =
                Jason.decode!(resp.resp_body, keys: :atoms)
 
       assert {:ok, %Device{display_name: ^device_display_name}} = Repo.get(Device, device_id)
@@ -42,7 +42,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       username = "rando"
       resp = AuthController.register(conn, request(username))
 
-      assert %{access_token: _, device_id: _, expires_in_ms: _, home_server: _, user_id: user_id} =
+      assert %{access_token: _, device_id: _, expires_in_ms: _, user_id: user_id} =
                Jason.decode!(resp.resp_body, keys: :atoms)
 
       assert ^user_id = "@#{username}:localhost"
@@ -53,7 +53,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       username = "erlang-programmer"
       resp = AuthController.register(conn, Map.put(request(username), "refresh_token", true))
 
-      assert %{access_token: _, refresh_token: _, device_id: _, expires_in_ms: _, home_server: _, user_id: user_id} =
+      assert %{access_token: _, refresh_token: _, device_id: _, expires_in_ms: _, user_id: user_id} =
                Jason.decode!(resp.resp_body, keys: :atoms)
 
       assert ^user_id = "@#{username}:localhost"

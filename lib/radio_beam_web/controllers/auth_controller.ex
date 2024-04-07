@@ -5,6 +5,7 @@ defmodule RadioBeamWeb.AuthController do
 
   require Logger
 
+  # TODO: convert this `with` into plugs?
   def register(conn, params) do
     with :ok <- verify_user_registration(conn, params),
          {:ok, username} <- required(conn, params, "username", missing_username()),
@@ -20,39 +21,11 @@ defmodule RadioBeamWeb.AuthController do
       if Map.get(params, "inhibit_login", false) do
         json(conn, res_body)
       else
-        device_id = Map.get_lazy(params, "device_id", &Device.generate_token/0)
+        params = Map.put_new_lazy(params, "device_id", &Device.generate_token/0)
 
-        device_params = %{
-          id: device_id,
-          user_id: user.id,
-          display_name: Map.get(params, "initial_device_display_name", Device.default_device_name()),
-          access_token: Device.generate_token(),
-          refresh_token: Device.generate_token(),
-          status: :active
-        }
-
-        case Device.new(device_params) do
-          {:ok, device} ->
-            res_body =
-              Map.merge(res_body, %{
-                device_id: device.id,
-                access_token: device.access_token,
-                refresh_token: device.refresh_token,
-                expires_in_ms: DateTime.diff(device.expires_at, DateTime.utc_now(), :millisecond)
-              })
-
-            Repo.insert!(device)
-
-            json(conn, res_body)
-
-          {:error, changeset} ->
-            # TODO: maybe should just delete the user and have them restart the registration process...
-            Logger.error("Error creating user #{user.id}'s device during registration: #{inspect(changeset.errors)}")
-
-            conn
-            |> put_status(500)
-            |> json(Errors.unknown("Error creating device for user #{user.id}. Please try again by logging in."))
-        end
+        conn
+        |> assign(:user, user)
+        |> RadioBeamWeb.LoginController.login(Map.take(params, ["device_id", "initial_device_display_name"]))
       end
     end
   end
@@ -125,6 +98,6 @@ defmodule RadioBeamWeb.AuthController do
     end
   end
 
-  defp missing_username, do: Errors.bad_json("Please provide a username.")
-  defp missing_password, do: Errors.bad_json("Please provide a password.")
+  defp missing_username, do: Errors.endpoint_error(:missing_param, "Please provide a username.")
+  defp missing_password, do: Errors.endpoint_error(:missing_param, "Please provide a password.")
 end
