@@ -16,6 +16,7 @@ defmodule RadioBeamWeb.Router do
       get "/versions", HomeserverInfoController, :versions
 
       scope "/v3" do
+        get "/capabilities", HomeserverInfoController, :capabilities
         get "/login", HomeserverInfoController, :login_types
         post "/login", LoginController, :login
         post "/register", AuthController, :register

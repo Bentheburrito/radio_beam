@@ -7,6 +7,10 @@ defmodule RadioBeamWeb.HomeserverInfoController do
     |> text("RadioBeam is up and running")
   end
 
+  def capabilities(conn, _params) do
+    json(conn, %{capabilities: Application.fetch_env!(:radio_beam, :capabilities)})
+  end
+
   def versions(conn, _params) do
     json(conn, Application.fetch_env!(:radio_beam, :versions))
   end
