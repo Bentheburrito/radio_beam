@@ -31,13 +31,15 @@ defmodule RadioBeam.User do
     |> apply_action(:update)
   end
 
-  defp validate_user_id(changeset) do
-    validate_change(changeset, :id, fn :id, id ->
-      case String.split(id, ":") do
-        ["@" <> localpart, _server_name] when localpart != "" -> validate_localpart(localpart)
-        _invalid_format -> [id: "User IDs must be of the form @localpart:servername"]
-      end
-    end)
+  def validate_user_id(id) when is_binary(id) do
+    case String.split(id, ":") do
+      ["@" <> localpart, _server_name] when localpart != "" -> validate_localpart(localpart)
+      _invalid_format -> [id: "User IDs must be of the form @localpart:servername"]
+    end
+  end
+
+  def validate_user_id(changeset) do
+    validate_change(changeset, :id, fn :id, id -> validate_user_id(id) end)
   end
 
   defp validate_localpart(localpart) do
