@@ -46,7 +46,8 @@ defmodule RadioBeam.MixProject do
       {:bandit, "~> 1.2"},
       {:memento, "~> 0.3.2"},
       {:argon2_elixir, "~> 4.0"},
-      {:dotenv_parser, "~> 1.2"}
+      {:dotenv_parser, "~> 1.2"},
+      {:polyjuice_util, "~> 0.2.2"}
     ]
   end
 
