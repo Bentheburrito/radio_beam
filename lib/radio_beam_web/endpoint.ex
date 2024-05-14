@@ -23,7 +23,12 @@ defmodule RadioBeamWeb.Endpoint do
     at: "/",
     from: :radio_beam,
     gzip: false,
-    only: RadioBeamWeb.static_paths()
+    only: RadioBeamWeb.static_paths(),
+    headers: %{
+      "Access-Control-Allow-Origin" => "*",
+      "Access-Control-Allow-Methods" => "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers" => "X-Requested-With, Content-Type, Authorization"
+    }
 
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
