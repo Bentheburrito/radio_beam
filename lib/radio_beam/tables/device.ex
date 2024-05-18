@@ -16,8 +16,6 @@ defmodule RadioBeam.Device do
   ]
   @attrs Keyword.keys(@types)
 
-  # TODO: should probably rethink the way tokens are refreshed and change this into a set, 
-  # because we need to invalidate current tokens when a device with the same ID is registered
   use Memento.Table,
     attributes: @attrs,
     index: [:user_id, :access_token, :refresh_token, :prev_refresh_token],
@@ -75,6 +73,16 @@ defmodule RadioBeam.Device do
       Map.put(params, "expires_at", DateTime.add(now, expires_in_ms, :millisecond))
     else
       Map.put(params, :expires_at, DateTime.add(now, expires_in_ms, :millisecond))
+    end
+  end
+
+  @spec by_access_token(access_token :: binary()) :: {:ok, t()} | {:error, :not_found}
+  def by_access_token(access_token) do
+    fn -> Memento.Query.select(__MODULE__, {:==, :access_token, access_token}, limit: 1) end
+    |> Memento.transaction()
+    |> case do
+      {:ok, [device]} -> {:ok, device}
+      {:ok, []} -> {:error, :not_found}
     end
   end
 

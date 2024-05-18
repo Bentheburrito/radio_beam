@@ -1,13 +1,18 @@
 defmodule RadioBeamWeb.AuthController do
   use RadioBeamWeb, :controller
 
+  alias Polyjuice.Util.Schema
   alias RadioBeam.{Credentials, Device, Errors, Repo, User}
 
   require Logger
 
   plug :ensure_registration_enabled
-  plug RadioBeamWeb.Plugs.EnsureRequired, paths: [["username"], ["password"]], error: :missing_param
+  plug RadioBeamWeb.Plugs.EnforceSchema, get_schema: {__MODULE__, :schema, []}
   plug :ensure_user_no_exists
+
+  def schema do
+    %{"username" => &Schema.user_localpart/1, "password" => :string}
+  end
 
   def register(conn, params) do
     with {:ok, %User{} = user} <- new_user(conn, conn.assigns.user_id, Map.fetch!(params, "password")) do

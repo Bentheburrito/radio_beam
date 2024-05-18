@@ -3,12 +3,18 @@ defmodule RadioBeamWeb.LoginController do
 
   require Logger
 
+  alias Polyjuice.Util.Schema
   alias RadioBeam.{Device, Errors, Repo, User}
 
-  # TODO: m.login.token
-  plug RadioBeamWeb.Plugs.EnsureFieldIn, path: ["type"], values: ["m.login.password"]
+  plug RadioBeamWeb.Plugs.EnforceSchema, get_schema: {__MODULE__, :schema, []}
   plug :identify
+  # TOIMPL: m.login.token
   plug :verify_password_or_token
+
+  # TODO: revisit this and impl the whole schema
+  def schema do
+    %{"type" => Schema.enum(["m.login.password"])}
+  end
 
   def login(conn, params) do
     device_id = Map.get_lazy(params, "device_id", &Device.generate_token/0)
