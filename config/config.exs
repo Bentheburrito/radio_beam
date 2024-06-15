@@ -9,9 +9,10 @@ import Config
 
 config :radio_beam,
   # ecto_repos: [RadioBeam.Repo],
+  env: config_env(),
   capabilities: %{
     "m.change_password": %{enabled: false},
-    "m.room_versions": %{available: %{"5" => "stable"}, default: "5"},
+    "m.room_versions": %{available: %{"5" => "stable", "4" => "stable"}, default: "5"},
     "m.set_displayname": %{enabled: false},
     "m.set_avatar_url": %{enabled: false},
     "m.3pid_changes": %{enabled: false}

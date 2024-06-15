@@ -34,10 +34,14 @@ defmodule RadioBeamWeb.Plugs.EnforceSchema do
         error(conn, "#{Enum.join(field_path, ".")} is not a valid value, got '#{inspect(value)}'")
 
       {:error, :invalid_value, field_path, {:error, :invalid_enum_value, enum_values, value}} ->
-        error(
-          conn,
-          "#{Enum.join(field_path, ".")} needs to be one of #{Enum.join(enum_values, ", ")}. Got '#{inspect(value)}'"
-        )
+        if List.last(field_path) == "room_version" do
+          error(conn, "Room version not supported.", 400, &Errors.endpoint_error(:unsupported_room_version, &1))
+        else
+          error(
+            conn,
+            "#{Enum.join(field_path, ".")} needs to be one of #{Enum.join(enum_values, ", ")}. Got '#{inspect(value)}'"
+          )
+        end
 
       {:error, :invalid_value, field_path, {:error, error, value}} ->
         error(conn, "Could not parse #{Enum.join(field_path, ".")}: #{inspect(error)}, got '#{inspect(value)}'")

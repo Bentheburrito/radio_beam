@@ -5,7 +5,11 @@ defmodule RadioBeam.Repo do
 
   require Logger
 
-  alias RadioBeam.{User, Device}
+  alias RadioBeam.Device
+  alias RadioBeam.PDU
+  alias RadioBeam.Room
+  alias RadioBeam.RoomAlias
+  alias RadioBeam.User
 
   @doc """
   Initializes Mnesia schema for the given list of nodes (defaults to `[node()]`.
@@ -15,6 +19,8 @@ defmodule RadioBeam.Repo do
   def init_mnesia(nodes \\ [node()]) do
     # Create the schema
     Memento.stop()
+
+    if RadioBeam.env() == :test, do: Memento.Schema.delete(nodes)
 
     case Memento.Schema.create(nodes) do
       :ok -> :ok
@@ -30,6 +36,9 @@ defmodule RadioBeam.Repo do
   defp create_tables(nodes) do
     create_table(User, disc_copies: nodes)
     create_table(Device, disc_copies: nodes)
+    create_table(PDU, disc_copies: nodes)
+    create_table(Room, disc_copies: nodes)
+    create_table(RoomAlias, disc_copies: nodes)
   end
 
   defp create_table(table_mod, opts) when is_atom(table_mod) and is_list(opts) do

@@ -16,8 +16,10 @@ defmodule RadioBeam.Application do
       {Phoenix.PubSub, name: RadioBeam.PubSub},
       # Start the Finch HTTP client for sending emails
       {Finch, name: RadioBeam.Finch},
-      # Start a worker by calling: RadioBeam.Worker.start_link(arg)
-      # {RadioBeam.Worker, arg},
+      # Start the RoomRegistry
+      {Registry, keys: :unique, name: RadioBeam.RoomRegistry},
+      # Start the RoomSupervisor
+      {DynamicSupervisor, name: RadioBeam.RoomSupervisor},
       # Start to serve requests, typically the last entry
       RadioBeamWeb.Endpoint
     ]

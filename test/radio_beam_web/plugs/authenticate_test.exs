@@ -28,7 +28,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
     test "returns the conn with a :user assign when given a valid access token", %{device: device, user: user} do
       conn =
         :post
-        |> conn("/_matrix/v3/some_endpoint", %{"access_token" => device.access_token})
+        |> conn("/_matrix/v3/some_endpoint?access_token=#{device.access_token}")
         |> Authenticate.call([])
 
       assert %{user: ^user} = conn.assigns
@@ -47,7 +47,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
     test "returns an unknown token (400) error when the provided token isn't known" do
       conn =
         :post
-        |> conn("/_matrix/v3/some_endpoint", %{"access_token" => "55burgers55fries"})
+        |> conn("/_matrix/v3/some_endpoint?access_token=55burgers55fries")
         |> Authenticate.call([])
 
       assert {400, _headers, body} = sent_resp(conn)
@@ -60,7 +60,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
 
       conn =
         :post
-        |> conn("/_matrix/v3/some_endpoint", %{"access_token" => device.access_token})
+        |> conn("/_matrix/v3/some_endpoint?access_token=#{device.access_token}")
         |> Authenticate.call([])
 
       assert {400, _headers, body} = sent_resp(conn)

@@ -11,7 +11,7 @@ defmodule RadioBeamWeb.Plugs.Authenticate do
 
   def init(default), do: default
 
-  def call(%{params: %{"access_token" => access_token}} = conn, _opts) do
+  def call(%{assigns: %{access_token: access_token}} = conn, _opts) do
     with %Device{expires_at: expires_at} = device <- get_device(conn, access_token),
          :not_expired <- verify_not_expired(conn, expires_at) do
       case Repo.get(RadioBeam.User, device.user_id) do
@@ -21,8 +21,20 @@ defmodule RadioBeamWeb.Plugs.Authenticate do
     end
   end
 
-  def call(conn, _opts) do
-    conn |> put_status(400) |> json(Errors.missing_token()) |> halt()
+  def call(conn, opts) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token] ->
+        conn |> assign(:access_token, token) |> call(opts)
+
+      _ ->
+        case fetch_query_params(conn) do
+          %{query_params: %{"access_token" => token}} ->
+            conn |> assign(:access_token, token) |> call(opts)
+
+          _ ->
+            conn |> put_status(400) |> json(Errors.missing_token()) |> halt()
+        end
+    end
   end
 
   defp get_device(conn, access_token) do

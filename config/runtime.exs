@@ -48,7 +48,7 @@ if config_env() == :prod do
 
   # Mnesia database location
   config :mnesia,
-    dir: System.get_env("MNESIA_DIR", ~c".mnesia/#{Mix.env()}/#{node()}")
+    dir: System.get_env("MNESIA_DIR", ~c".mnesia/#{Config.config_env()}/#{node()}")
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
