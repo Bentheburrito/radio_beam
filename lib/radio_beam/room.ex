@@ -24,10 +24,10 @@ defmodule RadioBeam.Room do
   require Logger
 
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
-  alias Polyjuice.Util.Identifiers.V1.RoomAliasIdentifier
   alias Polyjuice.Util.RoomVersion
   alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Room.Utils
   alias RadioBeam.RoomAlias
   alias RadioBeam.RoomSupervisor
   alias RadioBeam.User
@@ -62,34 +62,15 @@ defmodule RadioBeam.Room do
     server_name = RadioBeam.server_name()
     room_id = server_name |> RoomIdentifier.generate() |> to_string()
 
-    create_content = create_content |> Map.put("creator", creator.id) |> Map.put("room_version", room_version)
-    create_event = state_event(room_id, "m.room.create", creator.id, create_content)
-
-    creator_join_event = state_event(room_id, "m.room.member", creator.id, %{"membership" => "join"}, creator.id)
-
-    power_levels_content =
-      creator.id
-      |> default_power_level_content()
-      |> Map.merge(Keyword.get(opts, :power_levels, %{}), fn
-        _k, v1, v2 when is_map(v1) and is_map(v2) -> Map.merge(v1, v2)
-        _k, _v1, v2 -> v2
-      end)
-
-    power_levels_event = state_event(room_id, "m.room.power_levels", creator.id, power_levels_content)
+    create_event = Utils.create_event(room_id, creator.id, room_version, create_content)
+    creator_join_event = Utils.membership_event(room_id, creator.id, creator.id, :join)
+    power_levels_event = Utils.power_levels_event(room_id, creator.id, Keyword.get(opts, :power_levels, %{}))
 
     wrapped_canonical_alias_event =
-      opts
-      |> Keyword.get(:alias)
-      |> List.wrap()
-      |> Enum.map(fn room_alias_localpart ->
-        case RoomAliasIdentifier.new({room_alias_localpart, server_name}) do
-          {:ok, alias} ->
-            state_event(room_id, "m.room.canonical_alias", creator.id, %{"alias" => to_string(alias)})
-
-          {:error, error} ->
-            raise error
-        end
-      end)
+      case Keyword.get(opts, :alias) do
+        nil -> []
+        alias_localpart -> [Utils.canonical_alias_event(room_id, creator.id, alias_localpart, server_name)]
+      end
 
     visibility = Keyword.get(opts, :visibility, :private)
 
@@ -103,24 +84,24 @@ defmodule RadioBeam.Room do
       raise "option :preset must be one of [:public_chat, :private_chat, :trusted_private_chat]"
     end
 
-    preset_events = state_events_from_preset(preset, room_id, creator.id)
+    preset_events = Utils.state_events_from_preset(preset, room_id, creator.id)
 
     wrapped_name_event =
-      opts
-      |> Keyword.get(:name)
-      |> List.wrap()
-      |> Enum.map(&state_event(room_id, "m.room.name", creator.id, %{"name" => &1}))
+      case Keyword.get(opts, :name) do
+        nil -> []
+        name -> [Utils.name_event(room_id, creator.id, name)]
+      end
 
     wrapped_topic_event =
-      opts
-      |> Keyword.get(:topic)
-      |> List.wrap()
-      |> Enum.map(&state_event(room_id, "m.room.topic", creator.id, %{"topic" => &1}))
+      case Keyword.get(opts, :topic) do
+        nil -> []
+        topic -> [Utils.topic_event(room_id, creator.id, topic)]
+      end
 
     invite_events =
       opts
       |> Keyword.get(:invite, [])
-      |> Enum.map(&state_event(room_id, "m.room.member", creator.id, %{"membership" => "invite"}, &1))
+      |> Enum.map(&Utils.membership_event(room_id, creator.id, &1, :invite))
 
     # TOIMPL
     invite_3pid_events = []
@@ -335,57 +316,6 @@ defmodule RadioBeam.Room do
       room
     end
   end
-
-  defp state_event(room_id, type, sender_id, content, state_key \\ "") do
-    %{
-      "content" => content,
-      "room_id" => room_id,
-      "sender" => sender_id,
-      "state_key" => state_key,
-      "type" => type
-    }
-  end
-
-  def default_power_level_content(creator_id),
-    do: %{
-      "ban" => 50,
-      "events" => %{},
-      "events_default" => 0,
-      "invite" => 0,
-      "kick" => 50,
-      "notifications" => %{"room" => 50},
-      "redact" => 50,
-      "state_default" => 50,
-      "users" => %{creator_id => 100},
-      "users_default" => 0
-    }
-
-  defp state_events_from_preset(preset, room_id, sender_id) do
-    join_rules_content = %{
-      # TOIMPL: allow
-      "join_rule" => (preset == :public_chat && "public") || "invite"
-    }
-
-    guest_access_content = %{
-      "guest_access" => (preset == :public_chat && "forbidden") || "can_join"
-    }
-
-    [
-      state_event(room_id, "m.room.join_rules", sender_id, join_rules_content),
-      state_event(room_id, "m.room.history_visibility", sender_id, %{"history_visibility" => "shared"}),
-      state_event(room_id, "m.room.guest_access", sender_id, guest_access_content)
-    ]
-  end
-
-  # @spec ensure_alias_not_in_use(RoomAliasIdentifier.t()) :: :ok | {:error, :alias_in_use | any()}
-  # defp ensure_alias_not_in_use(%RoomAliasIdentifier{} = room_alias) do
-  #  fn -> Memento.Query.read(RoomAlias, room_alias) end
-  #  |> Memento.transaction!()
-  #  |> case do
-  #    nil -> :ok
-  #    _ -> {:error, :alias_in_use}
-  #  end
-  # end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}
 end
