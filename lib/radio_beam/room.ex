@@ -166,6 +166,12 @@ defmodule RadioBeam.Room do
     end
   end
 
+  @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t()) ::
+          :ok | {:error, :unauthorized | :room_does_not_exist | :internal}
+  def invite(room_id, inviter_id, invitee_id) do
+    call_if_alive(room_id, {:invite, inviter_id, invitee_id})
+  end
+
   ### IMPL ###
 
   @impl GenServer
@@ -190,8 +196,31 @@ defmodule RadioBeam.Room do
     end
   end
 
+  @impl GenServer
+  def handle_call({:invite, inviter_id, invitee_id}, _from, %Room{} = room) do
+    event = Utils.membership_event(room.id, inviter_id, invitee_id, :invite)
+
+    case Ops.put_events(room, [event]) do
+      {:ok, room} ->
+        {:reply, :ok, room}
+
+      {:error, :unauthorized} = e ->
+        {:reply, e, room}
+
+      {:error, error} = e ->
+        Logger.error("an error occurred trying to put a `Room.invite/3` event: #{inspect(error)}")
+        {:reply, e, room}
+    end
+  end
+
   defp get(id) do
     Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
+  end
+
+  defp call_if_alive(room_id, message) do
+    GenServer.call(via(room_id), message)
+  catch
+    :exit, {:noproc, _} -> {:error, :room_does_not_exist}
   end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}

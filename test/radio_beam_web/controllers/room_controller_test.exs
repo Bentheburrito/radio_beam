@@ -168,4 +168,106 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"joined_rooms" => [^room_id]} = json_response(conn, 200)
     end
   end
+
+  describe "invite/2" do
+    setup %{conn: conn} do
+      {:ok, user} = User.new("@randomuser:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      {:ok, room_id} = Room.create("5", user, %{}, power_levels: %{"invite" => 5})
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user, room_id: room_id}
+    end
+
+    test "successfully invites a user", %{conn: conn, room_id: room_id} do
+      invitee_id = "@letmeinpls:localhost"
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{
+          "user_id" => invitee_id,
+          "reason" => "join us :)"
+        })
+
+      assert %{} = json_response(conn, 200)
+      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      assert "invite" = get_in(state, [{"m.room.member", invitee_id}, "content", "membership"])
+    end
+
+    test "rejects if inviter isn't in the room", %{conn: conn} do
+      user_id = "@aintevenhere:localhost"
+      {:ok, user} = User.new(user_id, "4STR@NGpwD")
+      Repo.insert(user)
+      {:ok, room_id} = Room.create("5", user)
+
+      invitee_id = "@lmao:localhost"
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{
+          "user_id" => invitee_id,
+          "reason" => "join us :)"
+        })
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
+      assert error_message =~ "aren't in the room"
+      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      refute is_map_key(state, {"m.room.member", invitee_id})
+    end
+
+    test "rejects if inviter is in the room but does not have permission to invite", %{conn: conn} do
+      {:ok, user} = User.new("@areallycooluser:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      {:ok, room_id} = Room.create("5", user, %{}, power_levels: %{"invite" => 101})
+
+      invitee_id = "@lmao:localhost"
+
+      conn =
+        conn
+        |> put_req_header("authorization", "Bearer #{device.access_token}")
+        |> post(~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{
+          "user_id" => invitee_id,
+          "reason" => "join us :)"
+        })
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
+      assert error_message =~ "permission to invite others"
+      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      refute is_map_key(state, {"m.room.member", invitee_id})
+    end
+
+    test "notifies when the room doesn't exist", %{conn: conn} do
+      invitee_id = "@lmao:localhost"
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/!idontexist:localhost/invite", %{
+          "user_id" => invitee_id,
+          "reason" => "join us :)"
+        })
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => error_message} = json_response(conn, 404)
+      assert error_message =~ "Room not found"
+    end
+  end
 end

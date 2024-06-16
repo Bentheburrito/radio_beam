@@ -1,6 +1,10 @@
 defmodule RadioBeamWeb.Schemas.Room do
   alias Polyjuice.Util.Schema
 
+  def invite do
+    %{"user_id" => &Schema.user_id/1, "reason" => optional(:string)}
+  end
+
   def create do
     %{available: available_room_versions, default: default_room_version} =
       Application.get_env(:radio_beam, :capabilities)[:"m.room_versions"]

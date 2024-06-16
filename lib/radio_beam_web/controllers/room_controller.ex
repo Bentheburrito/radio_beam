@@ -3,11 +3,12 @@ defmodule RadioBeamWeb.RoomController do
 
   require Logger
 
-  alias RadioBeam.{Errors, Room, User}
+  alias RadioBeam.{Errors, Repo, Room, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
   plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :create, []}] when action == :create
+  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :invite, []}] when action == :invite
 
   def create(conn, _params) do
     %User{} = creator = conn.assigns.user
@@ -59,4 +60,34 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def joined(conn, _params), do: json(conn, %{joined_rooms: Room.joined(conn.assigns.user.id)})
+
+  def invite(conn, %{"room_id" => room_id}) do
+    %User{} = inviter = conn.assigns.user
+    request = conn.assigns.request
+    invitee_id = to_string(Map.fetch!(request, "user_id"))
+
+    case Room.invite(room_id, inviter.id, invitee_id) do
+      :ok ->
+        json(conn, %{})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(
+          Errors.forbidden(
+            "Failed to invite: you either aren't in the room with permission to invite others, or the invitee is banned from the room"
+          )
+        )
+
+      {:error, :room_does_not_exist} ->
+        conn
+        |> put_status(404)
+        |> json(Errors.not_found("Room not found"))
+
+      {:error, :internal} ->
+        conn
+        |> put_status(500)
+        |> json(Errors.unknown("An internal error occurred. Please try again"))
+    end
+  end
 end
