@@ -24,15 +24,13 @@ defmodule RadioBeam.Room do
   require Logger
 
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
-  alias Polyjuice.Util.RoomVersion
-  alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Room.Ops
   alias RadioBeam.Room.Utils
-  alias RadioBeam.RoomAlias
   alias RadioBeam.RoomSupervisor
   alias RadioBeam.User
 
-  @typep t() :: %__MODULE__{}
+  @type t() :: %__MODULE__{}
 
   ### API ###
 
@@ -174,43 +172,12 @@ defmodule RadioBeam.Room do
   def init({room_id, events_or_room}) do
     case events_or_room do
       [%{"type" => "m.room.create", "content" => %{"room_version" => version}} | _] = events ->
-        case apply_events(
-               %Room{id: room_id, depth: 0, latest_event_ids: [], state: %{}, version: version},
-               events
-             ) do
-          # TOIMPL: add room to published room list if visibility option was set to :public
-          {%Room{} = room, pdus} ->
-            fn ->
-              addl_actions =
-                for %PDU{} = pdu <- pdus, do: pdu |> Memento.Query.write() |> get_pdu_followup_actions()
-
-              room = Memento.Query.write(room)
-
-              addl_actions
-              |> List.flatten()
-              |> Stream.filter(&is_function(&1))
-              |> Enum.find_value(room, fn action ->
-                case action.() do
-                  {:error, error} -> Memento.Transaction.abort(error)
-                  _result -> false
-                end
-              end)
-            end
-            |> Memento.transaction()
-            |> case do
-              {:ok, %Room{}} = result -> result
-              {:error, {:transaction_aborted, reason}} -> {:stop, reason}
-              {:error, error} -> {:stop, error}
-            end
-
-          {:error, :unauthorized} ->
-            {:stop, :invalid_state}
-
-          {:error, %Ecto.Changeset{} = changeset} ->
-            {:stop, inspect(changeset.errors)}
-
-          {:error, error} ->
-            {:stop, inspect(error)}
+        case Ops.put_events(%Room{id: room_id, depth: 0, latest_event_ids: [], state: %{}, version: version}, events) do
+          {:ok, %Room{}} = result -> result
+          {:error, :unauthorized} -> {:stop, :invalid_state}
+          {:error, %Ecto.Changeset{} = changeset} -> {:stop, inspect(changeset.errors)}
+          {:error, {:transaction_aborted, reason}} -> {:stop, reason}
+          {:error, error} -> {:stop, inspect(error)}
         end
 
       %Room{} = room ->
@@ -223,98 +190,8 @@ defmodule RadioBeam.Room do
     end
   end
 
-  defp get_pdu_followup_actions(%PDU{type: "m.room.canonical_alias"} = pdu) do
-    for room_alias <- [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])], not is_nil(room_alias) do
-      fn -> RoomAlias.put(room_alias, pdu.room_id) end
-    end
-  end
-
-  defp get_pdu_followup_actions(%PDU{}), do: nil
-
   defp get(id) do
     Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
-  end
-
-  @spec apply_events(t(), [map()]) :: t() | {:error, :unauthorized}
-  defp apply_events(room, events) when is_list(events) do
-    Enum.reduce_while(events, {room, []}, fn event, {%Room{} = room, pdus} ->
-      auth_events = select_auth_events(event, room.state)
-
-      with true <- authorized?(room, event, auth_events),
-           {:ok, %Room{} = room, %PDU{} = pdu} <- update_room(room, event, auth_events) do
-        {:cont, {room, [pdu | pdus]}}
-      else
-        false ->
-          Logger.info("Rejecting unauthorized event:\n#{inspect(event)}")
-          {:halt, {:error, :unauthorized}}
-
-        {:error, _} = error ->
-          {:halt, error}
-      end
-    end)
-  end
-
-  defp select_auth_events(event, state) do
-    keys = [{"m.room.create", ""}, {"m.room.power_levels", ""}, {"m.room.member", event["sender"]}]
-
-    keys =
-      if event["type"] == "m.room.member" do
-        # TODO: check if room version actually supports restricted rooms
-        keys =
-          if sk = Map.get(event["content"], "join_authorised_via_users_server"),
-            do: [{"m.room.member", sk} | keys],
-            else: keys
-
-        cond do
-          match?(%{"membership" => "invite", "third_party_invite" => _}, event["content"]) ->
-            [
-              {"m.room.member", event["state_key"]},
-              {"m.room.join_rules", ""},
-              {"m.room.third_party_invite", get_in(event, ~w[content third_party_invite signed token])} | keys
-            ]
-
-          event["content"]["membership"] in ~w[join invite] ->
-            [{"m.room.member", event["state_key"]}, {"m.room.join_rules", ""} | keys]
-
-          :else ->
-            [{"m.room.member", event["state_key"]} | keys]
-        end
-      else
-        keys
-      end
-
-    for key <- keys, is_map_key(state, key), do: state[key]
-  end
-
-  defp authorized?(%Room{} = room, event, auth_events) do
-    RoomVersion.authorized?(room.version, event, room.state, auth_events)
-  end
-
-  defp update_room(room, event, auth_events) do
-    pdu_attrs =
-      event
-      |> Map.put("auth_events", Enum.map(auth_events, & &1["event_id"]))
-      # ??? why are there no docs on depth besides the PDU desc
-      |> Map.put("depth", room.depth + 1)
-      |> Map.put("prev_events", room.latest_event_ids)
-
-    with {:ok, pdu} = PDU.new(pdu_attrs, room.version) do
-      room =
-        room
-        |> Map.update!(:depth, &(&1 + 1))
-        |> Map.replace!(:latest_event_ids, [pdu.event_id])
-        |> update_room_state(Map.put(event, "event_id", pdu.event_id))
-
-      {:ok, room, pdu}
-    end
-  end
-
-  defp update_room_state(room, event) do
-    if is_map_key(event, "state_key") do
-      %Room{room | state: Map.put(room.state, {event["type"], event["state_key"]}, event)}
-    else
-      room
-    end
   end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}
