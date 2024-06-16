@@ -131,4 +131,41 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"errcode" => "M_UNSUPPORTED_ROOM_VERSION"} = json_response(conn, 400)
     end
   end
+
+  describe "joined/2" do
+    test "returns a list of rooms the user is joined to", %{conn: conn} do
+      {:ok, user} = User.new("@thaverford:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      conn = put_req_header(conn, "authorization", "Bearer #{device.access_token}")
+
+      conn = get(conn, ~p"/_matrix/client/v3/joined_rooms", %{})
+
+      assert %{"joined_rooms" => []} = json_response(conn, 200)
+
+      req_body = %{
+        "name" => "A room",
+        "preset" => "public_chat",
+        "topic" => "It's just a room"
+      }
+
+      conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
+      assert %{"room_id" => room_id} = json_response(conn, 200)
+
+      conn = get(conn, ~p"/_matrix/client/v3/joined_rooms", %{})
+
+      assert %{"joined_rooms" => [^room_id]} = json_response(conn, 200)
+    end
+  end
 end

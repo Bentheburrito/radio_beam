@@ -57,4 +57,6 @@ defmodule RadioBeamWeb.RoomController do
         |> json(Errors.endpoint_error(:invalid_room_state, "The provided initial state is invalid."))
     end
   end
+
+  def joined(conn, _params), do: json(conn, %{joined_rooms: Room.joined(conn.assigns.user.id)})
 end

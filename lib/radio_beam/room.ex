@@ -169,7 +169,26 @@ defmodule RadioBeam.Room do
     GenServer.start_link(__MODULE__, init_arg, name: via(room_id))
   end
 
+  @spec joined(user_id :: String.t()) :: [room_id :: String.t()]
+  def joined(user_id) do
+    fn ->
+      user_id
+      |> :radio_beam_room_queries.joined()
+      |> :qlc.e()
+    end
+    |> Memento.transaction()
+    |> case do
+      {:ok, room_ids} ->
+        room_ids
+
+      {:error, error} ->
+        Logger.error("tried to list user #{inspect(user_id)}'s joined rooms, but got error: #{inspect(error)}")
+        []
+    end
+  end
+
   ### IMPL ###
+
   @impl GenServer
   def init({room_id, events_or_room}) do
     case events_or_room do

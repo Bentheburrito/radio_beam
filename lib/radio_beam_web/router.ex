@@ -28,6 +28,7 @@ defmodule RadioBeamWeb.Router do
         # OPTIMPL: /login/get_token
 
         post "/createRoom", RoomController, :create
+        get "/joined_rooms", RoomController, :joined
       end
     end
   end

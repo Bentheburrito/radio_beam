@@ -82,6 +82,33 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
+  describe "joined/1" do
+    setup do
+      {:ok, user1} = User.new("@thehost:localhost", "Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = User.new("@friendoftheshow:localhost", "AAsdf123$")
+      {:ok, user2} = Repo.insert(user2)
+
+      %{user1: user1, user2: user2}
+    end
+
+    test "lists a user's room appropriately", %{user1: user1, user2: user2} do
+      assert [] = Room.joined(user1.id)
+
+      assert {:ok, room_id} = Room.create("5", user1)
+      assert [^room_id] = Room.joined(user1.id)
+
+      assert {:ok, _other_users_room_id} = Room.create("5", user2)
+      assert [^room_id] = Room.joined(user1.id)
+
+      assert {:ok, _other_users_room_id} = Room.create("5", user2, %{}, invite: [user1.id])
+      assert [^room_id] = Room.joined(user1.id)
+
+      assert {:ok, room_id2} = Room.create("5", user1)
+      assert Enum.sort([room_id, room_id2]) == Enum.sort(Room.joined(user1.id))
+    end
+  end
+
   defp join_rule_event() do
     %{
       "content" => %{"join_rule" => "knock"},
