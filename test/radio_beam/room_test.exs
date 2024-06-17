@@ -141,6 +141,40 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
+  describe "join/2" do
+    setup do
+      {:ok, user1} = User.new("@bodyguard:localhost", "Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = User.new("@iloveclubaqua:localhost", "AAsdf123$")
+      {:ok, user2} = Repo.insert(user2)
+
+      %{user1: user1, user2: user2}
+    end
+
+    test "successfully joins the room", %{user1: user1, user2: user2} do
+      {:ok, room_id} = Room.create("5", user1)
+
+      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      refute is_map_key(state, {"m.room.member", user2.id})
+      assert :ok = Room.invite(room_id, user1.id, user2.id)
+      reason = "requested assistance"
+      assert :ok = Room.join(room_id, user2.id, reason)
+
+      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      assert "join" = get_in(state, [{"m.room.member", user2.id}, "content", "membership"])
+      assert ^reason = get_in(state, [{"m.room.member", user2.id}, "content", "reason"])
+    end
+
+    test "fails with :unauthorized when the joiner has not been invited", %{user1: user1, user2: user2} do
+      {:ok, room_id} = Room.create("5", user1)
+
+      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      refute is_map_key(state, {"m.room.member", user2.id})
+
+      assert {:error, :unauthorized} = Room.join(room_id, user2.id)
+    end
+  end
+
   defp join_rule_event() do
     %{
       "content" => %{"join_rule" => "knock"},

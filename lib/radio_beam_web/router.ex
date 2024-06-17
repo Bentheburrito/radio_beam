@@ -32,6 +32,7 @@ defmodule RadioBeamWeb.Router do
 
         scope "/rooms" do
           post "/:room_id/invite", RoomController, :invite
+          post "/:room_id/join", RoomController, :join
         end
       end
     end

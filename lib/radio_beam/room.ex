@@ -166,10 +166,16 @@ defmodule RadioBeam.Room do
     end
   end
 
-  @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t()) ::
+  @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t()) ::
           :ok | {:error, :unauthorized | :room_does_not_exist | :internal}
-  def invite(room_id, inviter_id, invitee_id) do
-    call_if_alive(room_id, {:invite, inviter_id, invitee_id})
+  def invite(room_id, inviter_id, invitee_id, reason \\ nil) do
+    call_if_alive(room_id, {:invite, inviter_id, invitee_id, reason})
+  end
+
+  @spec join(room_id :: String.t(), joiner_id :: String.t(), reason :: String.t()) ::
+          :ok | {:error, :unauthorized | :room_does_not_exist | :internal}
+  def join(room_id, joiner_id, reason \\ nil) do
+    call_if_alive(room_id, {:join, joiner_id, reason})
   end
 
   ### IMPL ###
@@ -197,18 +203,37 @@ defmodule RadioBeam.Room do
   end
 
   @impl GenServer
-  def handle_call({:invite, inviter_id, invitee_id}, _from, %Room{} = room) do
-    event = Utils.membership_event(room.id, inviter_id, invitee_id, :invite)
+  def handle_call({:invite, inviter_id, invitee_id, reason}, _from, %Room{} = room) do
+    event = Utils.membership_event(room.id, inviter_id, invitee_id, :invite, reason)
 
     case Ops.put_events(room, [event]) do
       {:ok, room} ->
         {:reply, :ok, room}
 
       {:error, :unauthorized} = e ->
+        Logger.info("rejecting a `Room.invite/3` event for being unauthorized")
         {:reply, e, room}
 
       {:error, error} = e ->
         Logger.error("an error occurred trying to put a `Room.invite/3` event: #{inspect(error)}")
+        {:reply, e, room}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:join, joiner_id, reason}, _from, %Room{} = room) do
+    event = Utils.membership_event(room.id, joiner_id, joiner_id, :join, reason)
+
+    case Ops.put_events(room, [event]) do
+      {:ok, room} ->
+        {:reply, :ok, room}
+
+      {:error, :unauthorized} = e ->
+        Logger.info("rejecting a `Room.join/2` event for being unauthorized")
+        {:reply, e, room}
+
+      {:error, error} = e ->
+        Logger.error("an error occurred trying to put a `Room.join/2` event: #{inspect(error)}")
         {:reply, e, room}
     end
   end

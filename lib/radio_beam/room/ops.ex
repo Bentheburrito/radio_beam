@@ -73,7 +73,8 @@ defmodule RadioBeam.Room.Ops do
   defp get_pdu_followup_actions(%PDU{}), do: nil
 
   defp select_auth_events(event, state) do
-    keys = [{"m.room.create", ""}, {"m.room.power_levels", ""}, {"m.room.member", event["sender"]}]
+    keys = [{"m.room.create", ""}, {"m.room.power_levels", ""}]
+    keys = if event["sender"] != event["state_key"], do: [{"m.room.member", event["sender"]} | keys], else: keys
 
     keys =
       if event["type"] == "m.room.member" do

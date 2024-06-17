@@ -8,8 +8,10 @@ defmodule RadioBeam.Room.Utils do
     state_event(room_id, "m.room.create", creator_id, create_content)
   end
 
-  def membership_event(room_id, sender_id, subject_id, membership) when membership in @membership_values do
-    state_event(room_id, "m.room.member", sender_id, %{"membership" => to_string(membership)}, subject_id)
+  def membership_event(room_id, sender_id, subject_id, membership, reason \\ nil)
+      when membership in @membership_values do
+    content = membership_event_content(membership, reason)
+    state_event(room_id, "m.room.member", sender_id, content, subject_id)
   end
 
   def power_levels_event(room_id, sender_id, content_overrides) do
@@ -73,6 +75,11 @@ defmodule RadioBeam.Room.Utils do
   def topic_event(room_id, sender_id, topic) do
     state_event(room_id, "m.room.topic", sender_id, %{"topic" => topic})
   end
+
+  defp membership_event_content(membership, nil), do: %{"membership" => to_string(membership)}
+
+  defp membership_event_content(membership, reason) when is_binary(reason),
+    do: %{"membership" => to_string(membership), "reason" => reason}
 
   defp state_event(room_id, type, sender_id, content, state_key \\ "") do
     %{

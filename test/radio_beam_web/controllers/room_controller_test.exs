@@ -202,6 +202,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{} = json_response(conn, 200)
       {:ok, %Room{state: state}} = Repo.get(Room, room_id)
       assert "invite" = get_in(state, [{"m.room.member", invitee_id}, "content", "membership"])
+      assert "join us :)" = get_in(state, [{"m.room.member", invitee_id}, "content", "reason"])
     end
 
     test "rejects if inviter isn't in the room", %{conn: conn} do
@@ -268,6 +269,66 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{"errcode" => "M_NOT_FOUND", "error" => error_message} = json_response(conn, 404)
       assert error_message =~ "Room not found"
+    end
+  end
+
+  describe "join/2" do
+    setup %{conn: conn} do
+      {:ok, user} = User.new("@ghostofxmasfuture:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "successfully joins the invited sender to a room", %{conn: conn, user: user} do
+      {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(creator)
+
+      {:ok, room_id} = Room.create("5", creator, %{}, preset: :private_chat)
+      :ok = Room.invite(room_id, creator.id, user.id)
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
+
+      assert %{"room_id" => ^room_id} = json_response(conn, 200)
+      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      assert "you gotta give" = get_in(state, [{"m.room.member", user.id}, "content", "reason"])
+    end
+
+    test "fails to joins an invite-only room without an invite", %{conn: conn} do
+      {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(creator)
+
+      {:ok, room_id} = Room.create("5", creator, %{}, preset: :private_chat)
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
+      assert ^error_message = "You do not have permission to join this room"
+    end
+
+    test "successfully joins sender to a public room", %{conn: conn} do
+      {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(creator)
+
+      {:ok, room_id} = Room.create("5", creator, %{}, preset: :public_chat)
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
+
+      assert %{"room_id" => ^room_id} = json_response(conn, 200)
     end
   end
 end
