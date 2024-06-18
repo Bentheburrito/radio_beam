@@ -23,4 +23,11 @@ defmodule RadioBeam.RoomAlias do
         Memento.Query.write(%__MODULE__{alias: room_alias, room_id: room_id})
     end
   end
+
+  def to_room_id(room_alias) do
+    case Memento.transaction(fn -> Memento.Query.read(__MODULE__, room_alias) end) do
+      {:ok, nil} -> {:error, :not_found}
+      {:ok, %__MODULE__{room_id: room_id}} -> {:ok, room_id}
+    end
+  end
 end

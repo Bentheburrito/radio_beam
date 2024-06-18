@@ -3,7 +3,7 @@ defmodule RadioBeamWeb.RoomController do
 
   require Logger
 
-  alias RadioBeam.{Errors, Room, User}
+  alias RadioBeam.{Errors, Room, RoomAlias, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
   plug RadioBeamWeb.Plugs.Authenticate
@@ -89,6 +89,23 @@ defmodule RadioBeamWeb.RoomController do
         conn
         |> put_status(500)
         |> json(Errors.unknown("An internal error occurred. Please try again"))
+    end
+  end
+
+  # TOIMPL: server_name query parameter?
+  def join(conn, %{"room_id_or_alias" => room_id_or_alias}) do
+    if String.starts_with?(room_id_or_alias, "#") do
+      case RoomAlias.to_room_id(room_id_or_alias) do
+        {:ok, room_id} ->
+          join(conn, %{"room_id" => room_id})
+
+        {:error, :not_found} ->
+          conn
+          |> put_status(404)
+          |> json(Errors.not_found("Room not found"))
+      end
+    else
+      join(conn, %{"room_id" => room_id_or_alias})
     end
   end
 

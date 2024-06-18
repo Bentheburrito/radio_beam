@@ -330,5 +330,33 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{"room_id" => ^room_id} = json_response(conn, 200)
     end
+
+    test "successfully joins sender to a public room via an alias", %{conn: conn} do
+      {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(creator)
+
+      {:ok, room_id} = Room.create("5", creator, %{}, preset: :public_chat, alias: "glorp")
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/join/#{URI.encode("#glorp:#{RadioBeam.server_name()}")}", %{
+          "reason" => "you gotta give"
+        })
+
+      assert %{"room_id" => ^room_id} = json_response(conn, 200)
+    end
+
+    test "fails to join a room with an alias that can't be resolved", %{conn: conn} do
+      {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
+      Repo.insert(creator)
+
+      {:ok, room_id} = Room.create("5", creator, %{}, preset: :public_chat)
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/join/#{URI.encode("#glerp:#{RadioBeam.server_name()}")}", %{
+          "reason" => "you gotta give"
+        })
+
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
   end
 end
