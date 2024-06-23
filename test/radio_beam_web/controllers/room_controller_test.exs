@@ -349,7 +349,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
       Repo.insert(creator)
 
-      {:ok, room_id} = Room.create("5", creator, %{}, preset: :public_chat)
+      {:ok, _room_id} = Room.create("5", creator, %{}, preset: :public_chat)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/join/#{URI.encode("#glerp:#{RadioBeam.server_name()}")}", %{

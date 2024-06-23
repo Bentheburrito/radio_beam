@@ -14,6 +14,7 @@ defmodule RadioBeam.PDU do
     hashes: :map,
     origin_server_ts: :integer,
     prev_events: {:array, :string},
+    prev_state: :map,
     redacts: :string,
     room_id: :string,
     sender: :string,
@@ -38,13 +39,12 @@ defmodule RadioBeam.PDU do
     params =
       params
       |> Map.put("origin_server_ts", :os.system_time(:millisecond))
-      |> Map.put("", %{})
       # TOIMPL
       |> Map.put("hashes", %{})
       |> Map.put("signatures", %{})
       |> then(
         &Map.put_new_lazy(&1, "event_id", fn ->
-          case RoomVersion.compute_reference_hash(room_version, &1) do
+          case RoomVersion.compute_reference_hash(room_version, Map.delete(&1, "prev_state")) do
             {:ok, hash} -> "!#{Base.url_encode64(hash)}:#{RadioBeam.server_name()}"
             :error -> :could_not_compute_ref_hash
           end
@@ -68,5 +68,16 @@ defmodule RadioBeam.PDU do
       #       performance issue?
       for id <- ids, into: %{}, do: {id, Memento.Query.read(__MODULE__, id)}
     end)
+  end
+
+  @cs_event_keys [:content, :event_id, :origin_server_ts, :room_id, :sender, :state_key, :type, :unsigned]
+  @doc """
+  Returns a PDU in the format expected by the Client-Server API
+  """
+  def to_event(%__MODULE__{} = pdu) do
+    case Map.take(pdu, @cs_event_keys) do
+      %{state_key: nil} = event -> Map.delete(event, :state_key)
+      event -> event
+    end
   end
 end

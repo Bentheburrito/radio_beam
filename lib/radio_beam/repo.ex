@@ -10,6 +10,7 @@ defmodule RadioBeam.Repo do
   alias RadioBeam.Room
   alias RadioBeam.RoomAlias
   alias RadioBeam.User
+  alias RadioBeam.SyncBatch
 
   @doc """
   Initializes Mnesia schema for the given list of nodes (defaults to `[node()]`.
@@ -39,6 +40,7 @@ defmodule RadioBeam.Repo do
     create_table(PDU, disc_copies: nodes)
     create_table(Room, disc_copies: nodes)
     create_table(RoomAlias, disc_copies: nodes)
+    create_table(SyncBatch, disc_copies: nodes)
   end
 
   defp create_table(table_mod, opts) when is_atom(table_mod) and is_list(opts) do
