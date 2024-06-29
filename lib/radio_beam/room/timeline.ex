@@ -5,9 +5,15 @@ defmodule RadioBeam.Room.Timeline do
   """
 
   require Logger
+
+  alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.SyncBatch
+
+  def max_events(type) when type in [:timeline, :state] do
+    Application.get_env(:radio_beam, :max_events)[type]
+  end
 
   def sync(room_ids, user_id, opts \\ []) do
     # TOIMPL: timeout opt
@@ -29,10 +35,14 @@ defmodule RadioBeam.Room.Timeline do
   @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _latest_ids = []}
   defp sync_with_room_ids(room_ids, user_id, opts) do
     since = Keyword.get(opts, :since, :latest)
+    filter = Keyword.get(opts, :filter, %{"room" => %{}})
+    include_leave? = filter["room"]["include_leave"] == true
 
     last_sync_event_map = parse_since_token(since)
 
-    Enum.reduce(room_ids, @init_rooms_acc, fn room_id, {rooms, latest_ids} ->
+    filter
+    |> Filter.apply_rooms(room_ids)
+    |> Enum.reduce(@init_rooms_acc, fn room_id, {rooms, latest_ids} ->
       %Room{} = room = Memento.transaction!(fn -> Memento.Query.read(Room, room_id) end)
 
       case get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) do
@@ -40,7 +50,7 @@ defmodule RadioBeam.Room.Timeline do
           stop_at_any = Map.get(last_sync_event_map, room.id, [])
 
           rooms =
-            case joined_room_sync(user_id, room.latest_event_ids, stop_at_any, room.state, opts) do
+            case room_timeline_sync(room.id, user_id, room.latest_event_ids, stop_at_any, room.state, opts) do
               :no_update -> rooms
               room_update -> put_in(rooms, [:join, room_id], room_update)
             end
@@ -57,6 +67,9 @@ defmodule RadioBeam.Room.Timeline do
           Logger.info("TOIMPL: sync with knock rooms")
           {rooms, latest_ids}
 
+        "leave" when not include_leave? ->
+          {rooms, room.latest_event_ids ++ latest_ids}
+
         "leave" ->
           stop_at_any = Map.get(last_sync_event_map, room.id, [])
 
@@ -64,7 +77,7 @@ defmodule RadioBeam.Room.Timeline do
           %PDU{} = pdu = Memento.transaction!(fn -> Memento.Query.read(PDU, user_leave_event_id) end)
 
           rooms =
-            case left_room_sync(user_id, [user_leave_event_id], stop_at_any, pdu.prev_state, opts) do
+            case room_timeline_sync(room.id, user_id, [user_leave_event_id], stop_at_any, pdu.prev_state, opts) do
               :no_update -> rooms
               room_update -> put_in(rooms, [:leave, room_id], room_update)
             end
@@ -93,28 +106,54 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  @default_n 25
-  @spec joined_room_sync(String.t(), list(), list(), map(), keyword()) :: map() | :no_update
-  defp joined_room_sync(user_id, event_ids, stop_at_any, latest_state, opts) do
-    max_events = Keyword.get(opts, :max_events, @default_n)
+  @spec room_timeline_sync(String.t(), String.t(), list(), list(), map(), keyword()) :: map() | :no_update
+  defp room_timeline_sync(room_id, user_id, event_ids, stop_at_any, latest_state, opts) do
     full_state? = Keyword.get(opts, :full_state?, false)
+    filter = Keyword.get(opts, :filter, %{})
 
-    timeline = timeline_from(event_ids, stop_at_any, user_id, max_events)
+    timeline_limit = filter["room"]["timeline"]["limit"] || max_events(:timeline)
+    timeline = timeline_from(event_ids, stop_at_any, user_id, timeline_limit)
+
     oldest_event = List.first(timeline.events)
 
     if is_nil(oldest_event) and not full_state? do
       :no_update
     else
-      %{
-        state: Map.values((full_state? && latest_state) || oldest_event.prev_state),
-        timeline: %{timeline | events: Enum.map(timeline.events, &PDU.to_event/1)},
-        # TOIMPL
-        account_data: %{},
-        ephemeral: %{},
-        summary: %{},
-        unread_notifications: %{},
-        unread_thread_notifications: %{}
-      }
+      # TODO: ideally filtering happens at the QLC level. This first pass also
+      # makes it possible to return < n events, even when there are more new
+      # events
+      state_events =
+        apply_room_filter_to_events(
+          room_id,
+          Map.values((full_state? && latest_state) || oldest_event.prev_state),
+          filter,
+          "state",
+          filter["room"]["state"]["limit"] || max_events(:state)
+        )
+
+      timeline_events =
+        apply_room_filter_to_events(
+          room_id,
+          timeline.events,
+          filter,
+          "timeline",
+          timeline_limit
+        )
+
+      if Enum.empty?(state_events) and Enum.empty?(timeline_events) do
+        :no_update
+      else
+        %{
+          state: state_events,
+          timeline: %{timeline | events: timeline_events},
+          # TOIMPL
+          account_data: %{},
+          ephemeral: %{},
+          summary: %{},
+          unread_notifications: %{},
+          unread_thread_notifications: %{}
+        }
+      end
     end
   end
 
@@ -132,24 +171,15 @@ defmodule RadioBeam.Room.Timeline do
     %{invite_state: %{events: state_events}}
   end
 
-  # note: as of writing this is 1:1 with join_room_sync. could refactor if 
-  # their impls don't diverge
-  defp left_room_sync(user_id, event_ids, stop_at_any, latest_state, opts) do
-    max_events = Keyword.get(opts, :max_events, @default_n)
-    full_state? = Keyword.get(opts, :full_state?, false)
+  @spec apply_room_filter_to_events(String.t(), [PDU.t()], map(), String.t(), non_neg_integer()) :: [map()]
+  defp apply_room_filter_to_events(room_id, events, filter, filter_key, limit) do
+    not_rooms = filter["room"][filter_key]["not_rooms"]
+    rooms = filter["room"][filter_key]["rooms"]
 
-    timeline = timeline_from(event_ids, stop_at_any, user_id, max_events)
-    oldest_event = List.first(timeline.events)
-
-    if is_nil(oldest_event) and not full_state? do
-      :no_update
-    else
-      %{
-        state: Map.values((full_state? && latest_state) || oldest_event.prev_state),
-        timeline: %{timeline | events: Enum.map(timeline.events, &PDU.to_event/1)},
-        # TOIMPL
-        account_data: %{}
-      }
+    cond do
+      is_list(not_rooms) and room_id in not_rooms -> []
+      is_list(rooms) and room_id not in rooms -> []
+      :else -> events |> Stream.map(&Filter.apply(filter, &1)) |> Enum.take(limit)
     end
   end
 

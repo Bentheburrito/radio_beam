@@ -21,6 +21,7 @@ config :radio_beam,
   ### STATIC CONFIG / SUPPORTED FUNCTIONS ###
   # TOIMPL: m.login.token
   login_types: %{flows: [%{type: "m.login.password"}]},
+  max_events: [timeline: 400, state: 200],
   registration_enabled: true,
   versions: %{unstable_versions: %{}, versions: ["v1.9"]}
 

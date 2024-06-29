@@ -20,6 +20,7 @@ defmodule RadioBeamWeb.SyncController do
         {"since", since_token}, opts -> Keyword.put(opts, :since, since_token)
         {"timeout", timeout}, opts -> Keyword.put(opts, :timeout, timeout)
         {"full_state", full_state?}, opts -> Keyword.put(opts, :full_state?, full_state?)
+        {"filter", filter}, opts -> Keyword.put(opts, :filter, filter)
         _, opts -> opts
       end)
 

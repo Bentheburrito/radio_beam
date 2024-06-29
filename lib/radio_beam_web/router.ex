@@ -1,7 +1,14 @@
 defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
-  alias RadioBeamWeb.{AuthController, HomeserverInfoController, LoginController, RoomController, SyncController}
+  alias RadioBeamWeb.{
+    AuthController,
+    FilterController,
+    HomeserverInfoController,
+    LoginController,
+    RoomController,
+    SyncController
+  }
 
   pipeline :spec do
     plug :accepts, ["json"]
@@ -41,6 +48,10 @@ defmodule RadioBeamWeb.Router do
           # post "/:room_id/kick", RoomController, :kick
           # post "/:room_id/ban", RoomController, :ban
           # post "/:room_id/unban", RoomController, :unban
+        end
+
+        scope "/user/:user_id" do
+          post "/filter", FilterController, :put
         end
 
         post "/join/:room_id_or_alias", RoomController, :join

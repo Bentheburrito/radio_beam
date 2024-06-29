@@ -6,6 +6,7 @@ defmodule RadioBeam.Repo do
   require Logger
 
   alias RadioBeam.Device
+  alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.RoomAlias
@@ -41,6 +42,7 @@ defmodule RadioBeam.Repo do
     create_table(Room, disc_copies: nodes)
     create_table(RoomAlias, disc_copies: nodes)
     create_table(SyncBatch, disc_copies: nodes)
+    create_table(Filter, disc_copies: nodes)
   end
 
   defp create_table(table_mod, opts) when is_atom(table_mod) and is_list(opts) do
