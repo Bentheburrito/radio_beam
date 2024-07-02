@@ -258,54 +258,21 @@ defmodule RadioBeam.Room do
   def handle_call({:join, joiner_id, reason}, _from, %Room{} = room) do
     event = Utils.membership_event(room.id, joiner_id, joiner_id, :join, reason)
 
-    case Ops.put_events(room, [event]) do
-      {:ok, room} ->
-        {:reply, :ok, room}
-
-      {:error, :unauthorized} = e ->
-        Logger.info("rejecting a `Room.join/2` event for being unauthorized")
-        {:reply, e, room}
-
-      {:error, error} ->
-        Logger.error("an error occurred trying to put a `Room.join/2` event: #{inspect(error)}")
-        {:reply, {:error, :internal}, room}
-    end
+    Utils.put_event_and_handle(room, event, "join")
   end
 
   @impl GenServer
   def handle_call({:leave, user_id, reason}, _from, %Room{} = room) do
     event = Utils.membership_event(room.id, user_id, user_id, :leave, reason)
 
-    case Ops.put_events(room, [event]) do
-      {:ok, room} ->
-        {:reply, :ok, room}
-
-      {:error, :unauthorized} = e ->
-        Logger.info("rejecting a `Room.leave/3` event for being unauthorized")
-        {:reply, e, room}
-
-      {:error, error} ->
-        Logger.error("an error occurred trying to put a `Room.leave/3` event: #{inspect(error)}")
-        {:reply, {:error, :internal}, room}
-    end
+    Utils.put_event_and_handle(room, event, "leave")
   end
 
   @impl GenServer
   def handle_call({:set_name, user_id, name}, _from, %Room{} = room) do
     event = Utils.name_event(room.id, user_id, name)
 
-    case Ops.put_events(room, [event]) do
-      {:ok, room} ->
-        {:reply, :ok, room}
-
-      {:error, :unauthorized} = e ->
-        Logger.info("rejecting a `Room.set_name/3` event for being unauthorized")
-        {:reply, e, room}
-
-      {:error, error} ->
-        Logger.error("an error occurred trying to put a `Room.set_name/3` event: #{inspect(error)}")
-        {:reply, {:error, :internal}, room}
-    end
+    Utils.put_event_and_handle(room, event, "name")
   end
 
   defp get(id) do

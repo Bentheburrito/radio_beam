@@ -1,5 +1,23 @@
 defmodule RadioBeam.Room.Utils do
+  require Logger
+
   alias Polyjuice.Util.Identifiers.V1.RoomAliasIdentifier
+  alias RadioBeam.Room.Ops
+
+  def put_event_and_handle(room, event, context \\ "an") do
+    case Ops.put_events(room, [event]) do
+      {:ok, room} ->
+        {:reply, :ok, room}
+
+      {:error, :unauthorized} = e ->
+        Logger.info("rejecting a(n) #{context} event for being unauthorized")
+        {:reply, e, room}
+
+      {:error, error} ->
+        Logger.error("an error occurred trying to put a(n) #{context} event: #{inspect(error)}")
+        {:reply, {:error, :internal}, room}
+    end
+  end
 
   @membership_values [:join, :invite, :leave, :kick, :ban]
 
