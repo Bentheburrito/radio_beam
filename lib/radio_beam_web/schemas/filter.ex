@@ -1,22 +1,24 @@
 defmodule RadioBeamWeb.Schemas.Filter do
+  import RadioBeamWeb.Schemas, only: [user_id: 1, room_id: 1]
+
   alias Polyjuice.Util.Schema
   alias RadioBeam.Room.Timeline
 
   def filter do
     %{
-      "account_data" => event_filter(),
+      "account_data" => optional(event_filter()),
       "event_fields" => optional(Schema.array_of(:string)),
       "event_format" => [Schema.enum(["client", "federation"]), default: "client"],
-      "presence" => event_filter(),
-      "room" => room_filter()
+      "presence" => optional(event_filter()),
+      "room" => optional(room_filter())
     }
   end
 
   defp event_filter do
     %{
       "limit" => optional(&limit/1),
-      "not_senders" => optional(Schema.array_of(&Schema.user_id/1)),
-      "senders" => optional(Schema.array_of(&Schema.user_id/1)),
+      "not_senders" => optional(Schema.array_of(&user_id/1)),
+      "senders" => optional(Schema.array_of(&user_id/1)),
       "not_types" => optional(Schema.array_of(:string)),
       "types" => optional(Schema.array_of(:string))
     }
@@ -24,13 +26,13 @@ defmodule RadioBeamWeb.Schemas.Filter do
 
   defp room_filter do
     %{
-      "account_data" => room_event_filter(),
-      "ephemeral" => room_event_filter(),
+      "account_data" => optional(room_event_filter()),
+      "ephemeral" => optional(room_event_filter()),
       "include_leave" => [:boolean, default: false],
-      "not_rooms" => optional(Schema.array_of(&Schema.room_id/1)),
-      "rooms" => optional(Schema.array_of(&Schema.room_id/1)),
-      "state" => state_filter(),
-      "timeline" => room_event_filter()
+      "not_rooms" => optional(Schema.array_of(&room_id/1)),
+      "rooms" => optional(Schema.array_of(&room_id/1)),
+      "state" => optional(state_filter()),
+      "timeline" => optional(room_event_filter())
     }
   end
 
@@ -40,11 +42,11 @@ defmodule RadioBeamWeb.Schemas.Filter do
       "include_redundant_members" => [:boolean, default: false],
       "lazy_load_members" => [:boolean, default: false],
       "limit" => optional(&limit(&1, max_events)),
-      "not_rooms" => optional(Schema.array_of(&Schema.room_id/1)),
-      "not_senders" => optional(Schema.array_of(&Schema.user_id/1)),
+      "not_rooms" => optional(Schema.array_of(&room_id/1)),
+      "not_senders" => optional(Schema.array_of(&user_id/1)),
       "not_types" => optional(Schema.array_of(:string)),
-      "rooms" => optional(Schema.array_of(&Schema.room_id/1)),
-      "senders" => optional(Schema.array_of(&Schema.user_id/1)),
+      "rooms" => optional(Schema.array_of(&room_id/1)),
+      "senders" => optional(Schema.array_of(&user_id/1)),
       "types" => optional(Schema.array_of(:string)),
       "unread_thread_notifications" => [:boolean, default: false]
     }

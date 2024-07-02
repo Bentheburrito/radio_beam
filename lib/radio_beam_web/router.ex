@@ -52,6 +52,7 @@ defmodule RadioBeamWeb.Router do
 
         scope "/user/:user_id" do
           post "/filter", FilterController, :put
+          get "/filter/:filter_id", FilterController, :get
         end
 
         post "/join/:room_id_or_alias", RoomController, :join
