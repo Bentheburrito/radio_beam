@@ -50,8 +50,7 @@ defmodule RadioBeamWeb.Router do
           # post "/:room_id/unban", RoomController, :unban
 
           put "/:room_id/send/:event_type/:transaction_id", RoomController, :send
-          # TOIMPL:
-          # put "/:room_id/state/:event_type/:state_key", RoomController, :put_state
+          put "/:room_id/state/:event_type/:state_key", RoomController, :put_state
         end
 
         scope "/user/:user_id" do

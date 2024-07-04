@@ -18,6 +18,8 @@ defmodule RadioBeam.Application do
       {Finch, name: RadioBeam.Finch},
       # Start the RoomRegistry
       {Registry, keys: :unique, name: RadioBeam.RoomRegistry},
+      # Start the GenServer that handles transaction IDs
+      RadioBeam.Transaction,
       # Start the RoomSupervisor
       {DynamicSupervisor, name: RadioBeam.RoomSupervisor},
       # Start to serve requests, typically the last entry

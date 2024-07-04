@@ -317,7 +317,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
-      assert ^error_message = "You do not have permission to join this room"
+      assert ^error_message = "You need to be invited by a member of this room to join"
     end
 
     test "successfully joins sender to a public room", %{conn: conn} do

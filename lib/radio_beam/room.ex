@@ -123,8 +123,8 @@ defmodule RadioBeam.Room do
   end
 
   @doc """
-  Starts the GenServer to process events for an existing room. Returns 
-  `{:ok, room_id}` if the room was successfully started.
+  Starts the GenServer for an existing room. Returns `{:ok, room_id}` if the 
+  room was successfully started.
   """
   @spec revive(String.t()) :: {:ok, String.t()} | {:error, :room_does_not_exist | any()}
   def revive(room_id) do
@@ -148,6 +148,7 @@ defmodule RadioBeam.Room do
     GenServer.start_link(__MODULE__, init_arg, name: via(room_id))
   end
 
+  @doc "Returns all room IDs that `user_id` is joined to"
   @spec joined(user_id :: String.t()) :: [room_id :: String.t()]
   def joined(user_id) do
     fn ->
@@ -188,28 +189,60 @@ defmodule RadioBeam.Room do
     end
   end
 
+  @doc "Tries to invite the invitee to the given room, if the inviter has perms"
   @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t()) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def invite(room_id, inviter_id, invitee_id, reason \\ nil) do
-    call_if_alive(room_id, {:invite, inviter_id, invitee_id, reason})
+    event = Utils.membership_event(room_id, inviter_id, invitee_id, :invite, reason)
+
+    call_if_alive(room_id, {:put_event, event})
   end
 
+  @doc "Tries to join the given user to the given room"
   @spec join(room_id :: String.t(), joiner_id :: String.t(), reason :: String.t()) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def join(room_id, joiner_id, reason \\ nil) do
-    call_if_alive(room_id, {:join, joiner_id, reason})
+    event = Utils.membership_event(room_id, joiner_id, joiner_id, :join, reason)
+
+    call_if_alive(room_id, {:put_event, event})
   end
 
+  @doc "Tries to remove the given user from the given room"
   @spec leave(room_id :: String.t(), user_id :: String.t(), reason :: String.t()) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def leave(room_id, user_id, reason \\ nil) do
-    call_if_alive(room_id, {:leave, user_id, reason})
+    event = Utils.membership_event(room_id, user_id, user_id, :leave, reason)
+
+    call_if_alive(room_id, {:put_event, event})
   end
 
+  @doc "Helper function to set the name of the room"
   @spec set_name(room_id :: String.t(), user_id :: String.t(), name :: String.t()) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def set_name(room_id, user_id, name) do
-    call_if_alive(room_id, {:set_name, user_id, name})
+    event = Utils.name_event(room_id, user_id, name)
+
+    call_if_alive(room_id, {:put_event, event})
+  end
+
+  @doc """
+  Sets the room state for the given type and state key. Other functions, when
+  available, should be preferred to set the state of the room for specific 
+  event types
+  """
+  @spec put_state(
+          room_id :: String.t(),
+          user_id :: String.t(),
+          type :: String.t(),
+          state_key :: String.t(),
+          content :: String.t()
+        ) ::
+          {:ok, event_id :: String.t()}
+          | {:error, :alias_in_use | :invalid_alias | :unauthorized | :room_does_not_exist | :internal}
+  def put_state(room_id, user_id, type, state_key \\ "", content) do
+    event = Utils.state_event(room_id, type, user_id, content, state_key)
+
+    call_if_alive(room_id, {:put_event, event})
   end
 
   @doc "Sends a Message Event to the room"
@@ -218,7 +251,7 @@ defmodule RadioBeam.Room do
   def send(room_id, user_id, type, content) do
     event = Utils.message_event(room_id, user_id, type, content)
 
-    call_if_alive(room_id, {:put_message_event, event})
+    call_if_alive(room_id, {:put_event, event})
   end
 
   ### IMPL ###
@@ -246,36 +279,10 @@ defmodule RadioBeam.Room do
   end
 
   @impl GenServer
-  def handle_call({:invite, inviter_id, invitee_id, reason}, _from, %Room{} = room) do
-    event = Utils.membership_event(room.id, inviter_id, invitee_id, :invite, reason)
-
-    Utils.put_event_and_handle(room, event, "invite")
-  end
-
-  @impl GenServer
-  def handle_call({:join, joiner_id, reason}, _from, %Room{} = room) do
-    event = Utils.membership_event(room.id, joiner_id, joiner_id, :join, reason)
-
-    Utils.put_event_and_handle(room, event, "join")
-  end
-
-  @impl GenServer
-  def handle_call({:leave, user_id, reason}, _from, %Room{} = room) do
-    event = Utils.membership_event(room.id, user_id, user_id, :leave, reason)
-
-    Utils.put_event_and_handle(room, event, "leave")
-  end
-
-  @impl GenServer
-  def handle_call({:set_name, user_id, name}, _from, %Room{} = room) do
-    event = Utils.name_event(room.id, user_id, name)
-
-    Utils.put_event_and_handle(room, event, "name")
-  end
-
-  @impl GenServer
-  def handle_call({:put_message_event, event}, _from, %Room{} = room) do
-    Utils.put_event_and_handle(room, event, "message (#{event["type"]})")
+  def handle_call({:put_event, event}, _from, %Room{} = room) do
+    # TOIMPL: handle duplicate annotations - M_DUPLICATE_ANNOTATION
+    event_kind = if is_map_key(event, "state_key"), do: "state", else: "message"
+    Utils.put_event_and_handle(room, event, "#{event_kind} (#{event["type"]})")
   end
 
   defp get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)

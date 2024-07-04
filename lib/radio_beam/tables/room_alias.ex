@@ -11,6 +11,7 @@ defmodule RadioBeam.RoomAlias do
 
   @type t() :: %__MODULE__{}
 
+  # TOIMPL: check the room alias grammar. Upstream polyjuice_util to check for < 255 byte limit + localpart validation
   def put(room_alias, room_id) do
     case {Memento.Query.read(__MODULE__, room_alias), Memento.Query.read(RadioBeam.Room, room_id)} do
       {_, nil} ->

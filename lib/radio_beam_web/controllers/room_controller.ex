@@ -3,7 +3,7 @@ defmodule RadioBeamWeb.RoomController do
 
   require Logger
 
-  alias RadioBeam.{Errors, Room, RoomAlias, User}
+  alias RadioBeam.{Errors, Room, RoomAlias, Transaction, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
   plug RadioBeamWeb.Plugs.Authenticate
@@ -68,28 +68,15 @@ defmodule RadioBeamWeb.RoomController do
     request = conn.assigns.request
     invitee_id = to_string(Map.fetch!(request, "user_id"))
 
-    case Room.invite(room_id, inviter.id, invitee_id, request["reason"]) do
-      {:ok, _event_id} ->
-        json(conn, %{})
-
-      {:error, :unauthorized} ->
-        conn
-        |> put_status(403)
-        |> json(
-          Errors.forbidden(
-            "Failed to invite: you either aren't in the room with permission to invite others, or the invitee is banned from the room"
-          )
+    with {:ok, _event_id} <- Room.invite(room_id, inviter.id, invitee_id, request["reason"]) do
+      json(conn, %{})
+    else
+      {:error, error} ->
+        handle_room_call_error(
+          conn,
+          error,
+          "Failed to invite: you either aren't in the room with permission to invite others, or the invitee is banned from the room"
         )
-
-      {:error, :room_does_not_exist} ->
-        conn
-        |> put_status(404)
-        |> json(Errors.not_found("Room not found"))
-
-      {:error, :internal} ->
-        conn
-        |> put_status(500)
-        |> json(Errors.unknown("An internal error occurred. Please try again"))
     end
   end
 
@@ -114,42 +101,64 @@ defmodule RadioBeamWeb.RoomController do
     %User{} = joiner = conn.assigns.user
     request = conn.assigns.request
 
-    case Room.join(room_id, joiner.id, request["reason"]) do
-      {:ok, _event_id} ->
-        json(conn, %{room_id: room_id})
-
-      {:error, :unauthorized} ->
-        conn
-        |> put_status(403)
-        |> json(Errors.forbidden("You do not have permission to join this room"))
-
-      {:error, :room_does_not_exist} ->
-        conn
-        |> put_status(404)
-        |> json(Errors.not_found("Room not found"))
-
-      {:error, :internal} ->
-        conn
-        |> put_status(500)
-        |> json(Errors.unknown("An internal error occurred. Please try again"))
+    with {:ok, _event_id} <- Room.join(room_id, joiner.id, request["reason"]) do
+      json(conn, %{room_id: room_id})
+    else
+      {:error, error} -> handle_room_call_error(conn, error, "You need to be invited by a member of this room to join")
     end
   end
 
   def send(conn, %{"room_id" => room_id, "event_type" => event_type, "transaction_id" => txn_id}) do
     %User{} = sender = conn.assigns.user
-    request = conn.assigns.request
+    content = conn.assigns.request
+    device_id = conn.assigns.device_id
 
-    with {:ok, event_id} <- Room.send(room_id, sender.id, event_type, request) do
+    with {:ok, handle} <- Transaction.begin(txn_id, device_id, conn.request_path),
+         {:ok, event_id} <- Room.send(room_id, sender.id, event_type, content) do
+      response = %{event_id: event_id}
+
+      Transaction.done(handle, response)
+      json(conn, response)
+    else
+      {:already_done, response} ->
+        json(conn, response)
+
+      {:error, error} ->
+        handle_room_call_error(conn, error)
+    end
+  end
+
+  def send(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(Errors.endpoint_error(:missing_param, "Your request is missing one or more path parameters"))
+  end
+
+  def put_state(conn, %{"room_id" => room_id, "event_type" => event_type, "state_key" => state_key}) do
+    %User{} = sender = conn.assigns.user
+    content = conn.assigns.request
+
+    with {:ok, event_id} <- Room.put_state(room_id, sender.id, event_type, state_key, content) do
       json(conn, %{event_id: event_id})
     else
       {:error, error} -> handle_room_call_error(conn, error)
     end
   end
 
-  defp handle_room_call_error(conn, error) do
+  def put_state(conn, %{"room_id" => _, "event_type" => _} = params) do
+    put_state(conn, Map.put(params, "state_key", ""))
+  end
+
+  def put_state(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(Errors.endpoint_error(:missing_param, "Your request is missing one or more path parameters"))
+  end
+
+  defp handle_room_call_error(conn, error, unauth_message \\ "You do not have permission to perform that action") do
     {status, error_body} =
       case error do
-        :unauthorized -> {403, Errors.forbidden("You do not have permission to perform that action")}
+        :unauthorized -> {403, Errors.forbidden(unauth_message)}
         :room_does_not_exist -> {404, Errors.not_found("Room not found")}
         :internal -> {500, Errors.unknown("An internal error occurred. Please try again")}
       end

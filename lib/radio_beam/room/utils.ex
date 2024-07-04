@@ -23,6 +23,16 @@ defmodule RadioBeam.Room.Utils do
     %{"type" => type, "room_id" => room_id, "sender" => sender_id, "content" => content}
   end
 
+  def state_event(room_id, type, sender_id, content, state_key \\ "") do
+    %{
+      "content" => content,
+      "room_id" => room_id,
+      "sender" => sender_id,
+      "state_key" => state_key,
+      "type" => type
+    }
+  end
+
   @membership_values [:join, :invite, :leave, :kick, :ban]
 
   def create_event(room_id, creator_id, room_version, create_content) do
@@ -102,14 +112,4 @@ defmodule RadioBeam.Room.Utils do
 
   defp membership_event_content(membership, reason) when is_binary(reason),
     do: %{"membership" => to_string(membership), "reason" => reason}
-
-  defp state_event(room_id, type, sender_id, content, state_key \\ "") do
-    %{
-      "content" => content,
-      "room_id" => room_id,
-      "sender" => sender_id,
-      "state_key" => state_key,
-      "type" => type
-    }
-  end
 end

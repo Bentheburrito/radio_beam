@@ -15,8 +15,13 @@ defmodule RadioBeamWeb.Plugs.Authenticate do
     with %Device{expires_at: expires_at} = device <- get_device(conn, access_token),
          :not_expired <- verify_not_expired(conn, expires_at) do
       case Repo.get(RadioBeam.User, device.user_id) do
-        {:ok, nil} -> raise "The associated user for the authenticated device does not exist"
-        {:ok, user} -> assign(conn, :user, user)
+        {:ok, nil} ->
+          raise "The associated user for the authenticated device does not exist"
+
+        {:ok, user} ->
+          conn
+          |> assign(:user, user)
+          |> assign(:device_id, device.id)
       end
     end
   end
