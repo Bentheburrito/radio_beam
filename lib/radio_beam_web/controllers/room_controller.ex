@@ -10,6 +10,7 @@ defmodule RadioBeamWeb.RoomController do
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :create, []}] when action == :create
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :invite, []}] when action == :invite
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :join, []}] when action == :join
+  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :send, :params}] when action == :send
 
   def create(conn, _params) do
     %User{} = creator = conn.assigns.user
@@ -68,7 +69,7 @@ defmodule RadioBeamWeb.RoomController do
     invitee_id = to_string(Map.fetch!(request, "user_id"))
 
     case Room.invite(room_id, inviter.id, invitee_id, request["reason"]) do
-      :ok ->
+      {:ok, _event_id} ->
         json(conn, %{})
 
       {:error, :unauthorized} ->
@@ -114,7 +115,7 @@ defmodule RadioBeamWeb.RoomController do
     request = conn.assigns.request
 
     case Room.join(room_id, joiner.id, request["reason"]) do
-      :ok ->
+      {:ok, _event_id} ->
         json(conn, %{room_id: room_id})
 
       {:error, :unauthorized} ->
@@ -132,5 +133,29 @@ defmodule RadioBeamWeb.RoomController do
         |> put_status(500)
         |> json(Errors.unknown("An internal error occurred. Please try again"))
     end
+  end
+
+  def send(conn, %{"room_id" => room_id, "event_type" => event_type, "transaction_id" => txn_id}) do
+    %User{} = sender = conn.assigns.user
+    request = conn.assigns.request
+
+    with {:ok, event_id} <- Room.send(room_id, sender.id, event_type, request) do
+      json(conn, %{event_id: event_id})
+    else
+      {:error, error} -> handle_room_call_error(conn, error)
+    end
+  end
+
+  defp handle_room_call_error(conn, error) do
+    {status, error_body} =
+      case error do
+        :unauthorized -> {403, Errors.forbidden("You do not have permission to perform that action")}
+        :room_does_not_exist -> {404, Errors.not_found("Room not found")}
+        :internal -> {500, Errors.unknown("An internal error occurred. Please try again")}
+      end
+
+    conn
+    |> put_status(status)
+    |> json(error_body)
   end
 end

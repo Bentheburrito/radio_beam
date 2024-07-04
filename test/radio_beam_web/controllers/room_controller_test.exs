@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.RoomControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.RoomRegistry
   alias RadioBeam.Device
   alias RadioBeam.Repo
@@ -296,7 +297,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       Repo.insert(creator)
 
       {:ok, room_id} = Room.create("5", creator, %{}, preset: :private_chat)
-      :ok = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
@@ -357,6 +358,59 @@ defmodule RadioBeamWeb.RoomControllerTest do
         })
 
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+  end
+
+  describe "send/2" do
+    setup %{conn: conn} do
+      {:ok, user} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "can send a message event to a room if authorized", %{conn: conn, user: creator} do
+      {:ok, room_id} = Room.create("5", creator)
+
+      content = %{"msgtype" => "m.text", "body" => "This is a test message"}
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/12345", content)
+
+      assert %{"event_id" => "!" <> _} = json_response(conn, 200)
+    end
+
+    test "rejects a message event if user is not in the room", %{conn: conn} do
+      {:ok, creator} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(creator)
+      {:ok, room_id} = Room.create("5", creator)
+
+      content = %{"msgtype" => "m.text", "body" => "This is another test message"}
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/22345", content)
+
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+
+    test "rejects a message event if user does not have perms", %{conn: conn, user: user} do
+      {:ok, creator} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(creator)
+      {:ok, room_id} = Room.create("5", creator, %{}, power_levels: %{"events" => %{"m.room.message" => 80}})
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      content = %{"msgtype" => "m.text", "body" => "This message should be rejected"}
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/32345", content)
+
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
     end
   end
 end

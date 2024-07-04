@@ -20,9 +20,9 @@ defmodule RadioBeam.Room.TimelineTest do
     test "successfully syncs all events in a newly created room", %{creator: creator, user: user} do
       {:ok, room_id1} = Room.create("5", creator)
       {:ok, room_id2} = Room.create("5", creator, %{}, name: "The Chatroom")
-      :ok = Room.invite(room_id1, creator.id, user.id)
-      :ok = Room.invite(room_id2, creator.id, user.id)
-      :ok = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
 
       assert %{
                rooms: %{
@@ -60,9 +60,9 @@ defmodule RadioBeam.Room.TimelineTest do
     test "successfully syncs all events up to n", %{creator: creator, user: user} do
       {:ok, room_id1} = Room.create("5", creator)
       {:ok, room_id2} = Room.create("5", creator)
-      :ok = Room.invite(room_id1, creator.id, user.id)
-      :ok = Room.invite(room_id2, creator.id, user.id)
-      :ok = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
 
       filter = %{"room" => %{"timeline" => %{"limit" => 5}}}
 
@@ -109,8 +109,8 @@ defmodule RadioBeam.Room.TimelineTest do
       # ---
 
       {:ok, room_id1} = Room.create("5", creator)
-      :ok = Room.invite(room_id1, creator.id, user.id)
-      :ok = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
 
       assert %{
                rooms: %{
@@ -147,7 +147,7 @@ defmodule RadioBeam.Room.TimelineTest do
       # ---
 
       {:ok, room_id2} = Room.create("5", creator, %{}, name: "Notes")
-      :ok = Room.invite(room_id2, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
 
       assert %{
                rooms: %{
@@ -169,8 +169,8 @@ defmodule RadioBeam.Room.TimelineTest do
 
       {:ok, rando} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
       {:ok, %{id: rando_id}} = Repo.insert(rando)
-      :ok = Room.invite(room_id1, creator.id, rando_id)
-      :ok = Room.join(room_id1, rando_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, rando_id)
+      {:ok, _event_id} = Room.join(room_id1, rando_id)
 
       assert %{
                rooms: %{join: %{^room_id1 => %{state: state, timeline: timeline}}, invite: invite_map},
@@ -201,9 +201,9 @@ defmodule RadioBeam.Room.TimelineTest do
 
       # ---
 
-      :ok = Room.set_name(room_id1, creator.id, "should be able to see this")
-      :ok = Room.leave(room_id1, user.id, "byeeeeeeeeeeeeeee")
-      :ok = Room.set_name(room_id1, creator.id, "alright user is gone let's party!!!!!!!!")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "should be able to see this")
+      {:ok, _event_id} = Room.leave(room_id1, user.id, "byeeeeeeeeeeeeeee")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "alright user is gone let's party!!!!!!!!")
 
       filter = %{"room" => %{"include_leave" => true}}
 
@@ -242,8 +242,8 @@ defmodule RadioBeam.Room.TimelineTest do
 
     test "successfully syncs, responding with a partial timeline when necessary", %{creator: creator, user: user} do
       {:ok, room_id1} = Room.create("5", creator)
-      :ok = Room.invite(room_id1, creator.id, user.id)
-      :ok = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
 
       assert %{
                rooms: %{
@@ -279,9 +279,9 @@ defmodule RadioBeam.Room.TimelineTest do
 
       # --- 
 
-      :ok = Room.set_name(room_id1, creator.id, "Name update outside of window")
-      :ok = Room.set_name(room_id1, creator.id, "First name update")
-      :ok = Room.set_name(room_id1, creator.id, "Second name update")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "Name update outside of window")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "First name update")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "Second name update")
 
       filter = %{"room" => %{"timeline" => %{"limit" => 2}}}
 
@@ -329,15 +329,15 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, room_id2} = Room.create("5", creator, %{}, name: "General", topic: "whatever you wanna talk about")
       {:ok, room_id3} = Room.create("5", creator, %{}, name: "Media & Photos")
 
-      :ok = Room.invite(room_id1, creator.id, user.id)
-      :ok = Room.invite(room_id2, creator.id, user.id)
-      :ok = Room.invite(room_id3, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id3, creator.id, user.id)
 
-      :ok = Room.join(room_id1, user.id)
-      :ok = Room.join(room_id2, user.id)
-      :ok = Room.join(room_id3, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.join(room_id2, user.id)
+      {:ok, _event_id} = Room.join(room_id3, user.id)
 
-      :ok = Room.set_name(room_id2, creator.id, "General Chat")
+      {:ok, _event_id} = Room.set_name(room_id2, creator.id, "General Chat")
 
       event_filter = %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}
       filter = %{"room" => %{"timeline" => event_filter, "state" => event_filter}}

@@ -38,10 +38,15 @@ defmodule RadioBeamWeb.FilterControllerTest do
       assert %{"filter_id" => filter_id} = json_response(conn, 200)
 
       assert {:ok, %{user_id: ^user_id, definition: definition}} = Filter.get(filter_id)
-      assert req_body = definition
+
+      assert %{
+               "event_fields" => ["type", "content", "sender"],
+               "event_format" => "client",
+               "room" => %{"timeline" => %{"not_senders" => ["@spam:localhost"]}}
+             } = definition
     end
 
-    test "cannot put a filter under another user", %{conn: conn, user: user} do
+    test "cannot put a filter under another user", %{conn: conn} do
       req_body = %{
         "event_fields" => ["type", "content", "sender"],
         "event_format" => "client",
@@ -72,7 +77,7 @@ defmodule RadioBeamWeb.FilterControllerTest do
       assert %{"room" => %{"timeline" => %{"not_senders" => ["@spam:localhost"]}}} = json_response(conn, 200)
     end
 
-    test "cannot get another user's filter", %{conn: conn, user: %{id: user_id}, filter_id: filter_id} do
+    test "cannot get another user's filter", %{conn: conn, filter_id: filter_id} do
       conn = get(conn, ~p"/_matrix/client/v3/user/@whenami:localhost/filter/#{filter_id}")
 
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)

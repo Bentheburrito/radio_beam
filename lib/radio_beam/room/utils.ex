@@ -6,8 +6,8 @@ defmodule RadioBeam.Room.Utils do
 
   def put_event_and_handle(room, event, context \\ "an") do
     case Ops.put_events(room, [event]) do
-      {:ok, room} ->
-        {:reply, :ok, room}
+      {:ok, %{latest_event_ids: [event_id]} = room} ->
+        {:reply, {:ok, event_id}, room}
 
       {:error, :unauthorized} = e ->
         Logger.info("rejecting a(n) #{context} event for being unauthorized")
@@ -17,6 +17,10 @@ defmodule RadioBeam.Room.Utils do
         Logger.error("an error occurred trying to put a(n) #{context} event: #{inspect(error)}")
         {:reply, {:error, :internal}, room}
     end
+  end
+
+  def message_event(room_id, sender_id, type, content) do
+    %{"type" => type, "room_id" => room_id, "sender" => sender_id, "content" => content}
   end
 
   @membership_values [:join, :invite, :leave, :kick, :ban]

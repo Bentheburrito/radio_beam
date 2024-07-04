@@ -11,7 +11,7 @@ defmodule RadioBeamWeb.FilterController do
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {FilterSchema, :filter, []}] when action == :put
 
   def put(%{assigns: %{user: %{id: user_id}}} = conn, %{"user_id" => user_id}) do
-    request = conn.assigns.request
+    request = Map.delete(conn.assigns.request, "user_id")
 
     case Filter.put(user_id, request) do
       {:ok, filter_id} ->

@@ -1,5 +1,6 @@
 defmodule RadioBeamWeb.Schemas.Room do
   alias Polyjuice.Util.Schema
+  alias RadioBeamWeb.Schemas.InstantMessaging
 
   def invite do
     %{"user_id" => &Schema.user_id/1, "reason" => optional(:string)}
@@ -36,6 +37,10 @@ defmodule RadioBeamWeb.Schemas.Room do
       "visibility" => [Schema.enum(%{"private" => :private, "public" => :public}), default: :private]
     }
   end
+
+  # add event-specific content schema enforcement here
+  def send(%{"event_type" => "m.room.message"}), do: &InstantMessaging.message_content/1
+  def send(_params), do: %{}
 
   defp content_schema() do
     %{

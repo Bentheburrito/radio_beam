@@ -189,27 +189,36 @@ defmodule RadioBeam.Room do
   end
 
   @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t()) ::
-          :ok | {:error, :unauthorized | :room_does_not_exist | :internal}
+          {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def invite(room_id, inviter_id, invitee_id, reason \\ nil) do
     call_if_alive(room_id, {:invite, inviter_id, invitee_id, reason})
   end
 
   @spec join(room_id :: String.t(), joiner_id :: String.t(), reason :: String.t()) ::
-          :ok | {:error, :unauthorized | :room_does_not_exist | :internal}
+          {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def join(room_id, joiner_id, reason \\ nil) do
     call_if_alive(room_id, {:join, joiner_id, reason})
   end
 
   @spec leave(room_id :: String.t(), user_id :: String.t(), reason :: String.t()) ::
-          :ok | {:error, :unauthorized | :room_does_not_exist | :internal}
+          {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def leave(room_id, user_id, reason \\ nil) do
     call_if_alive(room_id, {:leave, user_id, reason})
   end
 
   @spec set_name(room_id :: String.t(), user_id :: String.t(), name :: String.t()) ::
-          :ok | {:error, :unauthorized | :room_does_not_exist | :internal}
+          {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def set_name(room_id, user_id, name) do
     call_if_alive(room_id, {:set_name, user_id, name})
+  end
+
+  @doc "Sends a Message Event to the room"
+  @spec send(room_id :: String.t(), user_id :: String.t(), type :: String.t(), content :: String.t()) ::
+          {:ok, event_id :: String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
+  def send(room_id, user_id, type, content) do
+    event = Utils.message_event(room_id, user_id, type, content)
+
+    call_if_alive(room_id, {:put_message_event, event})
   end
 
   ### IMPL ###
@@ -240,18 +249,7 @@ defmodule RadioBeam.Room do
   def handle_call({:invite, inviter_id, invitee_id, reason}, _from, %Room{} = room) do
     event = Utils.membership_event(room.id, inviter_id, invitee_id, :invite, reason)
 
-    case Ops.put_events(room, [event]) do
-      {:ok, room} ->
-        {:reply, :ok, room}
-
-      {:error, :unauthorized} = e ->
-        Logger.info("rejecting a `Room.invite/3` event for being unauthorized")
-        {:reply, e, room}
-
-      {:error, error} ->
-        Logger.error("an error occurred trying to put a `Room.invite/3` event: #{inspect(error)}")
-        {:reply, {:error, :internal}, room}
-    end
+    Utils.put_event_and_handle(room, event, "invite")
   end
 
   @impl GenServer
@@ -275,9 +273,12 @@ defmodule RadioBeam.Room do
     Utils.put_event_and_handle(room, event, "name")
   end
 
-  defp get(id) do
-    Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
+  @impl GenServer
+  def handle_call({:put_message_event, event}, _from, %Room{} = room) do
+    Utils.put_event_and_handle(room, event, "message (#{event["type"]})")
   end
+
+  defp get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
 
   defp call_if_alive(room_id, message) do
     GenServer.call(via(room_id), message)

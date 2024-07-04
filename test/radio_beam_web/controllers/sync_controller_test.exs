@@ -38,7 +38,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       # ---
 
       {:ok, room_id1} = Room.create("5", creator, %{}, name: "name one")
-      :ok = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
 
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}", %{})
 
@@ -61,8 +61,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       # ---
 
-      :ok = Room.join(room_id1, user.id)
-      :ok = Room.set_name(room_id1, creator.id, "yo")
+      {:ok, _event_id} = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "yo")
 
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}", %{})
 

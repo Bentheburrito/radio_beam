@@ -21,7 +21,11 @@ defmodule RadioBeamWeb.Plugs.EnforceSchema do
   def init(default), do: default
 
   def call(%Plug.Conn{} = conn, get_schema: {m, f, a}) do
-    schema = apply(m, f, a)
+    schema =
+      case a do
+        args when is_list(args) -> apply(m, f, a)
+        :params -> apply(m, f, [conn.params])
+      end
 
     case Schema.match(conn.params, schema) do
       {:ok, parsed} ->
