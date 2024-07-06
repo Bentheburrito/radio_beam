@@ -5,8 +5,10 @@ defmodule RadioBeam.Room.Ops do
   requiring atomic DB actions. Use functions in the `Room` module instead.
   """
 
+  alias Phoenix.PubSub
   alias Polyjuice.Util.RoomVersion
   alias RadioBeam.PDU
+  alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
   alias RadioBeam.RoomAlias
 
@@ -25,6 +27,7 @@ defmodule RadioBeam.Room.Ops do
 
       with true <- authorized?(room, event, auth_events),
            {:ok, %Room{} = room, %PDU{} = pdu} <- update_room(room, event, auth_events) do
+        PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_update, room.id})
         {:cont, {room, [pdu | pdus]}}
       else
         false ->
@@ -123,7 +126,7 @@ defmodule RadioBeam.Room.Ops do
         room
         |> Map.update!(:depth, &(&1 + 1))
         |> Map.replace!(:latest_event_ids, [pdu.event_id])
-        |> update_room_state(Map.put(event, "event_id", pdu.event_id))
+        |> update_room_state(PDU.to_event(pdu, :strings))
 
       {:ok, room, pdu}
     end

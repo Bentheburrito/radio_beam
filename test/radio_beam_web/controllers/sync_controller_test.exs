@@ -68,7 +68,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       assert %{
                "rooms" => %{
-                 "join" => %{^room_id1 => %{"state" => state, "timeline" => timeline}},
+                 "join" => %{^room_id1 => %{"state" => [], "timeline" => timeline}},
                  "invite" => invite_map,
                  "leave" => leave_map
                },
@@ -77,8 +77,6 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
-
-      assert 8 = length(state)
 
       user_id = user.id
 

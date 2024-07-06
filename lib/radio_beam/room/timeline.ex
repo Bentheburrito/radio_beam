@@ -6,8 +6,10 @@ defmodule RadioBeam.Room.Timeline do
 
   require Logger
 
+  alias Phoenix.PubSub
   alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.PDU
+  alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
   alias RadioBeam.SyncBatch
 
@@ -16,7 +18,6 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   def sync(room_ids, user_id, opts \\ []) do
-    # TOIMPL: timeout opt
     {rooms, latest_ids} = sync_with_room_ids(room_ids, user_id, opts)
     {:ok, next_batch} = SyncBatch.put(latest_ids)
 
@@ -49,14 +50,18 @@ defmodule RadioBeam.Room.Timeline do
         "join" ->
           stop_at_any = Map.get(last_sync_event_map, room.id, [])
 
+          :ok = PubSub.subscribe(PS, PS.all_room_events(room_id))
+
           rooms =
-            case room_timeline_sync(room.id, user_id, room.latest_event_ids, stop_at_any, room.state, opts) do
+            case room_timeline_sync(room.id, user_id, room.latest_event_ids, stop_at_any, opts) do
               :no_update -> rooms
               room_update -> put_in(rooms, [:join, room_id], room_update)
             end
 
           {rooms, room.latest_event_ids ++ latest_ids}
 
+        # TODO: should the invite reflect changes to stripped state events that
+        # happened after the invite?
         "invite" when is_map_key(last_sync_event_map, room_id) ->
           {rooms, room.latest_event_ids ++ latest_ids}
 
@@ -77,7 +82,7 @@ defmodule RadioBeam.Room.Timeline do
           %PDU{} = pdu = Memento.transaction!(fn -> Memento.Query.read(PDU, user_leave_event_id) end)
 
           rooms =
-            case room_timeline_sync(room.id, user_id, [user_leave_event_id], stop_at_any, pdu.prev_state, opts) do
+            case room_timeline_sync(room.id, user_id, [user_leave_event_id], stop_at_any, opts) do
               :no_update -> rooms
               room_update -> put_in(rooms, [:leave, room_id], room_update)
             end
@@ -85,6 +90,33 @@ defmodule RadioBeam.Room.Timeline do
           {rooms, [pdu.event_id | latest_ids]}
       end
     end)
+    |> then(fn {rooms, latest_ids} ->
+      if Enum.all?(rooms, fn {_, map} -> map_size(map) == 0 end) do
+        timeout = Keyword.get(opts, :timeout, 0)
+
+        case await_next_event(timeout) do
+          :timeout ->
+            {rooms, latest_ids}
+
+          {:update, room_id, rem_timeout} ->
+            sync_with_room_ids([room_id], user_id, Keyword.put(opts, :timeout, rem_timeout))
+        end
+      else
+        {rooms, latest_ids}
+      end
+    end)
+  end
+
+  defp await_next_event(timeout) do
+    time_before_wait = :os.system_time(:millisecond)
+
+    receive do
+      {:room_update, room_id} ->
+        new_timeout = max(0, timeout - (:os.system_time(:millisecond) - time_before_wait))
+        {:update, room_id, new_timeout}
+    after
+      timeout -> :timeout
+    end
   end
 
   defp parse_since_token(:latest), do: %{}
@@ -106,8 +138,8 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  @spec room_timeline_sync(String.t(), String.t(), list(), list(), map(), keyword()) :: map() | :no_update
-  defp room_timeline_sync(room_id, user_id, event_ids, stop_at_any, latest_state, opts) do
+  @spec room_timeline_sync(String.t(), String.t(), list(), list(), keyword()) :: map() | :no_update
+  defp room_timeline_sync(room_id, user_id, event_ids, stop_at_any, opts) do
     full_state? = Keyword.get(opts, :full_state?, false)
     filter = Keyword.get(opts, :filter, %{})
 
@@ -119,20 +151,27 @@ defmodule RadioBeam.Room.Timeline do
     if is_nil(oldest_event) and not full_state? do
       :no_update
     else
+      state_delta =
+        if not Keyword.has_key?(opts, :since) or full_state? do
+          Map.values(oldest_event.prev_state)
+        else
+          state_delta(List.last(stop_at_any), oldest_event)
+        end
+
       # TODO: ideally filtering happens at the QLC level. This first pass also
       # makes it possible to return < n events, even when there are more new
       # events
       state_events =
-        apply_room_filter_to_events(
+        apply_filter_to_room_events(
           room_id,
-          Map.values((full_state? && latest_state) || oldest_event.prev_state),
+          state_delta,
           filter,
           "state",
           filter["room"]["state"]["limit"] || max_events(:state)
         )
 
       timeline_events =
-        apply_room_filter_to_events(
+        apply_filter_to_room_events(
           room_id,
           timeline.events,
           filter,
@@ -157,6 +196,28 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
+  defp state_delta(nil, timeline_start_event), do: Map.values(timeline_start_event.prev_state)
+
+  defp state_delta(last_sync_event_id, timeline_start_event) do
+    %{^last_sync_event_id => last_sync_event} = PDU.get([last_sync_event_id])
+
+    old_state =
+      if is_nil(last_sync_event) do
+        last_sync_event.prev_state
+      else
+        event = PDU.to_event(last_sync_event, :strings)
+        Map.put(last_sync_event.prev_state, {last_sync_event.type, last_sync_event.state_key}, event)
+      end
+
+    for {k, new_state_event} <- timeline_start_event.prev_state, reduce: [] do
+      acc ->
+        case Map.get(old_state, k) do
+          ^new_state_event -> acc
+          _old_event -> [new_state_event | acc]
+        end
+    end
+  end
+
   @stripped_state_keys [
     {"m.room.create", ""},
     {"m.room.name", ""},
@@ -171,15 +232,15 @@ defmodule RadioBeam.Room.Timeline do
     %{invite_state: %{events: state_events}}
   end
 
-  @spec apply_room_filter_to_events(String.t(), [PDU.t()], map(), String.t(), non_neg_integer()) :: [map()]
-  defp apply_room_filter_to_events(room_id, events, filter, filter_key, limit) do
+  @spec apply_filter_to_room_events(String.t(), [PDU.t()], map(), String.t(), non_neg_integer()) :: [map()]
+  defp apply_filter_to_room_events(room_id, events, filter, filter_key, limit) do
     not_rooms = filter["room"][filter_key]["not_rooms"]
     rooms = filter["room"][filter_key]["rooms"]
 
     cond do
       is_list(not_rooms) and room_id in not_rooms -> []
       is_list(rooms) and room_id not in rooms -> []
-      :else -> events |> Stream.map(&Filter.apply(filter, &1)) |> Enum.take(limit)
+      :else -> events |> Stream.map(&Filter.apply(filter, &1)) |> Stream.reject(&is_nil(&1)) |> Enum.take(limit)
     end
   end
 

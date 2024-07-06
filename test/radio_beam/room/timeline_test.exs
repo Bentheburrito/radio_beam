@@ -1,5 +1,5 @@
 defmodule RadioBeam.Room.TimelineTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.Repo
@@ -173,22 +173,12 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.join(room_id1, rando_id)
 
       assert %{
-               rooms: %{join: %{^room_id1 => %{state: state, timeline: timeline}}, invite: invite_map},
+               rooms: %{join: %{^room_id1 => %{state: [], timeline: timeline}}, invite: invite_map},
                next_batch: since
              } =
                Timeline.sync([room_id1, room_id2], user.id, since: since)
 
       assert 0 = map_size(invite_map)
-      assert 7 = length(state)
-      assert Enum.any?(state, &match?(%{"type" => "m.room.create"}, &1))
-
-      assert Enum.any?(
-               state,
-               &match?(
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "join"}},
-                 &1
-               )
-             )
 
       assert %{
                limited: false,
@@ -291,25 +281,14 @@ defmodule RadioBeam.Room.TimelineTest do
                  invite: invite_map,
                  leave: leave_map
                },
-               next_batch: _since
+               next_batch: since
              } =
                Timeline.sync([room_id1], user.id, since: since, filter: filter)
 
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
 
-      assert 8 = length(state)
-      assert Enum.any?(state, &match?(%{"type" => "m.room.create"}, &1))
-
-      assert Enum.any?(
-               state,
-               &match?(
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "join"}},
-                 &1
-               )
-             )
-
-      assert %{"event_id" => name_event_id} = Enum.find(state, &(&1["type"] == "m.room.name"))
+      assert [%{"event_id" => name_event_id}] = state
 
       assert %{
                limited: true,
@@ -318,6 +297,46 @@ defmodule RadioBeam.Room.TimelineTest do
                  %{"type" => "m.room.name", "content" => %{"name" => "Second name update"}}
                ],
                prev_batch: ^name_event_id
+             } =
+               timeline
+
+      # ---
+
+      Room.set_name(room_id1, creator.id, "THIS SHOULD SHOW UP IN FULL STATE ONLY")
+      Room.send(room_id1, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello? Is anyone there?"})
+      Room.send(room_id1, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
+
+      assert %{
+               rooms: %{join: %{^room_id1 => %{state: [%{"type" => "m.room.name"}], timeline: timeline}}},
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], user.id, since: since, filter: filter)
+
+      assert %{
+               limited: true,
+               events: [
+                 %{"type" => "m.room.message", "content" => %{"body" => "Hello? Is anyone there?"}},
+                 %{"type" => "m.room.message", "content" => %{"body" => "HE CAN'T HIT"}}
+               ],
+               prev_batch: _
+             } =
+               timeline
+
+      assert %{
+               rooms: %{join: %{^room_id1 => %{state: state, timeline: timeline}}},
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], user.id, since: since, filter: filter, full_state?: true)
+
+      assert 8 = length(state)
+
+      assert %{
+               limited: true,
+               events: [
+                 %{"type" => "m.room.message", "content" => %{"body" => "Hello? Is anyone there?"}},
+                 %{"type" => "m.room.message", "content" => %{"body" => "HE CAN'T HIT"}}
+               ],
+               prev_batch: _
              } =
                timeline
     end
@@ -366,5 +385,120 @@ defmodule RadioBeam.Room.TimelineTest do
     end
   end
 
-  # TODO: full_state and timeout tests
+  describe "sync/4 with a timeout" do
+    test "will wait for the next room event", %{creator: creator, user: user} do
+      {:ok, room_id} = Room.create("5", creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id => %{state: [], timeline: timeline}}
+               },
+               next_batch: since
+             } =
+               Timeline.sync([room_id], user.id)
+
+      user_id = user.id
+
+      assert %{
+               limited: false,
+               events: [
+                 %{"type" => "m.room.create"},
+                 %{"type" => "m.room.member"},
+                 %{"type" => "m.room.power_levels"},
+                 %{"type" => "m.room.join_rules"},
+                 %{"type" => "m.room.history_visibility"},
+                 %{"type" => "m.room.guest_access"},
+                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "invite"}},
+                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "join"}}
+               ]
+             } =
+               timeline
+
+      time_before_wait = :os.system_time(:millisecond)
+
+      sync_task =
+        Task.async(fn -> Timeline.sync([room_id], user.id, timeout: 1500, since: since) end)
+
+      Process.sleep(750)
+      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id => %{state: [], timeline: timeline}}
+               }
+             } = Task.await(sync_task)
+
+      assert %{
+               limited: false,
+               events: [%{"type" => "m.room.message"}]
+             } =
+               timeline
+
+      assert :os.system_time(:millisecond) - time_before_wait >= 750
+    end
+
+    test "will wait for the next room event that matches the filter", %{creator: creator, user: user} do
+      {:ok, room_id} = Room.create("5", creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id => %{state: [], timeline: _timeline}}
+               },
+               next_batch: since
+             } =
+               Timeline.sync([room_id], user.id)
+
+      time_before_wait = :os.system_time(:millisecond)
+
+      event_filter = %{"not_senders" => [creator.id]}
+      filter = %{"room" => %{"timeline" => event_filter, "state" => event_filter}}
+
+      sync_task =
+        Task.async(fn -> Timeline.sync([room_id], user.id, filter: filter, timeout: 1000, since: since) end)
+
+      Process.sleep(100)
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+
+      assert is_nil(Task.yield(sync_task, 0))
+
+      Process.sleep(100)
+      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id => %{state: [], timeline: timeline}}
+               }
+             } = Task.await(sync_task)
+
+      assert %{
+               limited: false,
+               events: [%{"type" => "m.room.message"}]
+             } =
+               timeline
+
+      assert :os.system_time(:millisecond) - time_before_wait >= 200
+    end
+
+    test "will timeout", %{creator: creator, user: user} do
+      {:ok, room_id} = Room.create("5", creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id => %{state: [], timeline: _timeline}}
+               },
+               next_batch: since
+             } =
+               Timeline.sync([room_id], user.id)
+
+      %{rooms: rooms} = Timeline.sync([room_id], user.id, timeout: 300, since: since)
+
+      for {_, room_map} <- rooms, do: assert(map_size(room_map) == 0)
+    end
+  end
 end

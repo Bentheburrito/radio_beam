@@ -3,7 +3,7 @@ defmodule RadioBeam.Transaction do
   Transactions are used to make sure Matrix requests are idempotent.
 
   TODO: This simple GenServer should later be replaced with something that 
-  scales better
+  scales better. For room endpoints, txn_id could be passed to `send/4`
   """
 
   use GenServer

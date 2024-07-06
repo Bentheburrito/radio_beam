@@ -52,7 +52,7 @@ defmodule RadioBeam.PDU do
       )
 
     {%__MODULE__{}, Map.new(@types)}
-    |> cast(params, @attrs)
+    |> cast(params, @attrs, empty_values: [])
     |> validate_required(@required)
     |> apply_action(:update)
   end
@@ -74,7 +74,13 @@ defmodule RadioBeam.PDU do
   @doc """
   Returns a PDU in the format expected by the Client-Server API
   """
-  def to_event(%__MODULE__{} = pdu) do
+  def to_event(pdu, keys \\ :atoms)
+
+  def to_event(%__MODULE__{} = pdu, :strings) do
+    pdu |> to_event() |> Map.new(fn {k, v} -> {to_string(k), v} end)
+  end
+
+  def to_event(%__MODULE__{} = pdu, :atoms) do
     case Map.take(pdu, @cs_event_keys) do
       %{state_key: nil} = event -> Map.delete(event, :state_key)
       event -> event
