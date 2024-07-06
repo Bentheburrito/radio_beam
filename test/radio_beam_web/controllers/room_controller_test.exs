@@ -186,7 +186,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       Repo.insert(device)
 
-      {:ok, room_id} = Room.create("5", user, %{}, power_levels: %{"invite" => 5})
+      {:ok, room_id} = Room.create(user, power_levels: %{"invite" => 5})
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user, room_id: room_id}
     end
@@ -210,7 +210,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       user_id = "@aintevenhere:localhost"
       {:ok, user} = User.new(user_id, "4STR@NGpwD")
       Repo.insert(user)
-      {:ok, room_id} = Room.create("5", user)
+      {:ok, room_id} = Room.create(user)
 
       invitee_id = "@lmao:localhost"
 
@@ -241,7 +241,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       Repo.insert(device)
 
-      {:ok, room_id} = Room.create("5", user, %{}, power_levels: %{"invite" => 101})
+      {:ok, room_id} = Room.create(user, power_levels: %{"invite" => 101})
 
       invitee_id = "@lmao:localhost"
 
@@ -296,7 +296,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
       Repo.insert(creator)
 
-      {:ok, room_id} = Room.create("5", creator, %{}, preset: :private_chat)
+      {:ok, room_id} = Room.create(creator, preset: :private_chat)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
 
       conn =
@@ -311,7 +311,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
       Repo.insert(creator)
 
-      {:ok, room_id} = Room.create("5", creator, %{}, preset: :private_chat)
+      {:ok, room_id} = Room.create(creator, preset: :private_chat)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
@@ -324,7 +324,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
       Repo.insert(creator)
 
-      {:ok, room_id} = Room.create("5", creator, %{}, preset: :public_chat)
+      {:ok, room_id} = Room.create(creator, preset: :public_chat)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
@@ -336,7 +336,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
       Repo.insert(creator)
 
-      {:ok, room_id} = Room.create("5", creator, %{}, preset: :public_chat, alias: "glorp")
+      {:ok, room_id} = Room.create(creator, preset: :public_chat, alias: "glorp")
 
       conn =
         post(conn, ~p"/_matrix/client/v3/join/#{URI.encode("#glorp:#{RadioBeam.server_name()}")}", %{
@@ -350,7 +350,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, creator} = User.new("@calicocutpantsenjoyer:#{RadioBeam.server_name()}", "4STR@NGpwD")
       Repo.insert(creator)
 
-      {:ok, _room_id} = Room.create("5", creator, %{}, preset: :public_chat)
+      {:ok, _room_id} = Room.create(creator, preset: :public_chat)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/join/#{URI.encode("#glerp:#{RadioBeam.server_name()}")}", %{
@@ -381,7 +381,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
 
     test "can send a message event to a room if authorized", %{conn: conn, user: creator} do
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
 
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
       conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/12345", content)
@@ -392,7 +392,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "rejects a message event if user is not in the room", %{conn: conn} do
       {:ok, creator} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
       Repo.insert(creator)
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
 
       content = %{"msgtype" => "m.text", "body" => "This is another test message"}
       conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/22345", content)
@@ -403,7 +403,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "rejects a message event if user does not have perms", %{conn: conn, user: user} do
       {:ok, creator} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
       Repo.insert(creator)
-      {:ok, room_id} = Room.create("5", creator, %{}, power_levels: %{"events" => %{"m.room.message" => 80}})
+      {:ok, room_id} = Room.create(creator, power_levels: %{"events" => %{"m.room.message" => 80}})
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
 

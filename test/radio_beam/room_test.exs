@@ -24,7 +24,7 @@ defmodule RadioBeam.RoomTest do
 
     test "successfully creates a minimal room", %{creator: creator} do
       for room_version <- @room_versions_to_test do
-        assert {:ok, room_id} = Room.create(room_version, creator)
+        assert {:ok, room_id} = Room.create(creator)
         assert [{pid, _}] = Registry.lookup(RoomRegistry, room_id)
         assert is_pid(pid)
 
@@ -43,6 +43,7 @@ defmodule RadioBeam.RoomTest do
         # override the join_rules of the preset, but name should not affect anything
         addl_state_events: [join_rule_event(), name_event()],
         alias: "computer",
+        content: %{"m.federate" => false},
         name: "The Computer Room",
         topic: "this one's for the nerds",
         direct?: false,
@@ -52,10 +53,8 @@ defmodule RadioBeam.RoomTest do
         invite_3pid: []
       ]
 
-      create_content = %{"m.federate" => false}
-
       for room_version <- @room_versions_to_test do
-        assert {:ok, room_id} = Room.create(room_version, creator, create_content, opts)
+        assert {:ok, room_id} = Room.create(creator, opts)
         assert [{pid, _}] = Registry.lookup(RoomRegistry, room_id)
         assert is_pid(pid)
 
@@ -97,16 +96,16 @@ defmodule RadioBeam.RoomTest do
     test "lists a user's room appropriately", %{user1: user1, user2: user2} do
       assert [] = Room.joined(user1.id)
 
-      assert {:ok, room_id} = Room.create("5", user1)
+      assert {:ok, room_id} = Room.create(user1)
       assert [^room_id] = Room.joined(user1.id)
 
-      assert {:ok, _other_users_room_id} = Room.create("5", user2)
+      assert {:ok, _other_users_room_id} = Room.create(user2)
       assert [^room_id] = Room.joined(user1.id)
 
-      assert {:ok, _other_users_room_id} = Room.create("5", user2, %{}, invite: [user1.id])
+      assert {:ok, _other_users_room_id} = Room.create(user2, invite: [user1.id])
       assert [^room_id] = Room.joined(user1.id)
 
-      assert {:ok, room_id2} = Room.create("5", user1)
+      assert {:ok, room_id2} = Room.create(user1)
       assert Enum.sort([room_id, room_id2]) == Enum.sort(Room.joined(user1.id))
     end
   end
@@ -122,7 +121,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "successfully invites a user", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create("5", user1)
+      {:ok, room_id} = Room.create(user1)
 
       {:ok, %Room{state: state}} = Repo.get(Room, room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
@@ -134,7 +133,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "fails with :unauthorized when the inviter does not have a high enough PL", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create("5", user1, %{}, power_levels: %{"invite" => 101})
+      {:ok, room_id} = Room.create(user1, power_levels: %{"invite" => 101})
 
       {:ok, %Room{state: state}} = Repo.get(Room, room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
@@ -154,7 +153,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "successfully joins the room", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create("5", user1)
+      {:ok, room_id} = Room.create(user1)
 
       {:ok, %Room{state: state}} = Repo.get(Room, room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
@@ -168,7 +167,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "fails with :unauthorized when the joiner has not been invited", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create("5", user1)
+      {:ok, room_id} = Room.create(user1)
 
       {:ok, %Room{state: state}} = Repo.get(Room, room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
@@ -188,7 +187,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "creator can put a message in the room", %{user1: %{id: creator_id} = creator} do
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
 
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
       assert {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
@@ -197,7 +196,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "member can put a message in the room if has perms", %{user1: creator, user2: %{id: user_id} = user} do
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
       assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       assert {:ok, _event_id} = Room.join(room_id, user.id)
 
@@ -208,7 +207,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "member can't put a message in the room without perms", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create("5", creator, %{}, power_levels: %{"events" => %{"m.room.message" => 80}})
+      {:ok, room_id} = Room.create(creator, power_levels: %{"events" => %{"m.room.message" => 80}})
       assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       assert {:ok, _event_id} = Room.join(room_id, user.id)
 
@@ -220,7 +219,7 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "member can't put a message in the room without first joining", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
       assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
 
       {:ok, %{latest_event_ids: [event_id]}} = Repo.get(Room, room_id)

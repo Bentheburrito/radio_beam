@@ -16,20 +16,19 @@ defmodule RadioBeamWeb.RoomController do
     %User{} = creator = conn.assigns.user
     request = conn.assigns.request
 
-    {%{"room_version" => room_version, "creation_content" => create_content}, params} =
-      request |> Map.put_new("creation_content", %{}) |> Map.split(["room_version", "creation_content"])
-
     opts =
-      Enum.reduce(params, [], fn
+      Enum.reduce(request, [], fn
         {"initial_state", state_events}, acc -> Keyword.put(acc, :addl_state_events, state_events)
         {"is_direct", direct?}, acc -> Keyword.put(acc, :direct?, direct?)
         {"power_level_content_override", pls}, acc -> Keyword.put(acc, :power_levels, pls)
         {"room_alias_name", room_alias}, acc -> Keyword.put(acc, :alias, room_alias.opaque_id)
+        {"creation_content", content}, acc -> Keyword.put(acc, :content, content)
+        {"version", version}, acc -> Keyword.put(acc, :version, version)
         {"visibility", visibility}, acc -> Keyword.put(acc, :visibility, visibility)
         {key, value}, acc -> [{String.to_existing_atom(key), value} | acc]
       end)
 
-    case Room.create(room_version, creator, create_content, opts) do
+    case Room.create(creator, opts) do
       {:ok, room_id} ->
         json(conn, %{room_id: room_id})
 

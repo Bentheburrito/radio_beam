@@ -18,8 +18,8 @@ defmodule RadioBeam.Room.TimelineTest do
 
   describe "sync/4 performing an initial sync" do
     test "successfully syncs all events in a newly created room", %{creator: creator, user: user} do
-      {:ok, room_id1} = Room.create("5", creator)
-      {:ok, room_id2} = Room.create("5", creator, %{}, name: "The Chatroom")
+      {:ok, room_id1} = Room.create(creator)
+      {:ok, room_id2} = Room.create(creator, name: "The Chatroom")
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id1, user.id)
@@ -58,8 +58,8 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "successfully syncs all events up to n", %{creator: creator, user: user} do
-      {:ok, room_id1} = Room.create("5", creator)
-      {:ok, room_id2} = Room.create("5", creator)
+      {:ok, room_id1} = Room.create(creator)
+      {:ok, room_id2} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id1, user.id)
@@ -108,7 +108,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       # ---
 
-      {:ok, room_id1} = Room.create("5", creator)
+      {:ok, room_id1} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id1, user.id)
 
@@ -146,7 +146,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       # ---
 
-      {:ok, room_id2} = Room.create("5", creator, %{}, name: "Notes")
+      {:ok, room_id2} = Room.create(creator, name: "Notes")
       {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
 
       assert %{
@@ -231,7 +231,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "successfully syncs, responding with a partial timeline when necessary", %{creator: creator, user: user} do
-      {:ok, room_id1} = Room.create("5", creator)
+      {:ok, room_id1} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id1, user.id)
 
@@ -344,9 +344,9 @@ defmodule RadioBeam.Room.TimelineTest do
 
   describe "sync/4 with a filter" do
     test "applies rooms and not_rooms filters", %{creator: creator, user: user} do
-      {:ok, room_id1} = Room.create("5", creator, %{}, name: "Introductions")
-      {:ok, room_id2} = Room.create("5", creator, %{}, name: "General", topic: "whatever you wanna talk about")
-      {:ok, room_id3} = Room.create("5", creator, %{}, name: "Media & Photos")
+      {:ok, room_id1} = Room.create(creator, name: "Introductions")
+      {:ok, room_id2} = Room.create(creator, name: "General", topic: "whatever you wanna talk about")
+      {:ok, room_id3} = Room.create(creator, name: "Media & Photos")
 
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
@@ -387,7 +387,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
   describe "sync/4 with a timeout" do
     test "will wait for the next room event", %{creator: creator, user: user} do
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
 
@@ -440,7 +440,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "will wait for the next room event that matches the filter", %{creator: creator, user: user} do
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
 
@@ -484,7 +484,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "will timeout", %{creator: creator, user: user} do
-      {:ok, room_id} = Room.create("5", creator)
+      {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
 

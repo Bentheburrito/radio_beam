@@ -44,23 +44,27 @@ defmodule RadioBeam.Room do
           | {:preset, :private_chat | :trusted_private_chat | :public_chat}
           | {:addl_state_events, [map()]}
           | {:alias | :name | :topic, String.t()}
+          | {:content, map()}
           | {:invite | :invite_3pid, [String.t()]}
           | {:direct?, boolean()}
+          | {:version, String.t()}
           | {:visibility, :public | :private}
 
   @doc """
-  Create a new room with the given events. Returns `{:ok, room_id}` if the 
+  Create a new room with the given options. Returns `{:ok, room_id}` if the 
   room was successfully started.
-
-  TODO: should probably take each type of event as an individual parameter, e.g.
-  `create(create_event, power_level_event, …)`
   """
-  @spec create(String.t(), User.t(), map(), [create_opt()]) :: {:ok, String.t()} | {:error, any()}
-  def create(room_version, %User{} = creator, create_content \\ %{}, opts \\ []) do
+  @spec create(User.t(), [create_opt()]) :: {:ok, String.t()} | {:error, any()}
+  def create(%User{} = creator, opts \\ []) do
     server_name = RadioBeam.server_name()
     room_id = server_name |> RoomIdentifier.generate() |> to_string()
 
-    create_event = Utils.create_event(room_id, creator.id, room_version, create_content)
+    room_version =
+      Keyword.get_lazy(opts, :room_version, fn ->
+        Application.get_env(:radio_beam, :capabilities)[:"m.room_versions"][:default]
+      end)
+
+    create_event = Utils.create_event(room_id, creator.id, room_version, Keyword.get(opts, :content, %{}))
     creator_join_event = Utils.membership_event(room_id, creator.id, creator.id, :join)
     power_levels_event = Utils.power_levels_event(room_id, creator.id, Keyword.get(opts, :power_levels, %{}))
 
