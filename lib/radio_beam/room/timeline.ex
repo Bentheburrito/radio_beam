@@ -43,68 +43,72 @@ defmodule RadioBeam.Room.Timeline do
 
     filter
     |> Filter.apply_rooms(room_ids)
-    |> Enum.reduce(@init_rooms_acc, fn room_id, {rooms, latest_ids} ->
-      %Room{} = room = Memento.transaction!(fn -> Memento.Query.read(Room, room_id) end)
+    |> Enum.reduce(@init_rooms_acc, &build_room_sync(&1, user_id, last_sync_event_map, include_leave?, &2, opts))
+    |> await_if_no_updates(user_id, opts)
+  end
 
-      case get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) do
-        "join" ->
-          stop_at_any = Map.get(last_sync_event_map, room.id, [])
+  defp build_room_sync(room_id, user_id, last_sync_event_map, include_leave?, {rooms, latest_ids}, opts) do
+    %Room{} = room = Memento.transaction!(fn -> Memento.Query.read(Room, room_id) end)
 
-          :ok = PubSub.subscribe(PS, PS.all_room_events(room_id))
+    case get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) do
+      "join" ->
+        stop_at_any = Map.get(last_sync_event_map, room.id, [])
 
-          rooms =
-            case room_timeline_sync(room.id, user_id, room.latest_event_ids, stop_at_any, opts) do
-              :no_update -> rooms
-              room_update -> put_in(rooms, [:join, room_id], room_update)
-            end
+        :ok = PubSub.subscribe(PS, PS.all_room_events(room_id))
 
-          {rooms, room.latest_event_ids ++ latest_ids}
+        rooms =
+          case room_timeline_sync(room.id, user_id, room.latest_event_ids, stop_at_any, opts) do
+            :no_update -> rooms
+            room_update -> put_in(rooms, [:join, room_id], room_update)
+          end
 
-        # TODO: should the invite reflect changes to stripped state events that
-        # happened after the invite?
-        "invite" when is_map_key(last_sync_event_map, room_id) ->
-          {rooms, room.latest_event_ids ++ latest_ids}
+        {rooms, room.latest_event_ids ++ latest_ids}
 
-        "invite" ->
-          {put_in(rooms, [:invite, room_id], invited_room_sync(room)), room.latest_event_ids ++ latest_ids}
+      # TODO: should the invite reflect changes to stripped state events that
+      # happened after the invite?
+      "invite" when is_map_key(last_sync_event_map, room_id) ->
+        {rooms, room.latest_event_ids ++ latest_ids}
 
-        "knock" ->
-          Logger.info("TOIMPL: sync with knock rooms")
+      "invite" ->
+        {put_in(rooms, [:invite, room_id], invited_room_sync(room)), room.latest_event_ids ++ latest_ids}
+
+      "knock" ->
+        Logger.info("TOIMPL: sync with knock rooms")
+        {rooms, latest_ids}
+
+      "leave" when not include_leave? ->
+        {rooms, room.latest_event_ids ++ latest_ids}
+
+      "leave" ->
+        stop_at_any = Map.get(last_sync_event_map, room.id, [])
+
+        user_leave_event_id = room.state[{"m.room.member", user_id}]["event_id"]
+        %PDU{} = pdu = Memento.transaction!(fn -> Memento.Query.read(PDU, user_leave_event_id) end)
+
+        rooms =
+          case room_timeline_sync(room.id, user_id, [user_leave_event_id], stop_at_any, opts) do
+            :no_update -> rooms
+            room_update -> put_in(rooms, [:leave, room_id], room_update)
+          end
+
+        {rooms, [pdu.event_id | latest_ids]}
+    end
+  end
+
+  defp await_if_no_updates({rooms, latest_ids}, user_id, opts) do
+    if Enum.all?(rooms, fn {_, map} -> map_size(map) == 0 end) do
+      timeout = Keyword.get(opts, :timeout, 0)
+
+      case await_next_event(timeout) do
+        :timeout ->
           {rooms, latest_ids}
 
-        "leave" when not include_leave? ->
-          {rooms, room.latest_event_ids ++ latest_ids}
-
-        "leave" ->
-          stop_at_any = Map.get(last_sync_event_map, room.id, [])
-
-          user_leave_event_id = room.state[{"m.room.member", user_id}]["event_id"]
-          %PDU{} = pdu = Memento.transaction!(fn -> Memento.Query.read(PDU, user_leave_event_id) end)
-
-          rooms =
-            case room_timeline_sync(room.id, user_id, [user_leave_event_id], stop_at_any, opts) do
-              :no_update -> rooms
-              room_update -> put_in(rooms, [:leave, room_id], room_update)
-            end
-
-          {rooms, [pdu.event_id | latest_ids]}
+        {:update, room_id, rem_timeout} ->
+          sync_with_room_ids([room_id], user_id, Keyword.put(opts, :timeout, rem_timeout))
       end
-    end)
-    |> then(fn {rooms, latest_ids} ->
-      if Enum.all?(rooms, fn {_, map} -> map_size(map) == 0 end) do
-        timeout = Keyword.get(opts, :timeout, 0)
-
-        case await_next_event(timeout) do
-          :timeout ->
-            {rooms, latest_ids}
-
-          {:update, room_id, rem_timeout} ->
-            sync_with_room_ids([room_id], user_id, Keyword.put(opts, :timeout, rem_timeout))
-        end
-      else
-        {rooms, latest_ids}
-      end
-    end)
+    else
+      {rooms, latest_ids}
+    end
   end
 
   defp await_next_event(timeout) do
