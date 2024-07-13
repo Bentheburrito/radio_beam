@@ -343,7 +343,7 @@ defmodule RadioBeam.Room.TimelineTest do
   end
 
   describe "sync/4 with a filter" do
-    test "applies rooms and not_rooms filters", %{creator: creator, user: user} do
+    test "applies timeline- and state-specific rooms and not_rooms filters", %{creator: creator, user: user} do
       {:ok, room_id1} = Room.create(creator, name: "Introductions")
       {:ok, room_id2} = Room.create(creator, name: "General", topic: "whatever you wanna talk about")
       {:ok, room_id3} = Room.create(creator, name: "Media & Photos")
@@ -360,6 +360,46 @@ defmodule RadioBeam.Room.TimelineTest do
 
       event_filter = %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}
       filter = %{"room" => %{"timeline" => event_filter, "state" => event_filter}}
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id2 => %{state: [], timeline: timeline}} = join_map,
+                 invite: invite_map,
+                 leave: leave_map
+               },
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1, room_id2, room_id3], user.id, filter: filter)
+
+      assert 1 = map_size(join_map)
+      assert 0 = map_size(invite_map)
+      assert 0 = map_size(leave_map)
+
+      assert %{
+               limited: false,
+               events: [%{"type" => "m.room.create"} | _] = events
+             } =
+               timeline
+
+      assert %{"type" => "m.room.name", "content" => %{"name" => "General Chat"}} = List.last(events)
+    end
+
+    test "applies `room`-key-level rooms and not_rooms filters", %{creator: creator, user: user} do
+      {:ok, room_id1} = Room.create(creator, name: "Introductions")
+      {:ok, room_id2} = Room.create(creator, name: "General", topic: "whatever you wanna talk about")
+      {:ok, room_id3} = Room.create(creator, name: "Media & Photos")
+
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id3, creator.id, user.id)
+
+      {:ok, _event_id} = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.join(room_id2, user.id)
+      {:ok, _event_id} = Room.join(room_id3, user.id)
+
+      {:ok, _event_id} = Room.set_name(room_id2, creator.id, "General Chat")
+
+      filter = %{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}}
 
       assert %{
                rooms: %{

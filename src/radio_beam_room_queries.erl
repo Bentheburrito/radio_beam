@@ -1,6 +1,6 @@
 -module(radio_beam_room_queries).
 
--export([joined/1, has_membership/1, timeline_from/5, passes_filter/4]).
+-export([joined/1, has_membership/1, timeline_from/7, passes_filter/4]).
 
 -include_lib("stdlib/include/qlc.hrl").
 
@@ -18,7 +18,7 @@ is_joined(UserId, State) ->
 membership(UserId, State) ->
   case State of
     #{{<<"m.room.member">>, UserId} := #{<<"content">> := #{<<"membership">> := Membership}}} -> Membership;
-    _ -> nil
+    _ -> <<"leave">>
   end.
 
 %% Returns all room IDs the user has an m.room.member state event in %%
@@ -31,18 +31,17 @@ is_member_of(UserId, State) ->
     _ -> false
   end.
 
-%%%% UNUSED/WIP/UNTESTED QLC-BASED TIMELINE CODE BELOW %%%%
 
 %% Returns a QLC query for a timeline of room events for the given user, 
-%% starting at the event(s) just after LastSyncEventIds, ending at 
-%% EndTimelineEventId
-timeline_from(UserId, Filter, EndTimelineEventIds, LastSyncEventIds, IgnoredUserIds) ->
+%% starting at the event(s) just after LastSyncDepth, ending at 
+%% EndTimelineDepth
+timeline_from(RoomId, UserId, Filter, EndTimelineDepth, LastSyncDepth, LatestJoinedAtDepth, IgnoredUserIds) ->
   qlc:q([
-    PDU || {{_Table, _EventId, _, Content, _, _, _, _, PrevState, _, _RoomId, Sender, _, StateKey, Type, _} = PDU, IsJoinedLater} <- room_table(EndTimelineEventIds, LastSyncEventIds, UserId),
-    Membership = membership(UserId, PrevState),
-    HistoryVis = history_visibility(PrevState),
-    can_view_event(Membership, IsJoinedLater, HistoryVis),
-    can_view_event_with_next_state(Membership, IsJoinedLater, HistoryVis, Type, Content, StateKey, UserId),
+    PDU || {_Table, {RoomId_, Depth, _}, _, _, Content,  _,  _, PrevState, _,  Sender, _, StateKey, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
+    RoomId =:= RoomId_,
+    Depth =< EndTimelineDepth,
+    Depth >= LastSyncDepth,
+    can_view_event(membership(UserId, PrevState), Depth =< LatestJoinedAtDepth, history_visibility(PrevState)) or can_view_event_with_next_state(membership(UserId, PrevState), Depth =< LatestJoinedAtDepth, history_visibility(PrevState), Type, Content, StateKey, UserId),
     not lists:member(Sender, IgnoredUserIds),
     passes_filter(Filter, Type, Sender, Content)
   ]).
@@ -65,58 +64,6 @@ sender_filter(#{senders := {allowlist, Allowlist}}, Sender) -> lists:member(Send
 sender_filter(#{senders := {denylist, Denylist}}, Sender) -> not lists:member(Sender, Denylist);
 sender_filter(#{senders := none}, _) -> true.
 
-room_table(StartAtEventIds, SkipEventIds, UserId) ->
-  ParentEventIds = fun(PduPairs) ->
-    ParentIds = lists:flatmap(fun({Pdu, _}) -> element(8, Pdu) end, PduPairs),
-    lists:uniq(ParentIds)
-  end,
-  NextFxn =
-    fun
-      NextFxn(EventIds, IsJoinedLater) ->
-        case lists:filter(fun(EventId) -> not lists:member(EventId, SkipEventIds) end, EventIds) of
-          [] -> [];
-          Ids -> 
-            PduPairs = 
-              lists:foldl(fun(EventId, PduPairs) ->
-                NewIsJoinedLater = 
-                  case PduPairs of
-                    [{_, NIJL} | _] -> NIJL;
-                    [] -> IsJoinedLater
-                  end,
-                lists:map(fun(Pdu) -> {Pdu, get_joined_later(NewIsJoinedLater, Pdu, UserId)} end, mnesia:read('Elixir.RadioBeam.PDU', EventId)) ++ PduPairs
-              end, [], Ids),
-              NewIsJoinedLater = 
-                case PduPairs of
-                  [{_, NIJL} | _] -> NIJL;
-                  [] -> IsJoinedLater
-                end,
-            PduPairs ++ fun() -> NextFxn(ParentEventIds(PduPairs), NewIsJoinedLater) end
-      end
-    end,
-    InfoFun = fun(keypos) -> 1;
-             (is_sorted_key) -> true;
-             (is_unique_objects) -> true;
-             (indices) -> mnesia:table_info('Elixir.RadioBeam.PDU', index);
-             (_) -> undefined
-          end,
-  qlc:table(fun() -> NextFxn(StartAtEventIds, false) end, {info_fun, InfoFun}).
-
-
-%% Checks the prev_state of the given PDU if the given UserId is joined to the 
-%% room, returning `true` if so. Otherwise, will simply return `true` if the 
-%% first arg is `true`
-get_joined_later(_, nil, _) -> false;
-get_joined_later(true, _, _) -> true;
-get_joined_later(IsJoinedLater, FirstPdu, UserId) -> 
-  case is_joined(UserId, element(9, FirstPdu)) of
-    true -> true;
-    false -> IsJoinedLater
-  end.
-
-
-%% timeline_from(RoomId, UserId, EndTimelineEventId, IgnoredUserIds) ->
-%%   qlc:q([PDU || {_Table, EventId, _, Content, _, _, _, _, PrevState, _, RoomId, Sender, _, StateKey, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
-%%                    can_view_event(membership(UserId, PrevState), IsJoinedLater, history_visibility(PrevState)) orelse can_view_event_with_next_state(membership(UserId, PrevState), history_visibility(PrevState), Type, Content)]).
 
 %% Returns `true` if a user can see an event given their Membership and the
 %% room's history_visibility setting at the time of the event

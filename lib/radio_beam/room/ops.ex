@@ -68,7 +68,7 @@ defmodule RadioBeam.Room.Ops do
 
   defp get_pdu_followup_actions(%PDU{type: "m.room.canonical_alias"} = pdu) do
     for room_alias <- [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])], not is_nil(room_alias) do
-      fn -> RoomAlias.put(room_alias, pdu.room_id) end
+      fn -> RoomAlias.put(room_alias, PDU.room_id(pdu)) end
     end
   end
 
@@ -117,7 +117,7 @@ defmodule RadioBeam.Room.Ops do
       event
       |> Map.put("auth_events", Enum.map(auth_events, & &1["event_id"]))
       # ??? why are there no docs on depth besides the PDU desc
-      |> Map.put("depth", room.depth + 1)
+      |> Map.put("depth", room.depth)
       |> Map.put("prev_events", room.latest_event_ids)
       |> Map.put("prev_state", room.state)
 

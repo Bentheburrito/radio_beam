@@ -26,7 +26,7 @@ defmodule RadioBeam.Room.Timeline.Filter do
 
   import Kernel, except: [apply: 2]
 
-  alias RadioBeam.PDU
+  alias RadioBeam.Room.Timeline
 
   def put(user_id, definition) do
     id = 8 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
@@ -44,56 +44,13 @@ defmodule RadioBeam.Room.Timeline.Filter do
   end
 
   @doc """
-  Applies the given filter to a list of room IDs
+  Strips the given event of any fields not in `event_fields`. Supports 
+  dot-separated nested field names. If `event_fields` is `nil`, returns the
+  event unmodified.
   """
-  def apply_rooms(%__MODULE__{} = filter, room_ids), do: apply_rooms(filter.definition, room_ids)
-  def apply_rooms(_filter, []), do: []
+  def take_fields(%{} = event, nil), do: event
 
-  def apply_rooms(%{} = filter, ["!" <> _ | _] = room_ids) do
-    case filter["room"] do
-      %{"not_rooms" => excluded_rooms, "rooms" => included_rooms} ->
-        room_ids |> Stream.reject(&(&1 in excluded_rooms)) |> Enum.filter(&(&1 in included_rooms))
-
-      %{"not_rooms" => excluded_rooms} ->
-        Enum.reject(room_ids, &(&1 in excluded_rooms))
-
-      %{"rooms" => included_rooms} ->
-        Enum.filter(room_ids, &(&1 in included_rooms))
-
-      _ ->
-        room_ids
-    end
-  end
-
-  @doc """
-  Applies the given filter to the event, EXCEPT for the "limit", "rooms", and 
-  "not_rooms" fields. Those should be applied by the relevant endpoints (like 
-  /sync) to reduce unnecessary compute at this scope. Returns the event in the
-  format and with fields specified by the filter, or `nil` if the event was 
-  rejected by the filter.
-  """
-  # TOIMPL: ephemeral events...which would not be a %PDU{}
-  def apply(%__MODULE__{} = filter, %{} = event), do: apply(filter.definition, event)
-
-  def apply(%{} = filter, %PDU{} = pdu) do
-    apply(filter, pdu |> Map.from_struct() |> Map.new(fn {k, v} -> {to_string(k), v} end))
-  end
-
-  def apply(%{} = filter, event) do
-    event_filter_key = if is_nil(event["state_key"]), do: "timeline", else: "state"
-    filter_fxns = [&contains_url?/2, &not_sender?/2, &sender?/2, &not_types?/2, &types?/2]
-    formatter = if Map.get(filter, "event_format", "client") == "client", do: &RadioBeam.client_event/1, else: & &1
-
-    if Enum.all?(filter_fxns, & &1.(filter["room"][event_filter_key], event)) do
-      event |> take_fields(filter["event_fields"]) |> formatter.()
-    else
-      nil
-    end
-  end
-
-  defp take_fields(%{} = event, nil), do: event
-
-  defp take_fields(%{} = event, event_fields) do
+  def take_fields(%{} = event, event_fields) do
     event_fields
     |> Stream.map(&String.split(&1, "."))
     |> Enum.reduce(%{}, fn path, new_event ->
@@ -105,35 +62,68 @@ defmodule RadioBeam.Room.Timeline.Filter do
     put_in(data, Enum.map(path, &Access.key(&1, %{})), value)
   end
 
-  defp contains_url?(%{"contains_url" => true}, %{"content" => %{"url" => _}}), do: true
-  defp contains_url?(%{"contains_url" => true}, _event), do: false
-  defp contains_url?(%{"contains_url" => false}, %{"content" => %{"url" => _}}), do: false
-  defp contains_url?(%{"contains_url" => false}, _event), do: true
-  defp contains_url?(_filter, _event), do: true
+  @doc """
+  Parses a raw filter definition into a nicer-to-use map (atom keys, all keys
+  are guaranteed to be present with at least default values, the weird "rooms"
+  and "not_rooms" and similar fields are parsed into {:allowlist, allowlist} 
+  and {:denylist, denylist} tuples.
 
-  # TOIMPL include_redundant_members, lazy_load_members, unread_thread_notifications
+  TOIMPL include_redundant_members, lazy_load_members, unread_thread_notifications
+  """
+  def parse(%__MODULE__{definition: definition}), do: parse(definition)
 
-  defp not_sender?(%{"not_senders" => excluded_senders}, event), do: event["sender"] not in excluded_senders
-  defp not_sender?(_filter, _event), do: true
+  def parse(definition) when is_map(definition) do
+    room_def = Map.get(definition, "room", %{})
+    timeline = room_def |> Map.get("timeline", %{}) |> parse_event_filter(:timeline)
+    state = room_def |> Map.get("state", %{}) |> parse_event_filter(:state)
+    format = Map.get(definition, "event_format", "client")
+    format = if format in ["client", "federation"], do: format, else: "client"
+    fields = Map.get(definition, "event_fields")
 
-  defp sender?(%{"senders" => allowed_senders}, event), do: event["sender"] in allowed_senders
-  defp sender?(_filter, _event), do: true
+    global_rooms = merge_filter_list(room_def, "rooms", "not_rooms")
 
-  defp not_types?(%{"not_types" => excluded_types}, event), do: not types?(%{"types" => excluded_types}, event)
-  defp not_types?(_filter, _event), do: true
-
-  defp types?(%{"types" => included_types}, event) do
-    Enum.any?(included_types, fn t ->
-      # I'm assuming "A '*' can be used as a wildcard" means only a single 
-      # astrix can be used. Can't imagine a client wanting to use 2+
-      case String.split(t, "*") do
-        [type] -> type == event["type"]
-        ["", type] -> String.ends_with?(event["type"], type)
-        [type, ""] -> String.starts_with?(event["type"], type)
-        [type_s, type_e] -> String.starts_with?(event["type"], type_s) and String.ends_with?(event["type"], type_e)
-      end
-    end)
+    %{
+      timeline: timeline,
+      state: state,
+      format: format,
+      fields: fields,
+      rooms: global_rooms,
+      include_leave?: Map.get(room_def, "include_leave", false) == true
+    }
   end
 
-  defp types?(_filter, _event), do: true
+  defp parse_event_filter(filter, event_kind) do
+    max_events = Timeline.max_events(event_kind)
+
+    for allowlist_key <- ["senders", "types", "rooms"], into: %{} do
+      denylist_key = "not_#{allowlist_key}"
+
+      parsed_filter = merge_filter_list(filter, allowlist_key, denylist_key)
+
+      {String.to_existing_atom(allowlist_key), parsed_filter}
+    end
+    |> Map.merge(%{
+      contains_url: Map.get(filter, "contains_url", :none),
+      limit: filter |> Map.get("limit", max_events) |> min(max_events)
+    })
+  end
+
+  defp merge_filter_list(filter, allowlist_key, denylist_key) do
+    case filter do
+      %{^allowlist_key => allowlist} ->
+        denylist = Map.get(filter, denylist_key, [])
+
+        {:allowlist,
+         allowlist
+         |> MapSet.new()
+         |> MapSet.difference(MapSet.new(denylist))
+         |> MapSet.to_list()}
+
+      %{^denylist_key => denylist} ->
+        {:denylist, denylist}
+
+      _else ->
+        :none
+    end
+  end
 end

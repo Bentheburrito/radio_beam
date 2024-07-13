@@ -192,7 +192,7 @@ defmodule RadioBeam.RoomTest do
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
       assert {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
       assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
-      assert {:ok, %{sender: ^creator_id}} = Repo.get(PDU, event_id)
+      assert %{^event_id => %{sender: ^creator_id}} = PDU.get([event_id])
     end
 
     test "member can put a message in the room if has perms", %{user1: creator, user2: %{id: user_id} = user} do
@@ -203,7 +203,7 @@ defmodule RadioBeam.RoomTest do
       content = %{"msgtype" => "m.text", "body" => "This is another test message"}
       assert {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", content)
       assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
-      assert {:ok, %{sender: ^user_id}} = Repo.get(PDU, event_id)
+      assert %{^event_id => %{sender: ^user_id}} = PDU.get([event_id])
     end
 
     test "member can't put a message in the room without perms", %{user1: creator, user2: user} do
