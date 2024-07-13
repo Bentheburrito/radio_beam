@@ -91,12 +91,12 @@ defmodule RadioBeam.PDU do
   Maps a collection of `event_id`s to PDUs
   """
   @spec get(Enumerable.t(String.t())) :: %{String.t() => t()}
-  def get(ids) do
+  def get(ids, opts \\ []) do
     Memento.transaction!(fn ->
       # TODO: looked a bit but not an obvious way to do an `in` guard in match 
       #       specs/Memento/mnesia, though is `read`ing for each id a
       #       performance issue?
-      for id <- ids, into: %{}, do: {id, hd(Memento.Query.select(__MODULE__, {:==, :event_id, id}))}
+      for id <- ids, into: %{}, do: {id, hd(Memento.Query.select(__MODULE__, {:==, :event_id, id}, opts))}
     end)
   end
 

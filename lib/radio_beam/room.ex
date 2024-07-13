@@ -23,7 +23,9 @@ defmodule RadioBeam.Room do
 
   require Logger
 
+  alias :radio_beam_room_queries, as: Queries
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
+  alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.Room.Ops
   alias RadioBeam.Room.Utils
@@ -157,7 +159,7 @@ defmodule RadioBeam.Room do
   def joined(user_id) do
     fn ->
       user_id
-      |> :radio_beam_room_queries.joined()
+      |> Queries.joined()
       |> :qlc.e()
     end
     |> Memento.transaction()
@@ -178,7 +180,7 @@ defmodule RadioBeam.Room do
   def all_where_has_membership(user_id) do
     fn ->
       user_id
-      |> :radio_beam_room_queries.has_membership()
+      |> Queries.has_membership()
       |> :qlc.e()
     end
     |> Memento.transaction()
@@ -258,6 +260,22 @@ defmodule RadioBeam.Room do
     call_if_alive(room_id, {:put_event, event})
   end
 
+  def get_event(room_id, user_id, event_id) do
+    currently_joined? = call_if_alive(room_id, {:member?, user_id})
+    # TODO / TOFIX: I think spec says users should be able to access events 
+    # they used to be able to access if their membership/history visibility
+    # allowed it, even if they've since left the room. So this var should
+    # have to dynamically calculate it
+    latest_joined_at_depth = if currently_joined?, do: :infinity, else: -1
+
+    with %{^event_id => pdu_tuple} <- PDU.get([event_id], coerce: false),
+         true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
+      {:ok, pdu_tuple |> Memento.Query.Data.load() |> PDU.to_event()}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
   ### IMPL ###
 
   @impl GenServer
@@ -287,6 +305,12 @@ defmodule RadioBeam.Room do
     # TOIMPL: handle duplicate annotations - M_DUPLICATE_ANNOTATION
     event_kind = if is_map_key(event, "state_key"), do: "state", else: "message"
     Utils.put_event_and_handle(room, event, "#{event_kind} (#{event["type"]})")
+  end
+
+  @impl GenServer
+  def handle_call({:member?, user_id}, _from, %Room{} = room) do
+    member? = get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) == "join"
+    {:reply, member?, room}
   end
 
   defp get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)

@@ -12,6 +12,8 @@ defmodule RadioBeamWeb.RoomController do
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :join, []}] when action == :join
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :send, :params}] when action == :send
 
+  @missing_req_path_param_msg "Your request is missing one or more required path parameters"
+
   def create(conn, _params) do
     %User{} = creator = conn.assigns.user
     request = conn.assigns.request
@@ -130,7 +132,7 @@ defmodule RadioBeamWeb.RoomController do
   def send(conn, _params) do
     conn
     |> put_status(400)
-    |> json(Errors.endpoint_error(:missing_param, "Your request is missing one or more path parameters"))
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
   end
 
   def put_state(conn, %{"room_id" => room_id, "event_type" => event_type, "state_key" => state_key}) do
@@ -151,7 +153,20 @@ defmodule RadioBeamWeb.RoomController do
   def put_state(conn, _params) do
     conn
     |> put_status(400)
-    |> json(Errors.endpoint_error(:missing_param, "Your request is missing one or more path parameters"))
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
+  end
+
+  def get_event(conn, %{"room_id" => room_id, "event_id" => event_id}) do
+    case Room.get_event(room_id, conn.assigns.user.id, event_id) do
+      {:ok, event} -> json(conn, event)
+      {:error, error} -> handle_room_call_error(conn, error)
+    end
+  end
+
+  def get_event(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
   end
 
   defp handle_room_call_error(conn, error, unauth_message \\ "You do not have permission to perform that action") do

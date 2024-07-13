@@ -1,6 +1,6 @@
 -module(radio_beam_room_queries).
 
--export([joined/1, has_membership/1, timeline_from/7, passes_filter/4]).
+-export([joined/1, has_membership/1, timeline_from/7, passes_filter/4, can_view_event/3]).
 
 -include_lib("stdlib/include/qlc.hrl").
 
@@ -37,11 +37,11 @@ is_member_of(UserId, State) ->
 %% EndTimelineDepth
 timeline_from(RoomId, UserId, Filter, EndTimelineDepth, LastSyncDepth, LatestJoinedAtDepth, IgnoredUserIds) ->
   qlc:q([
-    PDU || {_Table, {RoomId_, Depth, _}, _, _, Content,  _,  _, PrevState, _,  Sender, _, StateKey, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
+    PDU || {_Table, {RoomId_, Depth, _}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
     RoomId =:= RoomId_,
     Depth =< EndTimelineDepth,
     Depth >= LastSyncDepth,
-    can_view_event(membership(UserId, PrevState), Depth =< LatestJoinedAtDepth, history_visibility(PrevState)) or can_view_event_with_next_state(membership(UserId, PrevState), Depth =< LatestJoinedAtDepth, history_visibility(PrevState), Type, Content, StateKey, UserId),
+    can_view_event(UserId, LatestJoinedAtDepth, PDU),
     not lists:member(Sender, IgnoredUserIds),
     passes_filter(Filter, Type, Sender, Content)
   ]).
@@ -72,6 +72,12 @@ sender_filter(#{senders := none}, _) -> true.
 %% or a new m.room.history_visibility event, this function should be called 
 %% twice (once with the membership/visibility before the event is applied to 
 %% the state, and once after), with the results `or`'d together
+can_view_event(UserId, LatestJoinedAtDepth, {_Table, {_, Depth, _}, _, _, Content,  _,  _, PrevState, _, _, _, StateKey, Type, _}) ->
+    Membership = membership(UserId, PrevState),
+    IsJoinedLater = Depth =< LatestJoinedAtDepth,
+    HistoryVis = history_visibility(PrevState),
+    can_view_event(Membership, IsJoinedLater, HistoryVis) or can_view_event_with_next_state(Membership, IsJoinedLater, HistoryVis, Type, Content, StateKey, UserId);
+
 can_view_event(_, _, <<"world_readable">>) -> true;
 can_view_event(<<"join">>, _, _) -> true;
 can_view_event(_, IsJoinedLater, <<"shared">>) -> IsJoinedLater;
@@ -92,7 +98,7 @@ can_view_event_with_next_state(Membership, IsJoinedLater, HistoryVis, <<"m.room.
     #{<<"history_visibility">> := NewHistoryVis} -> can_view_event(Membership, IsJoinedLater, NewHistoryVis);
     _ -> can_view_event(Membership, IsJoinedLater, HistoryVis)
   end;
-can_view_event_with_next_state(_, _, _, _, _, _, _) -> true.
+can_view_event_with_next_state(_, _, _, _, _, _, _) -> false.
 
 
 history_visibility(State) ->

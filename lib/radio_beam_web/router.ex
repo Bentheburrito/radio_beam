@@ -51,6 +51,8 @@ defmodule RadioBeamWeb.Router do
 
           put "/:room_id/send/:event_type/:transaction_id", RoomController, :send
           put "/:room_id/state/:event_type/:state_key", RoomController, :put_state
+
+          get "/:room_id/event/:event_id", RoomController, :get_event
         end
 
         scope "/user/:user_id" do

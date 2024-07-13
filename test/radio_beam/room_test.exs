@@ -230,6 +230,103 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
+  describe "get_event/3" do
+    setup do
+      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user2} = Repo.insert(user2)
+
+      %{user1: user1, user2: user2}
+    end
+
+    test "can get an event in a room the calling user is joined to", %{user1: creator, user2: user} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+      content = %{"msgtype" => "m.text", "body" => "yoOOOOOOOOO"}
+      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+
+      assert {:ok, %{event_id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+    end
+
+    test "cannot get an event in a room the calling user is not a member of", %{user1: creator, user2: user} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+
+      content = %{"msgtype" => "m.text", "body" => "lmao you can't see this"}
+      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+
+      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+    end
+
+    test "can get an event in a room the calling user was joined to at the time it was sent", %{
+      user1: creator,
+      user2: user
+    } do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      content = %{"msgtype" => "m.text", "body" => "please leave"}
+      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      content = %{"msgtype" => "m.text", "body" => "oh...ok"}
+      {:ok, _event_id} = Room.send(room_id, user.id, "m.room.message", content)
+
+      {:ok, _event_id} = Room.leave(room_id, user.id, "cya")
+
+      content = %{"msgtype" => "m.text", "body" => "oh they actually left"}
+      {:ok, _event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+
+      assert {:ok, %{event_id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+    end
+
+    # See the TODO / TOFIX in `Room.get_event/3` for an explanation on how to 
+    # fix  this so we can unskip this test
+    @tag :skip
+    test "can get an event in a shared history room the calling user was joined to at a later time", %{
+      user1: creator,
+      user2: user
+    } do
+      {:ok, room_id} = Room.create(creator, preset: :private_chat)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+
+      content = %{"msgtype" => "m.text", "body" => "I hope my friend joins soon"}
+      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+
+      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      content = %{"msgtype" => "m.text", "body" => "yoooo I'm here now"}
+      {:ok, _event_id} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, _event_id} = Room.leave(room_id, user.id, "nvm gtg")
+
+      assert {:ok, %{event_id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+    end
+
+    test "can't get an event in a since-joined-only history room the calling user was joined to at a later time", %{
+      user1: creator,
+      user2: user
+    } do
+      {:ok, room_id} = Room.create(creator, addl_state_events: [history_visibility_event("joined")])
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+
+      content = %{"msgtype" => "m.text", "body" => "I hope my friend joins soon"}
+      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+
+      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      content = %{"msgtype" => "m.text", "body" => "yoooo I'm here now"}
+      {:ok, _event_id} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, _event_id} = Room.leave(room_id, user.id, "nvm gtg")
+
+      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+    end
+  end
+
   defp join_rule_event() do
     %{
       "content" => %{"join_rule" => "knock"},
@@ -243,6 +340,14 @@ defmodule RadioBeam.RoomTest do
       "content" => %{"name" => "sloppy steak house"},
       "state_key" => "",
       "type" => "m.room.name"
+    }
+  end
+
+  defp history_visibility_event(visibility) do
+    %{
+      "content" => %{"history_visibility" => visibility},
+      "state_key" => "",
+      "type" => "m.room.history_visibility"
     }
   end
 end
