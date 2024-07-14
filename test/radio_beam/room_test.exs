@@ -327,6 +327,89 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
+  describe "get_members/3" do
+    setup do
+      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user2} = Repo.insert(user2)
+      {:ok, user3} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user3} = Repo.insert(user3)
+
+      %{user1: user1, user2: user2, user3: user3}
+    end
+
+    test "returns members when the requester is in the room", %{user1: creator, user2: user2, user3: user3} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user3.id)
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id)
+      assert 3 = length(members)
+    end
+
+    test "returns unauthorized when requester is not and has never been in the room", %{
+      user1: creator,
+      user2: user2,
+      user3: user3
+    } do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
+      {:ok, _event_id} = Room.join(room_id, user3.id)
+
+      assert {:error, :unauthorized} = Room.get_members(room_id, user2.id)
+    end
+
+    test "returns members when the requester was last in the room after leaving", %{
+      user1: creator,
+      user2: user2,
+      user3: user3
+    } do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user3.id)
+
+      assert {:ok, init_results} = Room.get_members(room_id, user2.id)
+
+      {:ok, _event_id} = Room.leave(room_id, user2.id)
+      expected = init_results -- [user2.id]
+      assert {:ok, ^expected} = Room.get_members(room_id, user2.id)
+
+      {:ok, _event_id} = Room.leave(room_id, user3.id)
+      assert {:ok, ^expected} = Room.get_members(room_id, user2.id)
+
+    end
+    test "returns members that pass the given filter", %{
+      user1: creator,
+      user2: user2,
+      user3: user3
+    } do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      filter_fn = fn membership -> membership == "join" end
+      assert {:ok, members} = Room.get_members(room_id, user2.id, filter_fn)
+      assert 2 = length(members)
+
+      {:ok, _event_id} = Room.join(room_id, user3.id)
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id, filter_fn)
+      assert 3 = length(members)
+
+      {:ok, _event_id} = Room.leave(room_id, user3.id)
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id, filter_fn)
+      assert 2 = length(members)
+    end
+  end
+
   defp join_rule_event() do
     %{
       "content" => %{"join_rule" => "knock"},

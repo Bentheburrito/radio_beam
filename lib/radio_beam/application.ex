@@ -5,9 +5,13 @@ defmodule RadioBeam.Application do
 
   use Application
 
+  require Logger
+
   @impl true
   def start(_type, _args) do
-    RadioBeam.Repo.init_mnesia()
+    Logger.info("Initializing Mnesia...")
+    db_init_result = RadioBeam.Repo.init_mnesia()
+    Logger.info("Mnesia init finished with result: #{inspect(db_init_result)}")
 
     children = [
       RadioBeamWeb.Telemetry,

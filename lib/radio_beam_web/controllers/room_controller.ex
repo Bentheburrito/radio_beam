@@ -169,6 +169,13 @@ defmodule RadioBeamWeb.RoomController do
     |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
   end
 
+  def get_members(conn, %{"room_id" => room_id}) do
+    case Room.get_members(room_id, conn.assigns.user.id) do
+      {:ok, members} -> json(conn, %{chunk: members})
+      {:error, error} -> handle_room_call_error(conn, error)
+    end
+  end
+
   defp handle_room_call_error(conn, error, unauth_message \\ "You do not have permission to perform that action") do
     {status, error_body} =
       case error do

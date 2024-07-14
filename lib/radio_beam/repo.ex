@@ -22,27 +22,31 @@ defmodule RadioBeam.Repo do
     # Create the schema
     Memento.stop()
 
-    if RadioBeam.env() == :test, do: Memento.Schema.delete(nodes)
-
     case Memento.Schema.create(nodes) do
-      :ok -> :ok
-      {:error, reason} -> Logger.info("init_mnesia(#{inspect(nodes)}): Failed to create schema: #{inspect(reason)}")
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.info("init_mnesia(#{inspect(nodes)}): Failed to create schema: #{inspect(reason)}")
     end
 
     Memento.start()
 
-    # Create your tables with disc_copies (only the ones you want persisted on disk)
     create_tables(nodes)
   end
 
+  @tables [User, Device, PDU, Room, RoomAlias, SyncBatch, Filter]
   defp create_tables(nodes) do
-    create_table(User, disc_copies: nodes)
-    create_table(Device, disc_copies: nodes)
-    create_table(PDU, disc_copies: nodes)
-    create_table(Room, disc_copies: nodes)
-    create_table(RoomAlias, disc_copies: nodes)
-    create_table(SyncBatch, disc_copies: nodes)
-    create_table(Filter, disc_copies: nodes)
+    # don't persist DB ops to disk for tests - clean DB every run of `mix test`
+    opts =
+      if RadioBeam.env() == :test do
+        [ram_copies: nodes]
+      else
+        [disc_copies: nodes]
+      end
+
+    for table <- @tables, do: create_table(table, opts)
+    Memento.wait(@tables)
   end
 
   defp create_table(table_mod, opts) when is_atom(table_mod) and is_list(opts) do
@@ -51,7 +55,9 @@ defmodule RadioBeam.Repo do
         :ok
 
       {:error, reason} ->
-        Logger.info("create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}")
+        Logger.info(
+          "create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}"
+        )
     end
   end
 

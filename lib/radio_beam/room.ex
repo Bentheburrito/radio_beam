@@ -276,6 +276,44 @@ defmodule RadioBeam.Room do
     end
   end
 
+  def get_members(room_id, user_id, membership_filter \\ fn _ -> true end) do
+    # TOIMPL: resolve `at` parameter at caller and pass in event_id to check state at
+
+    state =
+      case call_if_alive(room_id, {:membership, user_id}) do
+        %{"content" => %{"membership" => "join"}} ->
+          {:ok, %{state: state}} = get(room_id)
+          state
+
+        %{"content" => %{"membership" => "leave"}} = membership ->
+          event_id = Map.fetch!(membership, "event_id")
+          %{^event_id => pdu} = PDU.get([event_id])
+          pdu.prev_state
+
+        _ ->
+          :unauthorized
+      end
+
+    case state do
+      :unauthorized ->
+        {:error, :unauthorized}
+
+      state ->
+        members =
+          state
+          |> Stream.map(&elem(&1, 1))
+          |> Enum.filter(fn
+            %{"type" => "m.room.member"} = event ->
+              event |> get_in(["content", "membership"]) |> membership_filter.()
+
+            _ ->
+              false
+          end)
+
+        {:ok, members}
+    end
+  end
+
   ### IMPL ###
 
   @impl GenServer
@@ -311,6 +349,12 @@ defmodule RadioBeam.Room do
   def handle_call({:member?, user_id}, _from, %Room{} = room) do
     member? = get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) == "join"
     {:reply, member?, room}
+  end
+
+  @impl GenServer
+  def handle_call({:membership, user_id}, _from, %Room{} = room) do
+    membership = Map.get(room.state, {"m.room.member", user_id}, :not_found)
+    {:reply, membership, room}
   end
 
   defp get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
