@@ -484,8 +484,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       content = %{
         "msgtype" => "m.text",
-        "body" =>
-          "I sure hope nobody outside the room can read this, even if they know the event ID"
+        "body" => "I sure hope nobody outside the room can read this, even if they know the event ID"
       }
 
       {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
@@ -538,6 +537,92 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{})
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+  end
+
+  describe "get_state/2" do
+    setup %{conn: conn} do
+      {:ok, user} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "returns the state (200) when the requester is in the room", %{conn: conn, user: user} do
+      {:ok, room_id} = Room.create(user)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state", %{})
+      assert state = json_response(conn, 200)
+      assert 6 = length(state)
+    end
+
+    test "returns an M_FORBIDDEN (403) error when requester is not in the room", %{conn: conn} do
+      {:ok, creator} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+
+      Repo.insert(creator)
+
+      {:ok, room_id} = Room.create(creator)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state", %{})
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+  end
+
+  describe "get_state_event/2" do
+    setup %{conn: conn} do
+      {:ok, user} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "returns the state event content (200) when the requester is in the room", %{conn: conn, user: user} do
+      {:ok, room_id} = Room.create(user)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.member/#{user.id}", %{})
+      assert %{"membership" => "join"} = json_response(conn, 200)
+    end
+
+    test "returns an M_FORBIDDEN (403) error when requester is not in the room", %{conn: conn} do
+      {:ok, creator} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+
+      Repo.insert(creator)
+
+      {:ok, room_id} = Room.create(creator)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.member/#{creator.id}", %{})
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+
+    test "returns an M_NOT_FOUND (404) error when the state does not contain the key", %{conn: conn, user: user} do
+      {:ok, room_id} = Room.create(user)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.bathroom.member/#{user.id}", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
 end

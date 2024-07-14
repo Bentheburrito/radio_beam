@@ -382,8 +382,8 @@ defmodule RadioBeam.RoomTest do
 
       {:ok, _event_id} = Room.leave(room_id, user3.id)
       assert {:ok, ^expected} = Room.get_members(room_id, user2.id)
-
     end
+
     test "returns members that pass the given filter", %{
       user1: creator,
       user2: user2,
@@ -410,12 +410,111 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
+  describe "get_state/2" do
+    setup do
+      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user2} = Repo.insert(user2)
+
+      %{user1: user1, user2: user2}
+    end
+
+    test "returns cur room state when the requester is in the room", %{user1: creator} do
+      {:ok, room_id} = Room.create(creator)
+      assert {:ok, state} = Room.get_state(room_id, creator.id)
+      assert 6 = map_size(state)
+    end
+
+    test "returns unauthorized when requester is not and has never been in the room", %{
+      user1: creator,
+      user2: user2
+    } do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+
+      assert {:error, :unauthorized} = Room.get_state(room_id, user2.id)
+    end
+
+    test "returns the room state at the time the requester left", %{
+      user1: creator,
+      user2: user2
+    } do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      assert {:ok, state} = Room.get_state(room_id, user2.id)
+      assert 7 = map_size(state)
+
+      {:ok, _event_id} = Room.leave(room_id, user2.id)
+      {:ok, _event_id} = Room.set_name(room_id, creator.id, "A New Name")
+
+      assert {:ok, ^state} = Room.get_state(room_id, user2.id)
+    end
+  end
+
   defp join_rule_event() do
     %{
       "content" => %{"join_rule" => "knock"},
       "state_key" => "",
       "type" => "m.room.join_rules"
     }
+  end
+
+  describe "get_state/4" do
+    setup do
+      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user2} = Repo.insert(user2)
+
+      %{user1: user1, user2: user2}
+    end
+
+    test "returns state content when the requester is in the room", %{user1: creator} do
+      {:ok, room_id} = Room.create(creator)
+
+      assert {:ok, %{"content" => %{"membership" => "join"}}} =
+               Room.get_state(room_id, creator.id, "m.room.member", creator.id)
+    end
+
+    test "returns unauthorized when requester is not and has never been in the room", %{
+      user1: creator,
+      user2: user2
+    } do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+
+      assert {:error, :unauthorized} = Room.get_state(room_id, user2.id, "m.room.member", user2.id)
+    end
+
+    test "returns not_found when the key doesn't exist in the state", %{user1: creator} do
+      {:ok, room_id} = Room.create(creator)
+      assert {:error, :not_found} = Room.get_state(room_id, creator.id, "m.room.message_board", "")
+    end
+
+    test "returns the state content at the time the requester left", %{
+      user1: creator,
+      user2: user2
+    } do
+      topic = "There are monsters on this world"
+      {:ok, room_id} = Room.create(creator, topic: topic)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      assert {:ok, %{"content" => %{"topic" => ^topic}} = event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
+      assert {:error, :not_found} = Room.get_state(room_id, user2.id, "m.room.name", "")
+
+      {:ok, _event_id} = Room.leave(room_id, user2.id)
+      {:ok, _event_id} = Room.set_name(room_id, creator.id, "A New Name")
+
+      {:ok, _event_id} =
+        Room.put_state(room_id, creator.id, "m.room.topic", "", %{"topic" => "THERE ARE MONSTERS ON THIS WORLD!?"})
+
+      assert {:ok, ^event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
+      assert {:error, :not_found} = Room.get_state(room_id, user2.id, "m.room.name", "")
+    end
   end
 
   defp name_event() do

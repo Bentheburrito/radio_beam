@@ -176,11 +176,32 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
+  def get_state(conn, %{"room_id" => room_id}) do
+    case Room.get_state(room_id, conn.assigns.user.id) do
+      {:ok, members} -> json(conn, Map.values(members))
+      {:error, error} -> handle_room_call_error(conn, error)
+    end
+  end
+
+  def get_state_event(conn, %{"room_id" => room_id, "event_type" => type, "state_key" => state_key}) do
+    case Room.get_state(room_id, conn.assigns.user.id, type, state_key) do
+      {:ok, event} -> json(conn, Map.get(event, "content", %{}))
+      {:error, error} -> handle_room_call_error(conn, error)
+    end
+  end
+
+  def get_state_event(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
+  end
+
   defp handle_room_call_error(conn, error, unauth_message \\ "You do not have permission to perform that action") do
     {status, error_body} =
       case error do
         :unauthorized -> {403, Errors.forbidden(unauth_message)}
         :room_does_not_exist -> {404, Errors.not_found("Room not found")}
+        :not_found -> {404, Errors.not_found("Resource not found")}
         :internal -> {500, Errors.unknown("An internal error occurred. Please try again")}
       end
 

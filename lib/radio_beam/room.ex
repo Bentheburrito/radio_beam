@@ -196,7 +196,7 @@ defmodule RadioBeam.Room do
   end
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
-  @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t()) ::
+  @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t() | nil) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def invite(room_id, inviter_id, invitee_id, reason \\ nil) do
     event = Utils.membership_event(room_id, inviter_id, invitee_id, :invite, reason)
@@ -205,7 +205,7 @@ defmodule RadioBeam.Room do
   end
 
   @doc "Tries to join the given user to the given room"
-  @spec join(room_id :: String.t(), joiner_id :: String.t(), reason :: String.t()) ::
+  @spec join(room_id :: String.t(), joiner_id :: String.t(), reason :: String.t() | nil) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def join(room_id, joiner_id, reason \\ nil) do
     event = Utils.membership_event(room_id, joiner_id, joiner_id, :join, reason)
@@ -214,7 +214,7 @@ defmodule RadioBeam.Room do
   end
 
   @doc "Tries to remove the given user from the given room"
-  @spec leave(room_id :: String.t(), user_id :: String.t(), reason :: String.t()) ::
+  @spec leave(room_id :: String.t(), user_id :: String.t(), reason :: String.t() | nil) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def leave(room_id, user_id, reason \\ nil) do
     event = Utils.membership_event(room_id, user_id, user_id, :leave, reason)
@@ -279,26 +279,8 @@ defmodule RadioBeam.Room do
   def get_members(room_id, user_id, membership_filter \\ fn _ -> true end) do
     # TOIMPL: resolve `at` parameter at caller and pass in event_id to check state at
 
-    state =
-      case call_if_alive(room_id, {:membership, user_id}) do
-        %{"content" => %{"membership" => "join"}} ->
-          {:ok, %{state: state}} = get(room_id)
-          state
-
-        %{"content" => %{"membership" => "leave"}} = membership ->
-          event_id = Map.fetch!(membership, "event_id")
-          %{^event_id => pdu} = PDU.get([event_id])
-          pdu.prev_state
-
-        _ ->
-          :unauthorized
-      end
-
-    case state do
-      :unauthorized ->
-        {:error, :unauthorized}
-
-      state ->
+    case get_state(room_id, user_id) do
+      {:ok, state} ->
         members =
           state
           |> Stream.map(&elem(&1, 1))
@@ -311,6 +293,35 @@ defmodule RadioBeam.Room do
           end)
 
         {:ok, members}
+
+      error ->
+        error
+    end
+  end
+
+  def get_state(room_id, user_id) do
+    case call_if_alive(room_id, {:membership, user_id}) do
+      %{"content" => %{"membership" => "join"}} ->
+        {:ok, %{state: state}} = get(room_id)
+        {:ok, state}
+
+      %{"content" => %{"membership" => "leave"}} = membership ->
+        event_id = Map.fetch!(membership, "event_id")
+        %{^event_id => pdu} = PDU.get([event_id])
+        {:ok, pdu.prev_state}
+
+      _ ->
+        {:error, :unauthorized}
+    end
+  end
+
+  def get_state(room_id, user_id, type, state_key) do
+    with {:ok, state} <- get_state(room_id, user_id),
+         {:ok, event} <- Map.fetch(state, {type, state_key}) do
+      {:ok, event}
+    else
+      :error -> {:error, :not_found}
+      error -> error
     end
   end
 
