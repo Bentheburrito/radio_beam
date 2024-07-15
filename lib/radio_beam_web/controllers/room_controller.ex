@@ -169,8 +169,29 @@ defmodule RadioBeamWeb.RoomController do
     |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
   end
 
-  def get_members(conn, %{"room_id" => room_id}) do
-    case Room.get_members(room_id, conn.assigns.user.id) do
+  def get_members(conn, %{"room_id" => room_id} = params) do
+    at_event_id =
+      case params do
+        %{"at" => prev_batch} -> prev_batch |> String.split("|") |> hd()
+        _ -> :current
+      end
+
+    membership_filter_fn =
+      case params do
+        %{"membership" => to_include} ->
+          fn membership ->
+            to_exclude = Map.get(params, "not_membership", membership)
+            membership == to_include or membership != to_exclude
+          end
+
+        %{"not_membership" => to_exclude} ->
+          fn membership -> membership != to_exclude end
+
+        _ ->
+          fn _ -> true end
+      end
+
+    case Room.get_members(room_id, conn.assigns.user.id, at_event_id, membership_filter_fn) do
       {:ok, members} -> json(conn, %{chunk: members})
       {:error, error} -> handle_room_call_error(conn, error)
     end

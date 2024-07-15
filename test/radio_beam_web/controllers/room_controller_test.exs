@@ -407,7 +407,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
       conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/12345", content)
 
-      assert %{"event_id" => "!" <> _} = json_response(conn, 200)
+      assert %{"event_id" => "$" <> _} = json_response(conn, 200)
     end
 
     test "rejects a message event if user is not in the room", %{conn: conn} do
@@ -515,7 +515,50 @@ defmodule RadioBeamWeb.RoomControllerTest do
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
 
-    test "returns the members (200) with the requester in the room", %{
+    test "returns the members (200) when the requester is in the room", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, room_id} = Room.create(user)
+
+      content = %{"msgtype" => "m.text", "body" => "hi hi hello"}
+      {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", content)
+
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(user2)
+      {:ok, _event_id} = Room.invite(room_id, user.id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"at" => event_id})
+
+      assert %{"chunk" => chunk} = json_response(conn, 200)
+      assert 1 = length(chunk)
+    end
+
+    test "returns the members (200) whose membership passes the filter", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, room_id} = Room.create(user)
+
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(user2)
+      {:ok, _event_id} = Room.invite(room_id, user.id, user2.id)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"membership" => "join"})
+
+      assert %{"chunk" => chunk} = json_response(conn, 200)
+      assert 1 = length(chunk)
+
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"membership" => "join"})
+
+      assert %{"chunk" => chunk} = json_response(conn, 200)
+      assert 2 = length(chunk)
+    end
+
+    test "returns the members (200) at a specific event when the requester was in the room", %{
       conn: conn,
       user: user
     } do

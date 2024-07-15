@@ -262,11 +262,13 @@ defmodule RadioBeam.Room do
 
   def get_event(room_id, user_id, event_id) do
     currently_joined? = call_if_alive(room_id, {:member?, user_id})
-    # TODO / TOFIX: I think spec says users should be able to access events 
-    # they used to be able to access if their membership/history visibility
-    # allowed it, even if they've since left the room. So this var should
-    # have to dynamically calculate it
-    latest_joined_at_depth = if currently_joined?, do: :infinity, else: -1
+
+    latest_joined_at_depth =
+      if currently_joined? do
+        :infinity
+      else
+        get_depth_of_join_after_event(room_id, user_id, event_id)
+      end
 
     with %{^event_id => pdu_tuple} <- PDU.get([event_id], coerce: false),
          true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
@@ -276,26 +278,64 @@ defmodule RadioBeam.Room do
     end
   end
 
-  def get_members(room_id, user_id, membership_filter \\ fn _ -> true end) do
-    # TOIMPL: resolve `at` parameter at caller and pass in event_id to check state at
+  def get_members(room_id, user_id, at_event_id \\ :current, membership_filter \\ fn _ -> true end)
 
+  def get_members(room_id, user_id, :current, membership_filter) do
     case get_state(room_id, user_id) do
-      {:ok, state} ->
-        members =
-          state
-          |> Stream.map(&elem(&1, 1))
-          |> Enum.filter(fn
-            %{"type" => "m.room.member"} = event ->
-              event |> get_in(["content", "membership"]) |> membership_filter.()
+      {:ok, state} -> get_members_from_state(state, membership_filter)
+      error -> error
+    end
+  end
 
-            _ ->
-              false
-          end)
+  def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
+    currently_joined? = call_if_alive(room_id, {:member?, user_id})
 
-        {:ok, members}
+    latest_joined_at_depth =
+      if currently_joined? do
+        :infinity
+      else
+        get_depth_of_join_after_event(room_id, user_id, at_event_id)
+      end
 
-      error ->
-        error
+    with %{^at_event_id => pdu_tuple} <- PDU.get([at_event_id], coerce: false),
+         true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
+      state = pdu_tuple |> Memento.Query.Data.load() |> Map.fetch!(:prev_state)
+      get_members_from_state(state, membership_filter)
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp get_members_from_state(state, membership_filter) when is_map(state) do
+    members =
+      state
+      |> Stream.map(&elem(&1, 1))
+      |> Enum.filter(fn
+        %{"type" => "m.room.member"} = event ->
+          event |> get_in(["content", "membership"]) |> membership_filter.()
+
+        _ ->
+          false
+      end)
+
+    {:ok, members}
+  end
+
+  defp get_depth_of_join_after_event(room_id, user_id, event_id) do
+    fn ->
+      # TODO: instead of two select_raw's, do a join?
+      event_depth =
+        PDU
+        |> Memento.Query.select_raw(PDU.depth_ms(room_id, [event_id]), coerce: false)
+        |> hd()
+
+      Memento.Query.select_raw(PDU, PDU.joined_after_ms(room_id, user_id, event_depth), coerce: false)
+    end
+    |> Memento.transaction()
+    |> case do
+      {:ok, []} -> -1
+      {:ok, depths} -> Enum.max(depths)
+      {:error, _} -> -1
     end
   end
 

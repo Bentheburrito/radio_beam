@@ -281,10 +281,7 @@ defmodule RadioBeam.RoomTest do
       assert {:ok, %{event_id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
     end
 
-    # See the TODO / TOFIX in `Room.get_event/3` for an explanation on how to 
-    # fix  this so we can unskip this test
-    @tag :skip
-    test "can get an event in a shared history room the calling user was joined to at a later time", %{
+    test "can get an event in a shared history room the calling user joined at a later time", %{
       user1: creator,
       user2: user
     } do
@@ -303,6 +300,15 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.leave(room_id, user.id, "nvm gtg")
 
       assert {:ok, %{event_id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id, "please come back")
+      {:ok, _event_id} = Room.join(room_id, user.id, "ok")
+      content = %{"msgtype" => "m.text", "body" => "I'm back"}
+      {:ok, event_id2} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, _event_id} = Room.leave(room_id, user.id, "jk lmao")
+
+      assert {:ok, %{event_id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+      assert {:ok, %{event_id: ^event_id2}} = Room.get_event(room_id, user.id, event_id2)
     end
 
     test "can't get an event in a since-joined-only history room the calling user was joined to at a later time", %{
@@ -327,7 +333,7 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
-  describe "get_members/3" do
+  describe "get_members/4" do
     setup do
       {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
       {:ok, user1} = Repo.insert(user1)
@@ -395,17 +401,46 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.join(room_id, user2.id)
 
       filter_fn = fn membership -> membership == "join" end
-      assert {:ok, members} = Room.get_members(room_id, user2.id, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, user2.id, :current, filter_fn)
       assert 2 = length(members)
 
       {:ok, _event_id} = Room.join(room_id, user3.id)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, user2.id, :current, filter_fn)
       assert 3 = length(members)
 
       {:ok, _event_id} = Room.leave(room_id, user3.id)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, user2.id, :current, filter_fn)
+      assert 2 = length(members)
+    end
+
+    test "returns members in the room at the given event ID", %{user1: creator, user2: user2, user3: user3} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      content = %{"msgtype" => "m.text", "body" => "hi"}
+      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id, event_id)
+      assert 2 = length(members)
+
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
+      {:ok, _event_id} = Room.join(room_id, user3.id)
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id, :current)
+      assert 3 = length(members)
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id, event_id)
+      assert 2 = length(members)
+
+      filter_fn = fn membership -> membership == "join" end
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id, :current, filter_fn)
+      assert 3 = length(members)
+
+      assert {:ok, members} = Room.get_members(room_id, user2.id, event_id, filter_fn)
       assert 2 = length(members)
     end
   end
@@ -452,14 +487,6 @@ defmodule RadioBeam.RoomTest do
 
       assert {:ok, ^state} = Room.get_state(room_id, user2.id)
     end
-  end
-
-  defp join_rule_event() do
-    %{
-      "content" => %{"join_rule" => "knock"},
-      "state_key" => "",
-      "type" => "m.room.join_rules"
-    }
   end
 
   describe "get_state/4" do
@@ -515,6 +542,14 @@ defmodule RadioBeam.RoomTest do
       assert {:ok, ^event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
       assert {:error, :not_found} = Room.get_state(room_id, user2.id, "m.room.name", "")
     end
+  end
+
+  defp join_rule_event() do
+    %{
+      "content" => %{"join_rule" => "knock"},
+      "state_key" => "",
+      "type" => "m.room.join_rules"
+    }
   end
 
   defp name_event() do

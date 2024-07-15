@@ -42,6 +42,21 @@ defmodule RadioBeam.PDU do
     end
   end
 
+  def joined_after_ms(room_id, user_id, depth) do
+    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :"$2", :_, :_, :_, :_, :"$3", :_, :_, :"$4", :_}
+
+    depth_guard = {:>, :"$1", depth}
+    is_member_event_guard = {:==, :"$4", "m.room.member"}
+    sender_guard = {:==, user_id, :"$3"}
+    is_joined_guard = {:==, "join", {:map_get, "membership", :"$2"}}
+
+    guards = [
+      {:andalso, depth_guard, {:andalso, is_member_event_guard, {:andalso, sender_guard, is_joined_guard}}}
+    ]
+
+    [{match_head, guards, [:"$1"]}]
+  end
+
   def new(params, room_version) do
     now = :os.system_time(:millisecond)
 
@@ -55,7 +70,7 @@ defmodule RadioBeam.PDU do
       |> then(
         &Map.put_new_lazy(&1, "event_id", fn ->
           case RoomVersion.compute_reference_hash(room_version, Map.delete(&1, "prev_state")) do
-            {:ok, hash} -> "!#{Base.url_encode64(hash)}:#{RadioBeam.server_name()}"
+            {:ok, hash} -> "$#{Base.url_encode64(hash)}:#{RadioBeam.server_name()}"
             :error -> throw(:could_not_compute_ref_hash)
           end
         end)
