@@ -494,6 +494,60 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
   end
 
+  describe "get_joined_members/2" do
+    setup %{conn: conn} do
+      {:ok, user} =
+        "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "returns an object of members IDs to profile info (200)", %{conn: conn, user: user} do
+      {:ok, room_id} = Room.create(user)
+
+      content = %{"msgtype" => "m.text", "body" => "hi hi hello"}
+      {:ok, _event_id} = Room.send(room_id, user.id, "m.room.message", content)
+
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(user2)
+      {:ok, _event_id} = Room.invite(room_id, user.id, user2.id)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/joined_members", %{})
+
+      user_id = user.id
+      assert %{"joined" => %{^user_id => %{}} = joined} = json_response(conn, 200)
+      assert 1 = map_size(joined)
+
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/joined_members", %{})
+      assert %{"joined" => joined} = json_response(conn, 200)
+      assert 2 = map_size(joined)
+    end
+
+    test "returns M_FORBIDDEN (403) when the requester is not in the room", %{conn: conn, user: user} do
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(user2)
+      {:ok, room_id} = Room.create(user2)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/joined_members", %{})
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+  end
+
   describe "get_members/2" do
     setup %{conn: conn} do
       {:ok, user} =

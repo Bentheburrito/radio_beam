@@ -169,6 +169,18 @@ defmodule RadioBeamWeb.RoomController do
     |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
   end
 
+  # omg...
+  @room_member_keys ["avatar_url", "displayname", "display_name"]
+  def get_joined_members(conn, %{"room_id" => room_id}) do
+    case Room.get_members(room_id, conn.assigns.user.id, :current, &(&1 == "join")) do
+      {:ok, members} ->
+        json(conn, %{joined: Map.new(members, &{&1["state_key"], Map.take(&1["content"], @room_member_keys)})})
+
+      {:error, error} ->
+        handle_room_call_error(conn, error)
+    end
+  end
+
   def get_members(conn, %{"room_id" => room_id} = params) do
     at_event_id =
       case params do
