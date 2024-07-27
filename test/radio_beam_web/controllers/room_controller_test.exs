@@ -538,7 +538,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert 2 = map_size(joined)
     end
 
-    test "returns M_FORBIDDEN (403) when the requester is not in the room", %{conn: conn, user: user} do
+    test "returns M_FORBIDDEN (403) when the requester is not in the room", %{conn: conn} do
       {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
       Repo.insert(user2)
       {:ok, room_id} = Room.create(user2)

@@ -1,4 +1,5 @@
 defmodule RadioBeamWeb.Schemas.Sync do
+  alias RadioBeam.Room.Timeline
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.Filter
 
@@ -11,6 +12,20 @@ defmodule RadioBeamWeb.Schemas.Sync do
       "timeout" => [:integer, default: 0]
     }
   end
+
+  def get_messages do
+    %{
+      "dir" => Schema.enum(%{"f" => :forward, "b" => :backward}, &String.downcase/1),
+      "filter" => optional(Schema.any_of([&filter_by_id/1, Filter.filter()])),
+      "from" => optional(&from_token/1),
+      "limit" => [&Filter.limit/1, default: Timeline.max_events(:timeline)],
+      "to" => optional(:string)
+    }
+  end
+
+  defp from_token("first"), do: {:ok, :first}
+  defp from_token("last"), do: {:ok, :last}
+  defp from_token(from), do: {:ok, from}
 
   defp filter_by_id("{" <> _), do: {:error, :invalid}
 

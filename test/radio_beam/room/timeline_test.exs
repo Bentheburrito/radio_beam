@@ -541,4 +541,285 @@ defmodule RadioBeam.Room.TimelineTest do
       for {_, room_map} <- rooms, do: assert(map_size(room_map) == 0)
     end
   end
+
+  describe "get_messages/6" do
+    setup %{creator: creator, user: user} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "sup"})
+      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "yo"})
+      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "what is this room about"})
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "idk"})
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "wait yes I do"})
+      Room.set_name(room_id, creator.id, "Get Messages Pagination")
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "there we go"})
+
+      Room.send(room_id, user.id, "m.room.message", %{
+        "msgtype" => "m.text",
+        "body" => "so you're just using me to test something?"
+      })
+
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "yeah"})
+      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "wow"})
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "?"})
+
+      Room.send(room_id, user.id, "m.room.message", %{
+        "msgtype" => "m.text",
+        "body" => "I thought I was more than that to you"
+      })
+
+      Room.leave(room_id, user.id, "you can't trust anyone in this industry")
+
+      %{room_id: room_id}
+    end
+
+    test "can successfully paginate backwards through events in a room after a sync", %{
+      room_id: room_id,
+      creator: %{id: creator_id} = creator,
+      user: %{id: user_id}
+    } do
+      filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
+
+      %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} = Timeline.sync([room_id], creator.id, filter: filter)
+
+      %{
+        limited: true,
+        events: [
+          %{"type" => "m.room.message"},
+          %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
+          %{"type" => "m.room.member"}
+        ],
+        prev_batch: prev_batch
+      } =
+        timeline
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
+               Timeline.get_messages(room_id, creator.id, :backward, prev_batch, :limit, filter: filter)
+
+      assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
+               Enum.sort(state)
+
+      assert [
+               %{"type" => "m.room.message", "content" => %{"body" => "wow"}},
+               %{"type" => "m.room.message", "content" => %{"body" => "yeah"}},
+               %{"type" => "m.room.message", "content" => %{"body" => "so you're just using me to test something?"}}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
+               Timeline.get_messages(room_id, creator.id, :backward, next, :limit, filter: filter)
+
+      assert 1 = length(state)
+
+      assert [
+               %{"type" => "m.room.message", "content" => %{"body" => "there we go"}},
+               %{"type" => "m.room.name", "content" => %{"name" => "Get Messages Pagination"}},
+               %{"type" => "m.room.message", "content" => %{"body" => "wait yes I do"}}
+             ] = chunk
+
+      filter = %{"room" => %{"timeline" => %{"limit" => 30}}}
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
+               Timeline.get_messages(room_id, creator.id, :backward, next2, :limit, filter: filter)
+
+      refute is_map_key(response, :end)
+
+      assert 12 = length(chunk)
+      assert 2 = length(state)
+    end
+
+    test "can successfully paginate forward events in a room after a sync", %{
+      room_id: room_id,
+      creator: %{id: creator_id} = creator,
+      user: %{id: user_id}
+    } do
+      filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
+      %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} = Timeline.sync([room_id], creator.id, filter: filter)
+
+      %{
+        limited: true,
+        events: [
+          %{"type" => "m.room.message"},
+          %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
+          %{"type" => "m.room.member"}
+        ],
+        prev_batch: prev_batch
+      } =
+        timeline
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch} = response} =
+               Timeline.get_messages(room_id, creator.id, :forward, prev_batch, :limit)
+
+      assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
+               Enum.sort(state)
+
+      refute is_map_key(response, :end)
+
+      assert [
+               %{"type" => "m.room.message"},
+               %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
+               %{"type" => "m.room.member"}
+             ] = chunk
+
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
+
+      assert {:ok, %{chunk: chunk, state: _state, start: ^prev_batch} = response} =
+               Timeline.get_messages(room_id, creator.id, :forward, prev_batch, :limit)
+
+      refute is_map_key(response, :end)
+
+      assert [
+               %{"type" => "m.room.message"},
+               %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
+               %{"type" => "m.room.member"},
+               %{"type" => "m.room.message", "content" => %{"body" => "welp"}}
+             ] = chunk
+    end
+
+    test "can successfully paginate forward from the beginning of a room", %{room_id: room_id, creator: creator} do
+      filter = %{"room" => %{"timeline" => %{"limit" => 10}}}
+
+      assert {:ok, %{chunk: chunk, state: state, start: :first, end: next}} =
+               Timeline.get_messages(room_id, creator.id, :forward, :first, :limit, filter: filter)
+
+      assert 2 = length(state)
+
+      assert [
+               %{"type" => "m.room.create"},
+               %{"type" => "m.room.member"},
+               %{"type" => "m.room.power_levels"},
+               %{"type" => "m.room.join_rules"},
+               %{"type" => "m.room.history_visibility"},
+               %{"type" => "m.room.guest_access"},
+               %{"type" => "m.room.member", "content" => %{"membership" => "invite"}},
+               %{"type" => "m.room.member", "content" => %{"membership" => "join"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "sup"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "yo"}}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
+               Timeline.get_messages(room_id, creator.id, :forward, next, :limit, filter: filter)
+
+      assert 2 = length(state)
+
+      assert [
+               %{"content" => %{"msgtype" => "m.text", "body" => "what is this room about"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "idk"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}},
+               %{"content" => %{"name" => "Get Messages Pagination"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "?"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
+               Timeline.get_messages(room_id, creator.id, :forward, next2, :limit, filter: filter)
+
+      assert 1 = length(state)
+      refute is_map_key(response, :end)
+      [%{"type" => "m.room.member", "content" => %{"membership" => "leave"}}] = chunk
+    end
+
+    test "can successfully paginate backward from the end of a room", %{room_id: room_id, creator: creator} do
+      filter = %{"room" => %{"timeline" => %{"limit" => 10}}}
+
+      assert {:ok, %{chunk: chunk, state: state, start: :last, end: next}} =
+               Timeline.get_messages(room_id, creator.id, :backward, :last, :limit, filter: filter)
+
+      assert 2 = length(state)
+
+      assert [
+               %{"type" => "m.room.member", "content" => %{"membership" => "leave"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "?"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{"content" => %{"name" => "Get Messages Pagination"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "idk"}}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
+               Timeline.get_messages(room_id, creator.id, :backward, next, :limit, filter: filter)
+
+      assert 2 = length(state)
+
+      assert [
+               %{"content" => %{"msgtype" => "m.text", "body" => "what is this room about"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "yo"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "sup"}},
+               %{"type" => "m.room.member", "content" => %{"membership" => "join"}},
+               %{"type" => "m.room.member", "content" => %{"membership" => "invite"}},
+               %{"type" => "m.room.guest_access"},
+               %{"type" => "m.room.history_visibility"},
+               %{"type" => "m.room.join_rules"},
+               %{"type" => "m.room.power_levels"},
+               %{"type" => "m.room.member"}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
+               Timeline.get_messages(room_id, creator.id, :backward, next2, :limit, filter: filter)
+
+      assert 1 = length(state)
+      refute is_map_key(response, :end)
+      [%{"type" => "m.room.create"}] = chunk
+    end
+
+    test "can successfully paginate in either direction froma prev_batch_token", %{room_id: room_id, creator: creator} do
+      filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
+
+      %{rooms: %{join: %{^room_id => %{timeline: %{prev_batch: prev_batch}}}}} =
+        Timeline.sync([room_id], creator.id, filter: filter)
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
+               Timeline.get_messages(room_id, creator.id, :backward, prev_batch, :limit, filter: filter)
+
+      assert 2 = length(state)
+
+      assert [
+               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
+               Timeline.get_messages(room_id, creator.id, :backward, next, :limit, filter: filter)
+
+      assert 1 = length(state)
+
+      assert [
+               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{"content" => %{"name" => "Get Messages Pagination"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next2, end: ^next}} =
+               Timeline.get_messages(room_id, creator.id, :forward, next2, :limit, filter: filter)
+
+      assert 1 = length(state)
+
+      assert [
+               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}},
+               %{"content" => %{"name" => "Get Messages Pagination"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}}
+             ] = chunk
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next, end: ^prev_batch}} =
+               Timeline.get_messages(room_id, creator.id, :forward, next, :limit, filter: filter)
+
+      assert 2 = length(state)
+
+      assert [
+               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}}
+             ] = chunk
+    end
+  end
 end

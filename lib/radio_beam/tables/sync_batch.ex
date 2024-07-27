@@ -1,17 +1,19 @@
 defmodule RadioBeam.SyncBatch do
   @moduledoc """
-  A `%SyncBatch{}` maps a `since` token to a list of the latest event IDs a 
-  user/client could see at the time of their last sync. 
+  A `%SyncBatch{}` maps a `since` token to a map of room IDs -> the latest 
+  event IDs a user/client could see at the time of their last sync. 
   """
-  @attrs [:batch_token, :event_ids]
+  @attrs [:token, :batch_map, :used_at]
   use Memento.Table,
     attributes: @attrs,
     type: :set
 
-  def put(event_ids) do
-    batch_token = 8 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
+  @type t() :: %__MODULE__{}
 
-    fn -> Memento.Query.write(%__MODULE__{batch_token: batch_token, event_ids: event_ids}) end
+  def put(batch_map) do
+    batch_token = "batch:#{8 |> :crypto.strong_rand_bytes() |> Base.url_encode64()}"
+
+    fn -> Memento.Query.write(%__MODULE__{token: batch_token, batch_map: batch_map, used_at: nil}) end
     |> Memento.transaction()
     |> case do
       {:ok, %__MODULE__{}} -> {:ok, batch_token}
@@ -19,7 +21,16 @@ defmodule RadioBeam.SyncBatch do
     end
   end
 
-  def get(batch_token) do
-    Memento.transaction(fn -> Memento.Query.read(__MODULE__, batch_token) end)
+  @spec pop(batch_token :: String.t()) :: {:ok, t() | :not_found} | {:error, any()}
+  def pop(batch_token) do
+    Memento.transaction(fn ->
+      case Memento.Query.read(__MODULE__, batch_token, lock: :write) do
+        nil ->
+          :not_found
+
+        %__MODULE__{} = batch ->
+          Memento.Query.write(%__MODULE__{batch | used_at: :os.system_time(:millisecond)})
+      end
+    end)
   end
 end

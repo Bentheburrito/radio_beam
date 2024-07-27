@@ -261,20 +261,30 @@ defmodule RadioBeam.Room do
   end
 
   def get_event(room_id, user_id, event_id) do
-    currently_joined? = call_if_alive(room_id, {:member?, user_id})
-
-    latest_joined_at_depth =
-      if currently_joined? do
-        :infinity
-      else
-        get_depth_of_join_after_event(room_id, user_id, event_id)
-      end
+    latest_joined_at_depth = users_latest_join_depth(room_id, user_id, event_id)
 
     with %{^event_id => pdu_tuple} <- PDU.get([event_id], coerce: false),
          true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
       {:ok, pdu_tuple |> Memento.Query.Data.load() |> PDU.to_event()}
     else
       _ -> {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Returns the depth of the given user's latest 'join' membership event, or the
+  atom `:currently_joined` if the user is currently in the room
+
+  TOFIX: we really want the depth of the event where the user's membership
+  changed from 'join' -> <anything other than 'join'> - 1.
+  """
+  def users_latest_join_depth(room_id, user_id, event_id) do
+    currently_joined? = call_if_alive(room_id, {:member?, user_id})
+
+    if currently_joined? do
+      :currently_joined
+    else
+      get_depth_of_join_after_event(room_id, user_id, event_id)
     end
   end
 
@@ -288,14 +298,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    currently_joined? = call_if_alive(room_id, {:member?, user_id})
-
-    latest_joined_at_depth =
-      if currently_joined? do
-        :infinity
-      else
-        get_depth_of_join_after_event(room_id, user_id, at_event_id)
-      end
+    latest_joined_at_depth = users_latest_join_depth(room_id, user_id, at_event_id)
 
     with %{^at_event_id => pdu_tuple} <- PDU.get([at_event_id], coerce: false),
          true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
@@ -324,6 +327,7 @@ defmodule RadioBeam.Room do
   defp get_depth_of_join_after_event(room_id, user_id, event_id) do
     fn ->
       # TODO: instead of two select_raw's, do a join?
+      # TODO: limit to 1 record?
       event_depth =
         PDU
         |> Memento.Query.select_raw(PDU.depth_ms(room_id, [event_id]), coerce: false)

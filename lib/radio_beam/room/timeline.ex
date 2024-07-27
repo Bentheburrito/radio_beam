@@ -13,6 +13,62 @@ defmodule RadioBeam.Room.Timeline do
   alias RadioBeam.Room
   alias RadioBeam.SyncBatch
 
+  def get_messages(room_id, user_id, direction, from, to, opts \\ [])
+
+  def get_messages(%Room{} = room, user_id, direction, from, to, opts) do
+    from_event_ids = parse_token(from, room, direction)
+    to_event_ids = parse_token(to, room, direction)
+
+    order =
+      case direction do
+        :forward -> :ascending
+        :backward -> :descending
+      end
+
+    filter = opts |> Keyword.get(:filter, %{}) |> Filter.parse()
+    # TODO...there's possibly a :limit opt passed too, but the filter 
+    # also has limiting capabilities???
+
+    latest_joined_at_depth =
+      Room.users_latest_join_depth(
+        room.id,
+        user_id,
+        List.first(from_event_ids) || room.state[{"m.room.create", ""}]["event_id"]
+      )
+
+    case timeline(room.id, user_id, from_event_ids, to_event_ids, filter, latest_joined_at_depth, order) do
+      %{limited: true, events: events, prev_batch: prev_batch} ->
+        members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
+        events = events |> Enum.reverse() |> format(filter)
+        # TOIMPL: add support for lazy_load_members and include_redundant_members
+        %{chunk: events, state: MapSet.to_list(members), start: from, end: prev_batch}
+
+      %{limited: false, events: events} ->
+        members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
+        events = events |> Enum.reverse() |> format(filter)
+        %{chunk: events, state: MapSet.to_list(members), start: from}
+    end
+  end
+
+  def get_messages(room_id, user_id, direction, from, to, opts) do
+    case Memento.transaction(fn -> Memento.Query.read(Room, room_id) end) do
+      {:ok, %Room{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "join"}}}} = room} ->
+        {:ok, get_messages(room, user_id, direction, from, to, opts)}
+
+      _ ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp parse_token("batch:" <> _ = next_batch_token, room, _dir),
+    do: Map.get(parse_since_token(next_batch_token), room.id, [])
+
+  defp parse_token("$" <> _ = prev_batch_token, _room, _dir), do: String.split(prev_batch_token, "|")
+  defp parse_token(:limit, room, :forward), do: room.latest_event_ids
+  defp parse_token(:limit, _room, :backward), do: []
+  defp parse_token(:first, _room, :forward), do: []
+  defp parse_token(:last, room, :backward), do: room.latest_event_ids
+
   def max_events(type) when type in [:timeline, :state] do
     Application.get_env(:radio_beam, :max_events)[type]
   end
@@ -21,8 +77,8 @@ defmodule RadioBeam.Room.Timeline do
     filter = opts |> Keyword.get(:filter, %{}) |> Filter.parse()
     opts = Keyword.put(opts, :filter, filter)
 
-    {rooms, latest_ids} = sync_with_room_ids(room_ids, user_id, opts)
-    {:ok, next_batch} = SyncBatch.put(latest_ids)
+    {rooms, batch_map} = sync_with_room_ids(room_ids, user_id, opts)
+    {:ok, next_batch} = SyncBatch.put(batch_map)
 
     %{
       rooms: rooms,
@@ -36,7 +92,7 @@ defmodule RadioBeam.Room.Timeline do
     }
   end
 
-  @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _latest_ids = []}
+  @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _batch_map = %{}}
   defp sync_with_room_ids(room_ids, user_id, opts) do
     since = Keyword.get(opts, :since, :latest)
     filter = Keyword.get(opts, :filter, %{})
@@ -54,7 +110,7 @@ defmodule RadioBeam.Room.Timeline do
     |> await_if_no_updates(user_id, opts)
   end
 
-  defp build_room_sync(room_id, user_id, last_sync_event_map, include_leave?, {rooms, latest_ids}, opts) do
+  defp build_room_sync(room_id, user_id, last_sync_event_map, include_leave?, {rooms, batch_map}, opts) do
     %Room{} = room = Memento.transaction!(fn -> Memento.Query.read(Room, room_id) end)
 
     case get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) do
@@ -71,22 +127,23 @@ defmodule RadioBeam.Room.Timeline do
             room_update -> put_in(rooms, [:join, room_id], room_update)
           end
 
-        {rooms, room.latest_event_ids ++ latest_ids}
+        {rooms, Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
 
       # TODO: should the invite reflect changes to stripped state events that
       # happened after the invite?
       "invite" when is_map_key(last_sync_event_map, room_id) ->
-        {rooms, room.latest_event_ids ++ latest_ids}
+        {rooms, Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
 
       "invite" ->
-        {put_in(rooms, [:invite, room_id], invited_room_sync(room)), room.latest_event_ids ++ latest_ids}
+        {put_in(rooms, [:invite, room_id], invited_room_sync(room)),
+         Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
 
       "knock" ->
         Logger.info("TOIMPL: sync with knock rooms")
-        {rooms, latest_ids}
+        {rooms, batch_map}
 
       "leave" when not include_leave? ->
-        {rooms, room.latest_event_ids ++ latest_ids}
+        {rooms, Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
 
       "leave" ->
         stop_at_any = Map.get(last_sync_event_map, room.id, [])
@@ -102,23 +159,23 @@ defmodule RadioBeam.Room.Timeline do
             room_update -> put_in(rooms, [:leave, room_id], room_update)
           end
 
-        {rooms, [pdu.event_id | latest_ids]}
+        {rooms, Map.update(batch_map, room.id, [pdu.event_id], &[pdu.event_id | &1])}
     end
   end
 
-  defp await_if_no_updates({rooms, latest_ids}, user_id, opts) do
+  defp await_if_no_updates({rooms, batch_map}, user_id, opts) do
     if Enum.all?(rooms, fn {_, map} -> map_size(map) == 0 end) do
       timeout = Keyword.get(opts, :timeout, 0)
 
       case await_next_event(timeout) do
         :timeout ->
-          {rooms, latest_ids}
+          {rooms, batch_map}
 
         {:update, room_id, rem_timeout} ->
           sync_with_room_ids([room_id], user_id, Keyword.put(opts, :timeout, rem_timeout))
       end
     else
-      {rooms, latest_ids}
+      {rooms, batch_map}
     end
   end
 
@@ -137,12 +194,9 @@ defmodule RadioBeam.Room.Timeline do
   defp parse_since_token(:latest), do: %{}
 
   defp parse_since_token(since) do
-    case SyncBatch.get(since) do
-      {:ok, %SyncBatch{event_ids: event_ids}} ->
-        event_ids
-        |> PDU.get()
-        |> Stream.map(fn {_event_id, pdu} -> pdu end)
-        |> Enum.group_by(&PDU.room_id(&1), & &1.event_id)
+    case SyncBatch.pop(since) do
+      {:ok, %SyncBatch{batch_map: batch_map}} ->
+        batch_map
 
       {:error, error} ->
         Logger.error(
@@ -202,23 +256,26 @@ defmodule RadioBeam.Room.Timeline do
   defp allowed_room?(room_id, {:denylist, denylist}), do: room_id not in denylist
   defp allowed_room?(_room_id, :none), do: true
 
-  # TODO: for the purposes of sync, we can easily pass down the 
-  # latest_joined_at_depth. However, other endpoints (e.g. 
-  # /rooms/:room_id/messages) will require the caller calculate it. 
-  # Unfortunately we have to do this because of how the "shared" room history 
-  # visibility works (can't just determine if the user has perms to see the 
-  # event based on current room state/state at the event)
-  defp timeline(room_id, user_id, event_ids, stop_at_any, filter, latest_joined_at_depth) do
+  defp timeline(room_id, user_id, begin_event_ids, end_event_ids, filter, latest_joined_at_depth, order \\ :descending) do
     fn ->
       latest_event_depth =
         PDU
-        |> Memento.Query.select_raw(PDU.depth_ms(room_id, event_ids), coerce: false)
-        |> Enum.max()
+        |> Memento.Query.select_raw(PDU.depth_ms(room_id, begin_event_ids), coerce: false)
+        |> Enum.max(&>=/2, fn -> -1 end)
 
       last_sync_depth =
         PDU
-        |> Memento.Query.select_raw(PDU.depth_ms(room_id, stop_at_any), coerce: false)
+        |> Memento.Query.select_raw(PDU.depth_ms(room_id, end_event_ids), coerce: false)
         |> Enum.max(&>=/2, fn -> -1 end)
+
+      # by doing this, the caller doesn't need to know which list of event_ids
+      # is actually the begining/earlier or end/later than the other
+      {last_sync_depth, latest_event_depth} =
+        if last_sync_depth > latest_event_depth do
+          {latest_event_depth, last_sync_depth}
+        else
+          {last_sync_depth, latest_event_depth}
+        end
 
       cursor =
         room_id
@@ -230,29 +287,29 @@ defmodule RadioBeam.Room.Timeline do
           latest_joined_at_depth,
           []
         )
-        |> :qlc.sort(order: :descending)
+        |> :qlc.sort(order: order)
         |> :qlc.cursor()
 
-      # getting + 1 so we can determine if this is a limited timeline
-      tl_events = :qlc.next_answers(cursor, filter.timeline.limit + 1)
+      tl_events = :qlc.next_answers(cursor, filter.timeline.limit)
+
+      next_event =
+        case :qlc.next_answers(cursor, 1) do
+          [] -> :none
+          [next_event | _] -> Memento.Query.Data.load(next_event)
+        end
+
       :ok = :qlc.delete_cursor(cursor)
 
-      {last_sync_depth, tl_events |> Stream.map(&Memento.Query.Data.load/1) |> Enum.reverse()}
+      {next_event, tl_events |> Stream.map(&Memento.Query.Data.load/1) |> Enum.reverse()}
     end
     |> Memento.transaction()
     |> case do
-      {:ok, {_, []}} ->
-        %{limited: false, events: []}
-
-      {:ok, {_, [%{pk: {_, _depth = 0, _}} | _] = timeline}} ->
+      {:ok, {:none, timeline}} ->
         %{limited: false, events: timeline}
 
-      {:ok, {last_sync_depth, [%{pk: {_, last_sync_depth, _}} | timeline]}} ->
-        %{limited: false, events: timeline}
-
-      {:ok, {_, [_extra_event | timeline]}} ->
-        [%{prev_events: rem_ids} | _] = timeline
-        %{limited: true, events: timeline, prev_batch: Enum.join(rem_ids, "|")}
+      {:ok, {next_event, timeline}} ->
+        prev_batch = if order == :descending, do: next_event.event_id, else: Enum.join(next_event.prev_events, "|")
+        %{limited: true, events: timeline, prev_batch: prev_batch}
 
       {:error, error} ->
         Logger.error("tried to fetch a timeline of events for #{inspect(user_id)}, but got error: #{inspect(error)}")

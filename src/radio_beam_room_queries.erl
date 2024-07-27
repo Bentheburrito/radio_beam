@@ -40,7 +40,7 @@ timeline_from(RoomId, UserId, Filter, EndTimelineDepth, LastSyncDepth, LatestJoi
     PDU || {_Table, {RoomId_, Depth, _}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
     RoomId =:= RoomId_,
     Depth =< EndTimelineDepth,
-    Depth >= LastSyncDepth,
+    Depth > LastSyncDepth,
     can_view_event(UserId, LatestJoinedAtDepth, PDU),
     not lists:member(Sender, IgnoredUserIds),
     passes_filter(Filter, Type, Sender, Content)

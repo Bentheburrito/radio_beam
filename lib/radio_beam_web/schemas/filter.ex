@@ -55,17 +55,17 @@ defmodule RadioBeamWeb.Schemas.Filter do
   # idk why these 2 identical schemas have distinct names in the spec
   defp state_filter, do: room_event_filter(Timeline.max_events(:state))
 
-  defp limit(value, max_events \\ Timeline.max_events(:timeline))
+  def limit(value, max_events \\ Timeline.max_events(:timeline))
 
-  defp limit(value, max_events) when is_binary(value) do
+  def limit(value, max_events) when is_binary(value) do
     case Integer.parse(value) do
       {limit, _} -> limit(limit, max_events)
       :error -> {:error, :invalid}
     end
   end
 
-  defp limit(value, max_events) when is_integer(value), do: {:ok, min(max_events, max(1, value))}
-  defp limit(_value, _max_events), do: {:error, :invalid}
+  def limit(value, max_events) when is_integer(value), do: {:ok, min(max_events, max(1, value))}
+  def limit(_value, _max_events), do: {:error, :invalid}
 
   defp optional(type), do: [type, :optional]
 end

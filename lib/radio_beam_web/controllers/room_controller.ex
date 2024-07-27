@@ -1,6 +1,8 @@
 defmodule RadioBeamWeb.RoomController do
   use RadioBeamWeb, :controller
 
+  import RadioBeamWeb.Utils, only: [handle_common_error: 2, handle_common_error: 3]
+
   require Logger
 
   alias RadioBeam.{Errors, Room, RoomAlias, Transaction, User}
@@ -73,7 +75,7 @@ defmodule RadioBeamWeb.RoomController do
       json(conn, %{})
     else
       {:error, error} ->
-        handle_room_call_error(
+        handle_common_error(
           conn,
           error,
           "Failed to invite: you either aren't in the room with permission to invite others, or the invitee is banned from the room"
@@ -105,7 +107,7 @@ defmodule RadioBeamWeb.RoomController do
     with {:ok, _event_id} <- Room.join(room_id, joiner.id, request["reason"]) do
       json(conn, %{room_id: room_id})
     else
-      {:error, error} -> handle_room_call_error(conn, error, "You need to be invited by a member of this room to join")
+      {:error, error} -> handle_common_error(conn, error, "You need to be invited by a member of this room to join")
     end
   end
 
@@ -125,7 +127,7 @@ defmodule RadioBeamWeb.RoomController do
         json(conn, response)
 
       {:error, error} ->
-        handle_room_call_error(conn, error)
+        handle_common_error(conn, error)
     end
   end
 
@@ -142,7 +144,7 @@ defmodule RadioBeamWeb.RoomController do
     with {:ok, event_id} <- Room.put_state(room_id, sender.id, event_type, state_key, content) do
       json(conn, %{event_id: event_id})
     else
-      {:error, error} -> handle_room_call_error(conn, error)
+      {:error, error} -> handle_common_error(conn, error)
     end
   end
 
@@ -159,7 +161,7 @@ defmodule RadioBeamWeb.RoomController do
   def get_event(conn, %{"room_id" => room_id, "event_id" => event_id}) do
     case Room.get_event(room_id, conn.assigns.user.id, event_id) do
       {:ok, event} -> json(conn, event)
-      {:error, error} -> handle_room_call_error(conn, error)
+      {:error, error} -> handle_common_error(conn, error)
     end
   end
 
@@ -177,7 +179,7 @@ defmodule RadioBeamWeb.RoomController do
         json(conn, %{joined: Map.new(members, &{&1["state_key"], Map.take(&1["content"], @room_member_keys)})})
 
       {:error, error} ->
-        handle_room_call_error(conn, error)
+        handle_common_error(conn, error)
     end
   end
 
@@ -205,21 +207,21 @@ defmodule RadioBeamWeb.RoomController do
 
     case Room.get_members(room_id, conn.assigns.user.id, at_event_id, membership_filter_fn) do
       {:ok, members} -> json(conn, %{chunk: members})
-      {:error, error} -> handle_room_call_error(conn, error)
+      {:error, error} -> handle_common_error(conn, error)
     end
   end
 
   def get_state(conn, %{"room_id" => room_id}) do
     case Room.get_state(room_id, conn.assigns.user.id) do
       {:ok, members} -> json(conn, Map.values(members))
-      {:error, error} -> handle_room_call_error(conn, error)
+      {:error, error} -> handle_common_error(conn, error)
     end
   end
 
   def get_state_event(conn, %{"room_id" => room_id, "event_type" => type, "state_key" => state_key}) do
     case Room.get_state(room_id, conn.assigns.user.id, type, state_key) do
       {:ok, event} -> json(conn, Map.get(event, "content", %{}))
-      {:error, error} -> handle_room_call_error(conn, error)
+      {:error, error} -> handle_common_error(conn, error)
     end
   end
 
@@ -227,19 +229,5 @@ defmodule RadioBeamWeb.RoomController do
     conn
     |> put_status(400)
     |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
-  end
-
-  defp handle_room_call_error(conn, error, unauth_message \\ "You do not have permission to perform that action") do
-    {status, error_body} =
-      case error do
-        :unauthorized -> {403, Errors.forbidden(unauth_message)}
-        :room_does_not_exist -> {404, Errors.not_found("Room not found")}
-        :not_found -> {404, Errors.not_found("Resource not found")}
-        :internal -> {500, Errors.unknown("An internal error occurred. Please try again")}
-      end
-
-    conn
-    |> put_status(status)
-    |> json(error_body)
   end
 end
