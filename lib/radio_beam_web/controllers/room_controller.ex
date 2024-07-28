@@ -14,7 +14,10 @@ defmodule RadioBeamWeb.RoomController do
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :join, []}] when action == :join
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :send, :params}] when action == :send
 
-  @missing_req_path_param_msg "Your request is missing one or more required path parameters"
+  plug RadioBeamWeb.Plugs.EnforceSchema,
+       [get_schema: {RoomSchema, :get_nearest_event, []}] when action == :get_nearest_event
+
+  @missing_req_param_msg "Your request is missing one or more required parameters"
 
   def create(conn, _params) do
     %User{} = creator = conn.assigns.user
@@ -134,7 +137,7 @@ defmodule RadioBeamWeb.RoomController do
   def send(conn, _params) do
     conn
     |> put_status(400)
-    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
 
   def put_state(conn, %{"room_id" => room_id, "event_type" => event_type, "state_key" => state_key}) do
@@ -155,7 +158,7 @@ defmodule RadioBeamWeb.RoomController do
   def put_state(conn, _params) do
     conn
     |> put_status(400)
-    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
 
   def get_event(conn, %{"room_id" => room_id, "event_id" => event_id}) do
@@ -168,7 +171,7 @@ defmodule RadioBeamWeb.RoomController do
   def get_event(conn, _params) do
     conn
     |> put_status(400)
-    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
 
   # omg...
@@ -228,6 +231,22 @@ defmodule RadioBeamWeb.RoomController do
   def get_state_event(conn, _params) do
     conn
     |> put_status(400)
-    |> json(Errors.endpoint_error(:missing_param, @missing_req_path_param_msg))
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
+  end
+
+  def get_nearest_event(conn, %{"room_id" => room_id}) do
+    %{"dir" => dir, "ts" => timestamp} = conn.assigns.request
+
+    case Room.get_nearest_event(room_id, conn.assigns.user.id, dir, timestamp) do
+      {:ok, pdu} -> json(conn, %{"event_id" => pdu.event_id, "origin_server_ts" => RadioBeam.PDU.origin_server_ts(pdu)})
+      :none -> handle_common_error(conn, :not_found)
+      {:error, error} -> handle_common_error(conn, error)
+    end
+  end
+
+  def get_nearest_event(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
 end

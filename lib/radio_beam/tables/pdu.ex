@@ -32,27 +32,51 @@ defmodule RadioBeam.PDU do
   @type t() :: %__MODULE__{}
 
   def room_id(%__MODULE__{pk: {room_id, _, _}}), do: room_id
-  def depth(%__MODULE__{pk: {_, depth, _}}), do: depth
+  def depth(%__MODULE__{pk: {_, depth, _}}), do: -depth
   def origin_server_ts(%__MODULE__{pk: {_, _, origin_server_ts}}), do: origin_server_ts
 
-  def depth_ms(room_id, event_ids) do
+  @doc """
+  Get the max depth of all the given event IDs. Returns -1 if the list is
+  empty. This function needs to be run in a transaction
+  """
+  def max_depth_of_all(room_id, event_ids) do
+    __MODULE__
+    |> Memento.Query.select_raw(depth_ms(room_id, event_ids), coerce: false)
+    |> Enum.min(&<=/2, fn -> 1 end)
+    |> Kernel.-()
+  end
+
+  defp depth_ms(room_id, event_ids) do
     for event_id <- event_ids do
       match_head = {__MODULE__, {room_id, :"$1", :_}, event_id, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_}
       {match_head, [], [:"$1"]}
     end
   end
 
-  def joined_after_ms(room_id, user_id, depth) do
-    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :"$2", :_, :_, :_, :_, :"$3", :_, :_, :"$4", :_}
+  def get_depth_of_users_latest_join(room_id, user_id) do
+    fn ->
+      Memento.Query.select_raw(__MODULE__, joined_after_ms(room_id, user_id), coerce: false, limit: 1)
+    end
+    |> Memento.transaction()
+    |> case do
+      {:ok, {[], _continuation}} -> -1
+      {:ok, :"$end_of_table"} -> -1
+      # minus one, because `depth` is the first event the user *can't* see,
+      # since joined_after_ms examines prev_state
+      {:ok, {[depth], _continuation}} -> -depth - 1
+      {:error, _} -> -1
+    end
+  end
 
-    depth_guard = {:>, :"$1", depth}
-    is_member_event_guard = {:==, :"$4", "m.room.member"}
-    sender_guard = {:==, user_id, :"$3"}
-    is_joined_guard = {:==, "join", {:map_get, "membership", :"$2"}}
+  defp joined_after_ms(room_id, user_id) do
+    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :_, :_, :_, :"$2", :_, :_, :_, :_, :_, :_}
 
-    guards = [
-      {:andalso, depth_guard, {:andalso, is_member_event_guard, {:andalso, sender_guard, is_joined_guard}}}
-    ]
+    is_sender_member_key_present = {:is_map_key, {{"m.room.member", user_id}}, :"$2"}
+
+    is_sender_joined =
+      {:==, "join", {:map_get, "membership", {:map_get, "content", {:map_get, {{"m.room.member", user_id}}, :"$2"}}}}
+
+    guards = [{:andalso, is_sender_member_key_present, is_sender_joined}]
 
     [{match_head, guards, [:"$1"]}]
   end
@@ -80,7 +104,7 @@ defmodule RadioBeam.PDU do
      %__MODULE__{
        pk: {
          Map.fetch!(params, "room_id"),
-         Map.fetch!(params, "depth"),
+         -Map.fetch!(params, "depth"),
          now
        },
        event_id: Map.fetch!(params, "event_id"),

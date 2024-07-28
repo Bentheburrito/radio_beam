@@ -29,12 +29,7 @@ defmodule RadioBeam.Room.Timeline do
     # TODO...there's possibly a :limit opt passed too, but the filter 
     # also has limiting capabilities???
 
-    latest_joined_at_depth =
-      Room.users_latest_join_depth(
-        room.id,
-        user_id,
-        List.first(from_event_ids) || room.state[{"m.room.create", ""}]["event_id"]
-      )
+    latest_joined_at_depth = Room.users_latest_join_depth(room.id, user_id)
 
     case timeline(room.id, user_id, from_event_ids, to_event_ids, filter, latest_joined_at_depth, order) do
       %{limited: true, events: events, prev_batch: prev_batch} ->
@@ -257,16 +252,15 @@ defmodule RadioBeam.Room.Timeline do
   defp allowed_room?(_room_id, :none), do: true
 
   defp timeline(room_id, user_id, begin_event_ids, end_event_ids, filter, latest_joined_at_depth, order \\ :descending) do
-    fn ->
-      latest_event_depth =
-        PDU
-        |> Memento.Query.select_raw(PDU.depth_ms(room_id, begin_event_ids), coerce: false)
-        |> Enum.max(&>=/2, fn -> -1 end)
+    orderer =
+      case order do
+        :descending -> & &1
+        :ascending -> &:qlc.sort(&1, order: :descending)
+      end
 
-      last_sync_depth =
-        PDU
-        |> Memento.Query.select_raw(PDU.depth_ms(room_id, end_event_ids), coerce: false)
-        |> Enum.max(&>=/2, fn -> -1 end)
+    fn ->
+      latest_event_depth = PDU.max_depth_of_all(room_id, begin_event_ids)
+      last_sync_depth = PDU.max_depth_of_all(room_id, end_event_ids)
 
       # by doing this, the caller doesn't need to know which list of event_ids
       # is actually the begining/earlier or end/later than the other
@@ -287,7 +281,7 @@ defmodule RadioBeam.Room.Timeline do
           latest_joined_at_depth,
           []
         )
-        |> :qlc.sort(order: order)
+        |> orderer.()
         |> :qlc.cursor()
 
       tl_events = :qlc.next_answers(cursor, filter.timeline.limit)

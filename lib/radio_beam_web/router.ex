@@ -58,6 +58,7 @@ defmodule RadioBeamWeb.Router do
           get "/:room_id/state", RoomController, :get_state
           get "/:room_id/state/:event_type/:state_key", RoomController, :get_state_event
           get "/:room_id/messages", SyncController, :get_messages
+          get "/:room_id/timestamp_to_event", RoomController, :get_nearest_event
         end
 
         scope "/user/:user_id" do

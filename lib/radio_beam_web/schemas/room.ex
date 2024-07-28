@@ -42,6 +42,22 @@ defmodule RadioBeamWeb.Schemas.Room do
   def send(%{"event_type" => "m.room.message"}), do: &InstantMessaging.message_content/1
   def send(_params), do: %{}
 
+  def get_nearest_event do
+    %{
+      "dir" => Schema.enum(%{"f" => :forward, "b" => :backward}, &String.downcase/1),
+      "ts" => &stringed_int/1
+    }
+  end
+
+  defp stringed_int(integer) when is_integer(integer), do: {:ok, integer}
+
+  defp stringed_int(str_int) when is_binary(str_int) do
+    case Integer.parse(str_int) do
+      {integer, ""} -> {:ok, integer}
+      _ -> {:error, :invalid}
+    end
+  end
+
   defp content_schema() do
     %{
       "m.federate" => [:boolean, default: true],

@@ -1,5 +1,5 @@
 defmodule RadioBeam.ErrorsTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias RadioBeam.Errors
 
@@ -10,7 +10,7 @@ defmodule RadioBeam.ErrorsTest do
       end
     end
   end
-  
+
   describe "endpoint errors" do
     test "can handle atom errcodes" do
       assert %{errcode: "M_UNAUTHORIZED"} = Errors.endpoint_error(:unauthorized, "")

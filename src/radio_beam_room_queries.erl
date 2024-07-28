@@ -1,6 +1,6 @@
 -module(radio_beam_room_queries).
 
--export([joined/1, has_membership/1, timeline_from/7, passes_filter/4, can_view_event/3]).
+-export([joined/1, has_membership/1, timeline_from/7, passes_filter/4, can_view_event/3, get_nearest_event_after/6, get_nearest_event_before/6]).
 
 -include_lib("stdlib/include/qlc.hrl").
 
@@ -32,6 +32,26 @@ is_member_of(UserId, State) ->
   end.
 
 
+get_nearest_event_before(RoomId, UserId, Filter, Timestamp, TimestampCutoff, LatestJoinedAtDepth) ->
+  qlc:q([
+    PDU || {_Table, {RoomId_, _, OriginServerTS}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
+    RoomId =:= RoomId_,
+    OriginServerTS =< Timestamp,
+    OriginServerTS >= Timestamp - TimestampCutoff,
+    can_view_event(UserId, LatestJoinedAtDepth, PDU),
+    passes_filter(Filter, Type, Sender, Content)
+  ]).
+
+get_nearest_event_after(RoomId, UserId, Filter, Timestamp, TimestampCutoff, LatestJoinedAtDepth) ->
+  qlc:q([
+    PDU || {_Table, {RoomId_, _, OriginServerTS}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
+    RoomId =:= RoomId_,
+    OriginServerTS >= Timestamp,
+    OriginServerTS =< Timestamp + TimestampCutoff,
+    can_view_event(UserId, LatestJoinedAtDepth, PDU),
+    passes_filter(Filter, Type, Sender, Content)
+  ]).
+
 %% Returns a QLC query for a timeline of room events for the given user, 
 %% starting at the event(s) just after LastSyncDepth, ending at 
 %% EndTimelineDepth
@@ -39,8 +59,8 @@ timeline_from(RoomId, UserId, Filter, EndTimelineDepth, LastSyncDepth, LatestJoi
   qlc:q([
     PDU || {_Table, {RoomId_, Depth, _}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
     RoomId =:= RoomId_,
-    Depth =< EndTimelineDepth,
-    Depth > LastSyncDepth,
+    -Depth =< EndTimelineDepth,
+    -Depth > LastSyncDepth,
     can_view_event(UserId, LatestJoinedAtDepth, PDU),
     not lists:member(Sender, IgnoredUserIds),
     passes_filter(Filter, Type, Sender, Content)
@@ -74,7 +94,7 @@ sender_filter(#{senders := none}, _) -> true.
 %% the state, and once after), with the results `or`'d together
 can_view_event(UserId, LatestJoinedAtDepth, {_Table, {_, Depth, _}, _, _, Content,  _,  _, PrevState, _, _, _, StateKey, Type, _}) ->
     Membership = membership(UserId, PrevState),
-    IsJoinedLater = Depth =< LatestJoinedAtDepth,
+    IsJoinedLater = -Depth =< LatestJoinedAtDepth,
     HistoryVis = history_visibility(PrevState),
     can_view_event(Membership, IsJoinedLater, HistoryVis) or can_view_event_with_next_state(Membership, IsJoinedLater, HistoryVis, Type, Content, StateKey, UserId);
 

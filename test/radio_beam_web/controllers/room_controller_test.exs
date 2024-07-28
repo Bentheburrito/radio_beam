@@ -722,4 +722,64 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
+
+  describe "get_nearest_event/2" do
+    setup %{conn: conn} do
+      {:ok, user} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+
+      Repo.insert(user)
+
+      {:ok, device} =
+        Device.new(%{
+          id: Device.generate_token(),
+          user_id: user.id,
+          display_name: "da steam deck",
+          access_token: Device.generate_token(),
+          refresh_token: Device.generate_token()
+        })
+
+      Repo.insert(device)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "returns a temporally suitable event (200)", %{conn: conn, user: user} do
+      {:ok, room_id} = Room.create(user)
+      {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "heyo"})
+
+      query_params = %{dir: "b", ts: :os.system_time(:millisecond)}
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/timestamp_to_event?#{query_params}", %{})
+      assert %{"event_id" => ^event_id} = json_response(conn, 200)
+    end
+
+    test "returns an M_NOT_FOUND (404) error when there is not a temporally suitable event", %{conn: conn, user: user} do
+      {:ok, room_id} = Room.create(user)
+
+      Process.sleep(25)
+
+      query_params = %{dir: "f", ts: :os.system_time(:millisecond)}
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/timestamp_to_event?#{query_params}", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+
+    test "returns an M_NOT_FOUND (404) error when the user is not in the room", %{conn: conn} do
+      {:ok, user} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      Repo.insert(user)
+      {:ok, room_id} = Room.create(user)
+
+      query_params = %{dir: "f", ts: :os.system_time(:millisecond)}
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/timestamp_to_event?#{query_params}", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+
+    test "returns an M_NOT_FOUND (404) error when the room doesn't exist", %{conn: conn} do
+      query_params = %{dir: "b", ts: :os.system_time(:millisecond)}
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/!lmao:localhost/timestamp_to_event?#{query_params}", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+  end
 end

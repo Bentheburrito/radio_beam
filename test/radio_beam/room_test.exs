@@ -1,5 +1,5 @@
 defmodule RadioBeam.RoomTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.PDU
@@ -541,6 +541,139 @@ defmodule RadioBeam.RoomTest do
 
       assert {:ok, ^event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
       assert {:error, :not_found} = Room.get_state(room_id, user2.id, "m.room.name", "")
+    end
+  end
+
+  describe "get_nearest_event/4" do
+    setup do
+      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user2} = Repo.insert(user2)
+
+      {:ok, room_id} = Room.create(user1)
+      {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      %{user1: user1, user2: user2, room_id: room_id}
+    end
+
+    test "gets the next nearest event", %{user2: user2, room_id: room_id} do
+      Process.sleep(50)
+      ts_before_event = :os.system_time(:millisecond)
+      Process.sleep(50)
+
+      {:ok, event_id} = Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "heyo"})
+
+      assert {:ok, %{event_id: ^event_id} = pdu} = Room.get_nearest_event(room_id, user2.id, :forward, ts_before_event)
+      event_ts = PDU.origin_server_ts(pdu)
+      assert :none = Room.get_nearest_event(room_id, user2.id, :forward, event_ts + 1)
+    end
+
+    test "returns :none if the next nearest event is not soon enough", %{user2: user2, room_id: room_id} do
+      cutoff_ms = 50
+      Process.sleep(cutoff_ms)
+      ts_before_event = :os.system_time(:millisecond)
+      Process.sleep(cutoff_ms * 2)
+
+      {:ok, _event_id} = Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "heyo"})
+
+      assert :none = Room.get_nearest_event(room_id, user2.id, :forward, ts_before_event, cutoff_ms)
+    end
+
+    test "gets the nearest previous event", %{user2: user2, room_id: room_id} do
+      cutoff_ms = 25
+      Process.sleep(cutoff_ms * 2)
+      ts_before_event = :os.system_time(:millisecond)
+      Process.sleep(cutoff_ms)
+
+      {:ok, event_id} = Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "heyo"})
+      Process.sleep(cutoff_ms)
+      ts_after_event = :os.system_time(:millisecond)
+      Process.sleep(cutoff_ms * 2)
+
+      assert :none = Room.get_nearest_event(room_id, user2.id, :backward, ts_before_event, cutoff_ms)
+      assert {:ok, %{event_id: ^event_id}} = Room.get_nearest_event(room_id, user2.id, :backward, ts_after_event)
+    end
+
+    test "returns :none if the nearest previous event is not recent enough", %{user2: user2, room_id: room_id} do
+      {:ok, _event_id} = Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "heyo"})
+
+      cutoff_ms = 50
+      Process.sleep(cutoff_ms)
+      ts_after_event = :os.system_time(:millisecond)
+      Process.sleep(cutoff_ms * 2)
+
+      assert :none = Room.get_nearest_event(room_id, user2.id, :forward, ts_after_event, cutoff_ms)
+    end
+  end
+
+  describe "users_latest_join_depth/2" do
+    setup do
+      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user1} = Repo.insert(user1)
+      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
+      {:ok, user2} = Repo.insert(user2)
+
+      {:ok, room_id} = Room.create(user1)
+      {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
+
+      %{user1: user1, user2: user2, room_id: room_id}
+    end
+
+    test "returns `:currently_joined` if the user is currently in the room", %{
+      user1: user1,
+      user2: user2,
+      room_id: room_id
+    } do
+      assert :currently_joined = Room.users_latest_join_depth(room_id, user1.id)
+
+      refute :currently_joined == Room.users_latest_join_depth(room_id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+      assert :currently_joined = Room.users_latest_join_depth(room_id, user2.id)
+    end
+
+    test "returns the depth of the event just before a user's leave event", %{
+      user1: user1,
+      user2: user2,
+      room_id: room_id
+    } do
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      {:ok, _event_id} = Room.send(room_id, user1.id, "m.room.message", %{"msgtype" => "m.text", "body" => "welcome"})
+
+      {:ok, event_id} =
+        Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "wait I don't wanna be here"})
+
+      {:ok, _event_id} = Room.leave(room_id, user2.id)
+      {:ok, _event_id} = Room.send(room_id, user1.id, "m.room.message", %{"msgtype" => "m.text", "body" => "D:"})
+
+      %{^event_id => pdu} = PDU.get([event_id])
+      expected_depth = PDU.depth(pdu)
+
+      assert ^expected_depth = Room.users_latest_join_depth(room_id, user2.id)
+
+      {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      {:ok, _event_id} =
+        Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "lol jk I'm here"})
+
+      assert :currently_joined = Room.users_latest_join_depth(room_id, user2.id)
+
+      {:ok, _event_id} = Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "NOT!"})
+      {:ok, event_id} = Room.send(room_id, user1.id, "m.room.message", %{"msgtype" => "m.text", "body" => "..."})
+      {:ok, _event_id} = Room.leave(room_id, user2.id)
+      {:ok, _event_id} = Room.send(room_id, user1.id, "m.room.message", %{"msgtype" => "m.text", "body" => "whatever"})
+
+      %{^event_id => pdu} = PDU.get([event_id])
+      expected_depth = PDU.depth(pdu)
+
+      assert ^expected_depth = Room.users_latest_join_depth(room_id, user2.id)
+    end
+
+    test "returns -1 if the user never joined the room", %{user2: user2, room_id: room_id} do
+      assert -1 = Room.users_latest_join_depth(room_id, user2.id)
     end
   end
 

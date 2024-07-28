@@ -261,7 +261,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_event(room_id, user_id, event_id) do
-    latest_joined_at_depth = users_latest_join_depth(room_id, user_id, event_id)
+    latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
 
     with %{^event_id => pdu_tuple} <- PDU.get([event_id], coerce: false),
          true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
@@ -272,19 +272,15 @@ defmodule RadioBeam.Room do
   end
 
   @doc """
-  Returns the depth of the given user's latest 'join' membership event, or the
-  atom `:currently_joined` if the user is currently in the room
-
-  TOFIX: we really want the depth of the event where the user's membership
-  changed from 'join' -> <anything other than 'join'> - 1.
+  Returns the depth of the most recent event where the given user's membership
+  is "join", or the atom `:currently_joined` if the user is currently in the
+  room. The depth will be `-1` if the user was never in the room.
   """
-  def users_latest_join_depth(room_id, user_id, event_id) do
-    currently_joined? = call_if_alive(room_id, {:member?, user_id})
-
-    if currently_joined? do
+  def users_latest_join_depth(room_id, user_id) do
+    if call_if_alive(room_id, {:member?, user_id}) do
       :currently_joined
     else
-      get_depth_of_join_after_event(room_id, user_id, event_id)
+      PDU.get_depth_of_users_latest_join(room_id, user_id)
     end
   end
 
@@ -298,7 +294,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    latest_joined_at_depth = users_latest_join_depth(room_id, user_id, at_event_id)
+    latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
 
     with %{^at_event_id => pdu_tuple} <- PDU.get([at_event_id], coerce: false),
          true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
@@ -324,25 +320,6 @@ defmodule RadioBeam.Room do
     {:ok, members}
   end
 
-  defp get_depth_of_join_after_event(room_id, user_id, event_id) do
-    fn ->
-      # TODO: instead of two select_raw's, do a join?
-      # TODO: limit to 1 record?
-      event_depth =
-        PDU
-        |> Memento.Query.select_raw(PDU.depth_ms(room_id, [event_id]), coerce: false)
-        |> hd()
-
-      Memento.Query.select_raw(PDU, PDU.joined_after_ms(room_id, user_id, event_depth), coerce: false)
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, []} -> -1
-      {:ok, depths} -> Enum.max(depths)
-      {:error, _} -> -1
-    end
-  end
-
   def get_state(room_id, user_id) do
     case call_if_alive(room_id, {:membership, user_id}) do
       %{"content" => %{"membership" => "join"}} ->
@@ -366,6 +343,51 @@ defmodule RadioBeam.Room do
     else
       :error -> {:error, :not_found}
       error -> error
+    end
+  end
+
+  @default_cutoff :timer.hours(24)
+  def get_nearest_event(room_id, user_id, dir, timestamp, cutoff_ms \\ @default_cutoff) do
+    {orderer, query_fn} =
+      case dir do
+        :forward -> {&:qlc.sort(&1, order: :descending), &Queries.get_nearest_event_after/6}
+        :backward -> {& &1, &Queries.get_nearest_event_before/6}
+      end
+
+    latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
+
+    fn ->
+      cursor =
+        room_id
+        |> query_fn.(
+          user_id,
+          %{limit: 1, contains_url: :none, types: :none, senders: :none},
+          timestamp,
+          cutoff_ms,
+          latest_joined_at_depth
+        )
+        |> orderer.()
+        |> :qlc.cursor()
+
+      res = :qlc.next_answers(cursor, 1)
+      :ok = :qlc.delete_cursor(cursor)
+
+      res
+    end
+    |> Memento.transaction()
+    |> case do
+      {:ok, []} ->
+        :none
+
+      {:ok, [event]} ->
+        {:ok, Memento.Query.Data.load(event)}
+
+      {:error, error} ->
+        Logger.error(
+          "tried to fetch a nearby event for #{inspect(user_id)} at timestamp #{timestamp}, but got error: #{inspect(error)}"
+        )
+
+        {:error, :internal}
     end
   end
 

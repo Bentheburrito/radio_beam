@@ -1,5 +1,5 @@
 defmodule RadioBeam.RoomQueriesTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias RadioBeam.Room.Timeline.Filter
 

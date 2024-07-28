@@ -1,6 +1,6 @@
 defmodule RadioBeam.CrednetialsTest do
   alias RadioBeam.Credentials
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   describe "strong_password?/1" do
     @special_chars ~w|! @ # $ % ^ & * ( ) _ - + = { [ } ] \| \ : ; " ' < , > . ? /|
