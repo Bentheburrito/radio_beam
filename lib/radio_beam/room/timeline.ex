@@ -8,10 +8,10 @@ defmodule RadioBeam.Room.Timeline do
 
   alias Phoenix.PubSub
   alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.Room.Timeline.SyncBatch
   alias RadioBeam.PDU
   alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
-  alias RadioBeam.SyncBatch
 
   def get_messages(room_id, user_id, direction, from, to, opts \\ [])
 

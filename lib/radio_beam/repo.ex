@@ -7,11 +7,10 @@ defmodule RadioBeam.Repo do
 
   alias RadioBeam.Device
   alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.Room.Timeline.SyncBatch
   alias RadioBeam.PDU
   alias RadioBeam.Room
-  alias RadioBeam.RoomAlias
   alias RadioBeam.User
-  alias RadioBeam.SyncBatch
 
   @doc """
   Initializes Mnesia schema for the given list of nodes (defaults to `[node()]`.
@@ -35,7 +34,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, Device, PDU, Room, RoomAlias, SyncBatch, Filter]
+  @tables [User, Device, PDU, Room, Room.Alias, SyncBatch, Filter]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =
@@ -55,9 +54,7 @@ defmodule RadioBeam.Repo do
         :ok
 
       {:error, reason} ->
-        Logger.info(
-          "create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}"
-        )
+        Logger.info("create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}")
     end
   end
 

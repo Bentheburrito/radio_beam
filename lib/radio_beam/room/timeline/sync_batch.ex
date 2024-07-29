@@ -1,4 +1,4 @@
-defmodule RadioBeam.SyncBatch do
+defmodule RadioBeam.Room.Timeline.SyncBatch do
   @moduledoc """
   A `%SyncBatch{}` maps a `since` token to a map of room IDs -> the latest 
   event IDs a user/client could see at the time of their last sync. 

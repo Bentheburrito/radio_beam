@@ -10,7 +10,6 @@ defmodule RadioBeam.Room.Ops do
   alias RadioBeam.PDU
   alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
-  alias RadioBeam.RoomAlias
 
   require Logger
 
@@ -68,7 +67,7 @@ defmodule RadioBeam.Room.Ops do
 
   defp get_pdu_followup_actions(%PDU{type: "m.room.canonical_alias"} = pdu) do
     for room_alias <- [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])], not is_nil(room_alias) do
-      fn -> RoomAlias.put(room_alias, PDU.room_id(pdu)) end
+      fn -> Room.Alias.put(room_alias, PDU.room_id(pdu)) end
     end
   end
 

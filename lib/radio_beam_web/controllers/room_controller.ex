@@ -5,7 +5,7 @@ defmodule RadioBeamWeb.RoomController do
 
   require Logger
 
-  alias RadioBeam.{Errors, Room, RoomAlias, Transaction, User}
+  alias RadioBeam.{Errors, Room, Transaction, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
   plug RadioBeamWeb.Plugs.Authenticate
@@ -89,7 +89,7 @@ defmodule RadioBeamWeb.RoomController do
   # TOIMPL: server_name query parameter?
   def join(conn, %{"room_id_or_alias" => room_id_or_alias}) do
     if String.starts_with?(room_id_or_alias, "#") do
-      case RoomAlias.to_room_id(room_id_or_alias) do
+      case Room.Alias.to_room_id(room_id_or_alias) do
         {:ok, room_id} ->
           join(conn, %{"room_id" => room_id})
 

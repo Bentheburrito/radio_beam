@@ -5,7 +5,6 @@ defmodule RadioBeam.RoomTest do
   alias RadioBeam.PDU
   alias RadioBeam.Repo
   alias RadioBeam.Room
-  alias RadioBeam.RoomAlias
   alias RadioBeam.RoomRegistry
   alias RadioBeam.User
 
@@ -72,7 +71,7 @@ defmodule RadioBeam.RoomTest do
 
         alias = "#computer:#{server_name}"
         assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
-        assert {:ok, %RoomAlias{alias: ^alias, room_id: ^room_id}} = Repo.get(RoomAlias, alias)
+        assert {:ok, %Room.Alias{alias: ^alias, room_id: ^room_id}} = Repo.get(Room.Alias, alias)
 
         assert %{"name" => "The Computer Room"} = get_in(state, [{"m.room.name", ""}, "content"])
         assert %{"topic" => "this one's for the nerds"} = get_in(state, [{"m.room.topic", ""}, "content"])

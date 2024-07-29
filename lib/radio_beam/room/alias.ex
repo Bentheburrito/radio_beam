@@ -1,4 +1,4 @@
-defmodule RadioBeam.RoomAlias do
+defmodule RadioBeam.Room.Alias do
   @moduledoc """
   This table maps room aliases to room IDs
   """

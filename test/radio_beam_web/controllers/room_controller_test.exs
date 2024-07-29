@@ -6,7 +6,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   alias RadioBeam.Device
   alias RadioBeam.Repo
   alias RadioBeam.Room
-  alias RadioBeam.RoomAlias
   alias RadioBeam.User
 
   setup %{conn: conn} do
@@ -86,7 +85,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       alias = "#aqua:#{server_name}"
       assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
-      assert {:ok, %RoomAlias{alias: ^alias, room_id: ^room_id}} = Repo.get(RoomAlias, alias)
+      assert {:ok, %Room.Alias{alias: ^alias, room_id: ^room_id}} = Repo.get(Room.Alias, alias)
 
       assert %{"membership" => "invite"} =
                get_in(state, [{"m.room.member", "@bwyatt:#{server_name}"}, "content"])
