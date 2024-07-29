@@ -191,7 +191,7 @@ defmodule RadioBeam.RoomTest do
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
       assert {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
       assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
-      assert %{^event_id => %{sender: ^creator_id}} = PDU.get([event_id])
+      assert {:ok, %{sender: ^creator_id}} = PDU.get(event_id)
     end
 
     test "member can put a message in the room if has perms", %{user1: creator, user2: %{id: user_id} = user} do
@@ -202,7 +202,7 @@ defmodule RadioBeam.RoomTest do
       content = %{"msgtype" => "m.text", "body" => "This is another test message"}
       assert {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", content)
       assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
-      assert %{^event_id => %{sender: ^user_id}} = PDU.get([event_id])
+      assert {:ok, %{sender: ^user_id}} = PDU.get(event_id)
     end
 
     test "member can't put a message in the room without perms", %{user1: creator, user2: user} do
@@ -565,7 +565,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, event_id} = Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "heyo"})
 
       assert {:ok, %{event_id: ^event_id} = pdu} = Room.get_nearest_event(room_id, user2.id, :forward, ts_before_event)
-      event_ts = PDU.origin_server_ts(pdu)
+      event_ts = pdu.origin_server_ts
       assert :none = Room.get_nearest_event(room_id, user2.id, :forward, event_ts + 1)
     end
 
@@ -647,8 +647,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.leave(room_id, user2.id)
       {:ok, _event_id} = Room.send(room_id, user1.id, "m.room.message", %{"msgtype" => "m.text", "body" => "D:"})
 
-      %{^event_id => pdu} = PDU.get([event_id])
-      expected_depth = PDU.depth(pdu)
+      {:ok, %{depth: expected_depth}} = PDU.get(event_id)
 
       assert ^expected_depth = Room.users_latest_join_depth(room_id, user2.id)
 
@@ -665,8 +664,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.leave(room_id, user2.id)
       {:ok, _event_id} = Room.send(room_id, user1.id, "m.room.message", %{"msgtype" => "m.text", "body" => "whatever"})
 
-      %{^event_id => pdu} = PDU.get([event_id])
-      expected_depth = PDU.depth(pdu)
+      {:ok, %{depth: expected_depth}} = PDU.get(event_id)
 
       assert ^expected_depth = Room.users_latest_join_depth(room_id, user2.id)
     end

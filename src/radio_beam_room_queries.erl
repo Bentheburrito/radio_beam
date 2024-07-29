@@ -34,7 +34,7 @@ is_member_of(UserId, State) ->
 
 get_nearest_event_before(RoomId, UserId, Filter, Timestamp, TimestampCutoff, LatestJoinedAtDepth) ->
   qlc:q([
-    PDU || {_Table, {RoomId_, _, OriginServerTS}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
+    PDU || {_Table, {RoomId_, _, OriginServerTS}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU.Table'),
     RoomId =:= RoomId_,
     OriginServerTS =< Timestamp,
     OriginServerTS >= Timestamp - TimestampCutoff,
@@ -44,7 +44,7 @@ get_nearest_event_before(RoomId, UserId, Filter, Timestamp, TimestampCutoff, Lat
 
 get_nearest_event_after(RoomId, UserId, Filter, Timestamp, TimestampCutoff, LatestJoinedAtDepth) ->
   qlc:q([
-    PDU || {_Table, {RoomId_, _, OriginServerTS}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
+    PDU || {_Table, {RoomId_, _, OriginServerTS}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU.Table'),
     RoomId =:= RoomId_,
     OriginServerTS >= Timestamp,
     OriginServerTS =< Timestamp + TimestampCutoff,
@@ -57,7 +57,7 @@ get_nearest_event_after(RoomId, UserId, Filter, Timestamp, TimestampCutoff, Late
 %% EndTimelineDepth
 timeline_from(RoomId, UserId, Filter, EndTimelineDepth, LastSyncDepth, LatestJoinedAtDepth, IgnoredUserIds) ->
   qlc:q([
-    PDU || {_Table, {RoomId_, Depth, _}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU'),
+    PDU || {_Table, {RoomId_, Depth, _}, _, _, Content,  _,  _, _, _, Sender, _, _, Type, _} = PDU <- mnesia:table('Elixir.RadioBeam.PDU.Table'),
     RoomId =:= RoomId_,
     -Depth =< EndTimelineDepth,
     -Depth > LastSyncDepth,

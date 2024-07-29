@@ -263,12 +263,7 @@ defmodule RadioBeam.Room do
   def get_event(room_id, user_id, event_id) do
     latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
 
-    with %{^event_id => pdu_tuple} <- PDU.get([event_id], coerce: false),
-         true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
-      {:ok, pdu_tuple |> Memento.Query.Data.load() |> PDU.to_event()}
-    else
-      _ -> {:error, :unauthorized}
-    end
+    PDU.get_if_visible_to_user(event_id, user_id, latest_joined_at_depth)
   end
 
   @doc """
@@ -296,10 +291,8 @@ defmodule RadioBeam.Room do
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
     latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
 
-    with %{^at_event_id => pdu_tuple} <- PDU.get([at_event_id], coerce: false),
-         true <- Queries.can_view_event(user_id, latest_joined_at_depth, pdu_tuple) do
-      state = pdu_tuple |> Memento.Query.Data.load() |> Map.fetch!(:prev_state)
-      get_members_from_state(state, membership_filter)
+    with {:ok, %PDU{} = pdu} <- PDU.get_if_visible_to_user(at_event_id, user_id, latest_joined_at_depth) do
+      get_members_from_state(pdu.prev_state, membership_filter)
     else
       _ -> {:error, :unauthorized}
     end
@@ -328,7 +321,7 @@ defmodule RadioBeam.Room do
 
       %{"content" => %{"membership" => "leave"}} = membership ->
         event_id = Map.fetch!(membership, "event_id")
-        %{^event_id => pdu} = PDU.get([event_id])
+        {:ok, pdu} = PDU.get(event_id)
         {:ok, pdu.prev_state}
 
       _ ->
@@ -348,31 +341,20 @@ defmodule RadioBeam.Room do
 
   @default_cutoff :timer.hours(24)
   def get_nearest_event(room_id, user_id, dir, timestamp, cutoff_ms \\ @default_cutoff) do
-    {orderer, query_fn} =
+    order =
       case dir do
-        :forward -> {&:qlc.sort(&1, order: :descending), &Queries.get_nearest_event_after/6}
-        :backward -> {& &1, &Queries.get_nearest_event_before/6}
+        :forward -> :ascending
+        :backward -> :descending
       end
 
     latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
+    filter = %{limit: 1, contains_url: :none, types: :none, senders: :none}
 
     fn ->
-      cursor =
-        room_id
-        |> query_fn.(
-          user_id,
-          %{limit: 1, contains_url: :none, types: :none, senders: :none},
-          timestamp,
-          cutoff_ms,
-          latest_joined_at_depth
-        )
-        |> orderer.()
-        |> :qlc.cursor()
-
-      res = :qlc.next_answers(cursor, 1)
-      :ok = :qlc.delete_cursor(cursor)
-
-      res
+      room_id
+      |> PDU.nearest_event_cursor(user_id, filter, timestamp, cutoff_ms, latest_joined_at_depth, order)
+      |> PDU.next_answers(1, :cleanup)
+      |> Enum.to_list()
     end
     |> Memento.transaction()
     |> case do
@@ -380,7 +362,7 @@ defmodule RadioBeam.Room do
         :none
 
       {:ok, [event]} ->
-        {:ok, Memento.Query.Data.load(event)}
+        {:ok, event}
 
       {:error, error} ->
         Logger.error(

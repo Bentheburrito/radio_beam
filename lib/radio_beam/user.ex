@@ -5,6 +5,8 @@ defmodule RadioBeam.User do
   @types [id: :string, pwd_hash: :string, registered_at: :utc_datetime]
   @attrs Keyword.keys(@types)
 
+  @type id :: String.t()
+
   use Memento.Table,
     attributes: @attrs,
     type: :set

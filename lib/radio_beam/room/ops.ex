@@ -49,7 +49,7 @@ defmodule RadioBeam.Room.Ops do
   defp persist_put_events(%Room{} = room, pdus) do
     Memento.transaction(fn ->
       addl_actions =
-        for %PDU{} = pdu <- pdus, do: pdu |> Memento.Query.write() |> get_pdu_followup_actions()
+        for %PDU{} = pdu <- pdus, do: pdu |> PDU.persist() |> get_pdu_followup_actions()
 
       room = Memento.Query.write(room)
 
@@ -67,7 +67,7 @@ defmodule RadioBeam.Room.Ops do
 
   defp get_pdu_followup_actions(%PDU{type: "m.room.canonical_alias"} = pdu) do
     for room_alias <- [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])], not is_nil(room_alias) do
-      fn -> Room.Alias.put(room_alias, PDU.room_id(pdu)) end
+      fn -> Room.Alias.put(room_alias, pdu.room_id) end
     end
   end
 

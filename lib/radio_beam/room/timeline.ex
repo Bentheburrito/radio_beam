@@ -144,9 +144,9 @@ defmodule RadioBeam.Room.Timeline do
         stop_at_any = Map.get(last_sync_event_map, room.id, [])
 
         user_leave_event_id = room.state[{"m.room.member", user_id}]["event_id"]
-        %{^user_leave_event_id => pdu} = PDU.get([user_leave_event_id])
+        {:ok, pdu} = PDU.get(user_leave_event_id)
 
-        opts = Keyword.put(opts, :latest_joined_at_depth, PDU.depth(pdu) - 1)
+        opts = Keyword.put(opts, :latest_joined_at_depth, pdu.depth - 1)
 
         rooms =
           case room_timeline_sync(room, user_id, [user_leave_event_id], stop_at_any, opts) do
@@ -252,12 +252,6 @@ defmodule RadioBeam.Room.Timeline do
   defp allowed_room?(_room_id, :none), do: true
 
   defp timeline(room_id, user_id, begin_event_ids, end_event_ids, filter, latest_joined_at_depth, order \\ :descending) do
-    orderer =
-      case order do
-        :descending -> & &1
-        :ascending -> &:qlc.sort(&1, order: :descending)
-      end
-
     fn ->
       latest_event_depth = PDU.max_depth_of_all(room_id, begin_event_ids)
       last_sync_depth = PDU.max_depth_of_all(room_id, end_event_ids)
@@ -272,29 +266,26 @@ defmodule RadioBeam.Room.Timeline do
         end
 
       cursor =
-        room_id
-        |> :radio_beam_room_queries.timeline_from(
+        PDU.timeline_cursor(
+          room_id,
           user_id,
           filter.timeline,
           latest_event_depth,
           last_sync_depth,
           latest_joined_at_depth,
-          []
+          [],
+          order
         )
-        |> orderer.()
-        |> :qlc.cursor()
 
-      tl_events = :qlc.next_answers(cursor, filter.timeline.limit)
+      tl_event_stream = PDU.next_answers(cursor, filter.timeline.limit)
 
       next_event =
-        case :qlc.next_answers(cursor, 1) do
+        case Enum.to_list(PDU.next_answers(cursor, 1, :cleanup)) do
           [] -> :none
-          [next_event | _] -> Memento.Query.Data.load(next_event)
+          [next_event | _] -> next_event
         end
 
-      :ok = :qlc.delete_cursor(cursor)
-
-      {next_event, tl_events |> Stream.map(&Memento.Query.Data.load/1) |> Enum.reverse()}
+      {next_event, Enum.reverse(tl_event_stream)}
     end
     |> Memento.transaction()
     |> case do
@@ -323,7 +314,7 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   defp state_delta(last_sync_event_id, tl_start_event, filter) do
-    %{^last_sync_event_id => last_sync_event} = PDU.get([last_sync_event_id])
+    {:ok, last_sync_event} = PDU.get(last_sync_event_id)
 
     old_state =
       if is_nil(last_sync_event.state_key) do
