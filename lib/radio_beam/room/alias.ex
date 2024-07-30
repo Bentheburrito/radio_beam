@@ -25,6 +25,15 @@ defmodule RadioBeam.Room.Alias do
     end
   end
 
+  def get(room_alias) do
+    fn -> Memento.Query.read(__MODULE__, room_alias) end
+    |> Memento.transaction()
+    |> case do
+      {:ok, %__MODULE__{room_id: room_id}} -> {:ok, room_id}
+      error -> error
+    end
+  end
+
   def to_room_id(room_alias) do
     case Memento.transaction(fn -> Memento.Query.read(__MODULE__, room_alias) end) do
       {:ok, nil} -> {:error, :not_found}

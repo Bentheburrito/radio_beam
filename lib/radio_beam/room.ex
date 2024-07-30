@@ -373,6 +373,11 @@ defmodule RadioBeam.Room do
     end
   end
 
+  @doc """
+  Gets the %Room{} under the given room_id
+  """
+  def get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
+
   ### IMPL ###
 
   @impl GenServer
@@ -415,8 +420,6 @@ defmodule RadioBeam.Room do
     membership = Map.get(room.state, {"m.room.member", user_id}, :not_found)
     {:reply, membership, room}
   end
-
-  defp get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
 
   defp call_if_alive(room_id, message) do
     GenServer.call(via(room_id), message)

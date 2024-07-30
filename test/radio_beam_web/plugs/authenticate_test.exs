@@ -2,25 +2,13 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
   use ExUnit.Case, async: true
   use Plug.Test
 
-  alias RadioBeam.{Device, Repo, User}
+  alias RadioBeam.Device
   alias RadioBeamWeb.Plugs.Authenticate
 
   describe "call/2" do
     setup do
-      user_id = "@timotheec:matrix.org"
-      {:ok, user} = User.new(user_id, "Asdf123$")
-      {:ok, user} = Repo.insert(user)
-
-      {:ok, device} =
-        Device.new(%{
-          id: Device.generate_token(),
-          user_id: user_id,
-          display_name: Device.default_device_name(),
-          access_token: Device.generate_token(),
-          refresh_token: Device.generate_token()
-        })
-
-      {:ok, device} = Repo.insert(device)
+      user = Fixtures.user("@timotheec:matrix.org")
+      device = Fixtures.device(user.id)
 
       %{user: user, device: device}
     end
@@ -56,7 +44,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
 
     test "returns an unknown token (400) error when an otherwise valid token has expired", %{device: device} do
       device = %Device{device | expires_at: DateTime.utc_now()}
-      {:ok, _} = Repo.insert(device)
+      Fixtures.write!(device)
 
       conn =
         :post

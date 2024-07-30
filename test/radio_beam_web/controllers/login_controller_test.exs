@@ -1,29 +1,13 @@
 defmodule RadioBeamWeb.LoginControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.{Device, Repo, User}
+  alias RadioBeam.Device
 
   setup_all do
-    user_id =
-      "@danflahes_employee_#{Enum.random(0..9_999_999_999_999)}:#{Application.get_env(:radio_beam, :server_name)}"
+    %{id: user_id} = Fixtures.user()
+    device = Fixtures.device(user_id, "da steam deck")
 
-    password = "b1gSTR@NGpwd"
-
-    {:ok, user} = User.new(user_id, password)
-    Repo.insert(user)
-
-    {:ok, device} =
-      Device.new(%{
-        id: Device.generate_token(),
-        user_id: user_id,
-        display_name: "da steam deck",
-        access_token: Device.generate_token(),
-        refresh_token: Device.generate_token()
-      })
-
-    Repo.insert(device)
-
-    %{user_id: user_id, password: password, device: device}
+    %{user_id: user_id, password: Fixtures.strong_password(), access_token: device.access_token, device_id: device.id}
   end
 
   describe "valid user password login requests succeed" do
@@ -38,7 +22,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
                "user_id" => ^user_id
              } = json_response(conn, 200)
 
-      assert {:ok, %Device{access_token: ^at}} = Repo.get(Device, device_id)
+      assert {:ok, %Device{id: ^device_id, access_token: ^at}} = Device.by_access_token(at)
     end
 
     test "with a valid localpart/password pair", %{conn: conn, user_id: user_id, password: password} do
@@ -54,7 +38,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
                "user_id" => ^user_id
              } = json_response(conn, 200)
 
-      assert {:ok, %Device{access_token: ^at}} = Repo.get(Device, device_id)
+      assert {:ok, %Device{id: ^device_id, access_token: ^at}} = Device.by_access_token(at)
     end
 
     test "with provided device parameters", %{conn: conn, user_id: user_id, password: password} do
@@ -73,14 +57,14 @@ defmodule RadioBeamWeb.LoginControllerTest do
                "user_id" => ^user_id
              } = json_response(conn, 200)
 
-      assert {:ok, %Device{access_token: ^at}} = Repo.get(Device, device_id)
+      assert {:ok, %Device{id: ^device_id, access_token: ^at}} = Device.by_access_token(at)
     end
 
     test "with provided device parameters for an existing device", %{
       conn: conn,
       user_id: user_id,
       password: password,
-      device: %Device{id: device_id}
+      device_id: device_id
     } do
       conn =
         request(conn, user_id, password, %{
@@ -96,7 +80,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
                "user_id" => ^user_id
              } = json_response(conn, 200)
 
-      assert {:ok, %Device{display_name: "da steam deck", access_token: ^at}} = Repo.get(Device, device_id)
+      assert {:ok, %Device{display_name: "da steam deck", access_token: ^at}} = Device.by_access_token(at)
     end
   end
 
@@ -106,7 +90,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
       conn = request(conn, user_id, password, %{"type" => "m.wtf.are.you.high", "device_id" => device_id})
 
       assert %{"errcode" => "M_BAD_JSON", "error" => _} = json_response(conn, 400)
-      assert {:ok, nil} = Repo.get(Device, device_id)
+      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
     end
 
     test "with M_FORBIDDEN when the username is incorrect", %{conn: conn, password: password} do
@@ -114,7 +98,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
       conn = request(conn, "@prisonmike:localhost", password, %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      assert {:ok, nil} = Repo.get(Device, device_id)
+      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
     end
 
     test "with M_FORBIDDEN when the password is incorrect", %{conn: conn, user_id: user_id} do
@@ -122,7 +106,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
       conn = request(conn, user_id, "justguessinghere", %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      assert {:ok, nil} = Repo.get(Device, device_id)
+      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
     end
 
     test "with M_BAD_JSON when an unknown identifier is provided", %{conn: conn, user_id: user_id, password: password} do
@@ -137,7 +121,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
       assert %{"errcode" => "M_BAD_JSON", "error" => "Unrecognized or missing 'identifier'" <> _rest} =
                json_response(conn, 400)
 
-      assert {:ok, nil} = Repo.get(Device, device_id)
+      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
     end
   end
 

@@ -2,29 +2,12 @@ defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room.Timeline.Filter
-  alias Polyjuice.Util.Identifiers.V1.UserIdentifier
-  alias RadioBeam.Device
-  alias RadioBeam.Repo
   alias RadioBeam.Room
-  alias RadioBeam.User
 
   setup %{conn: conn} do
-    {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-    Repo.insert(user1)
-
-    {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-    Repo.insert(user2)
-
-    {:ok, device} =
-      Device.new(%{
-        id: Device.generate_token(),
-        user_id: user1.id,
-        display_name: "da steam deck",
-        access_token: Device.generate_token(),
-        refresh_token: Device.generate_token()
-      })
-
-    Repo.insert(device)
+    user1 = Fixtures.user()
+    user2 = Fixtures.user()
+    device = Fixtures.device(user1.id, "da steam deck")
 
     %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user1, creator: user2}
   end
