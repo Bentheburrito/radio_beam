@@ -2,11 +2,16 @@ defmodule RadioBeamWeb.Plugs.EnforceSchema do
   @moduledoc """
   Enforces the given Polyjuice schema against the request body
 
-  Caller should set the `get_schema` option to an MFA tuple that returns the
-  Polyjuice schema. e.g.
+  Caller should set the `mod` option to the module with the Schema function(s).
+  By default, the function with the same name as the Phoenix action will be
+  invoked to get the schema. However, you can also use the `:fun` option to
+  explcitly pass the function name.
+
+  Additionally, if the `with_params?` option is set to `true`, the request
+  params will be passed to the schema function.
 
   ```elixir
-  plug RadioBeamWeb.Plugs.EnforceSchema, get_schema: {__MODULE__, :schema, []}
+  plug RadioBeamWeb.Plugs.EnforceSchema, mod: __MODULE__, fun: :schema
   ```
   """
 
@@ -20,12 +25,12 @@ defmodule RadioBeamWeb.Plugs.EnforceSchema do
 
   def init(default), do: default
 
-  def call(%Plug.Conn{} = conn, get_schema: {m, f, a}) do
-    schema =
-      case a do
-        args when is_list(args) -> apply(m, f, a)
-        :params -> apply(m, f, [conn.params])
-      end
+  def call(%Plug.Conn{} = conn, opts) do
+    module = Keyword.fetch!(opts, :mod)
+    function = Keyword.get_lazy(opts, :fun, fn -> Map.get(conn.private, :phoenix_action, :schema) end)
+    args = if Keyword.get(opts, :with_params?, false), do: [conn.params], else: []
+
+    schema = apply(module, function, args)
 
     case Schema.match(conn.params, schema) do
       {:ok, parsed} ->

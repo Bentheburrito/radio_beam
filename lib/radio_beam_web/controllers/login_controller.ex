@@ -7,7 +7,7 @@ defmodule RadioBeamWeb.LoginController do
   alias RadioBeam.{Device, Errors, Repo, User}
   alias RadioBeam.User.Auth
 
-  plug RadioBeamWeb.Plugs.EnforceSchema, get_schema: {__MODULE__, :schema, []}
+  plug RadioBeamWeb.Plugs.EnforceSchema, mod: __MODULE__, fun: :schema
   plug :identify
   # TOIMPL: m.login.token
   plug :verify_password_or_token

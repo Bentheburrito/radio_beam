@@ -3,14 +3,11 @@ defmodule RadioBeamWeb.AuthController do
 
   alias RadioBeam.User.Auth
   alias RadioBeam.{Credentials, Device, Errors, User}
-  alias RadioBeamWeb.Schemas.Auth, as: AuthSchema
 
   require Logger
 
   plug :ensure_registration_enabled when action == :register
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {AuthSchema, :register, []}] when action == :register
-
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {AuthSchema, :refresh, []}] when action == :refresh
+  plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Auth
   plug :authenticate_by_refresh_token when action == :refresh
 
   def register(conn, params) do

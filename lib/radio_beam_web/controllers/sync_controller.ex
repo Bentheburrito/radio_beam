@@ -8,11 +8,9 @@ defmodule RadioBeamWeb.SyncController do
   alias RadioBeam.User
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline
-  alias RadioBeamWeb.Schemas.Sync, as: SyncSchema
 
   plug RadioBeamWeb.Plugs.Authenticate
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {SyncSchema, :sync, []}] when action == :sync
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {SyncSchema, :get_messages, []}] when action == :get_messages
+  plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Sync
 
   def sync(conn, _params) do
     %User{} = user = conn.assigns.user

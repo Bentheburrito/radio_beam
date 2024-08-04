@@ -16,7 +16,7 @@ defmodule RadioBeamWeb.Plugs.EnforceSchemaTest do
       conn =
         :post
         |> conn("/_matrix/v3/some_endpoint", req)
-        |> EnforceSchema.call(get_schema: {__MODULE__, :schema, []})
+        |> EnforceSchema.call(mod: __MODULE__)
 
       assert %{request: %{"name" => "Jim", "email" => "jhalpert@dundermifflin.net", "role" => "user"}} = conn.assigns
     end
@@ -30,7 +30,7 @@ defmodule RadioBeamWeb.Plugs.EnforceSchemaTest do
       conn =
         :post
         |> conn("/_matrix/v3/some_endpoint", req)
-        |> EnforceSchema.call(get_schema: {__MODULE__, :schema, []})
+        |> EnforceSchema.call(mod: __MODULE__)
 
       assert {400, _headers, body} = sent_resp(conn)
       assert body =~ "M_BAD_JSON"
@@ -47,7 +47,7 @@ defmodule RadioBeamWeb.Plugs.EnforceSchemaTest do
       conn =
         :post
         |> conn("/_matrix/v3/some_endpoint", req)
-        |> EnforceSchema.call(get_schema: {__MODULE__, :schema, []})
+        |> EnforceSchema.call(mod: __MODULE__)
 
       assert {400, _headers, body} = sent_resp(conn)
       assert body =~ "M_BAD_JSON"

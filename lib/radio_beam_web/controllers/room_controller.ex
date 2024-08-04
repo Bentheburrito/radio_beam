@@ -9,13 +9,8 @@ defmodule RadioBeamWeb.RoomController do
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
   plug RadioBeamWeb.Plugs.Authenticate
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :create, []}] when action == :create
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :invite, []}] when action == :invite
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :join, []}] when action == :join
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {RoomSchema, :send, :params}] when action == :send
-
-  plug RadioBeamWeb.Plugs.EnforceSchema,
-       [get_schema: {RoomSchema, :get_nearest_event, []}] when action == :get_nearest_event
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in [:create, :invite, :join, :get_nearest_event]
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema, with_params?: true] when action == :send
 
   @missing_req_param_msg "Your request is missing one or more required parameters"
 

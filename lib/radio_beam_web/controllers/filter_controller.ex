@@ -8,7 +8,7 @@ defmodule RadioBeamWeb.FilterController do
   alias RadioBeamWeb.Schemas.Filter, as: FilterSchema
 
   plug RadioBeamWeb.Plugs.Authenticate
-  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {FilterSchema, :filter, []}] when action == :put
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: FilterSchema, fun: :filter] when action == :put
 
   def put(%{assigns: %{user: %{id: user_id}}} = conn, %{"user_id" => user_id}) do
     request = Map.delete(conn.assigns.request, "user_id")
