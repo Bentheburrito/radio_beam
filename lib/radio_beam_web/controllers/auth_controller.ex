@@ -1,18 +1,18 @@
 defmodule RadioBeamWeb.AuthController do
   use RadioBeamWeb, :controller
 
-  alias Polyjuice.Util.Schema
+  alias RadioBeam.User.Auth
   alias RadioBeam.{Credentials, Device, Errors, Repo, User}
+  alias RadioBeamWeb.Schemas.Auth, as: AuthSchema
 
   require Logger
 
-  plug :ensure_registration_enabled
-  plug RadioBeamWeb.Plugs.EnforceSchema, get_schema: {__MODULE__, :schema, []}
-  plug :ensure_user_no_exists
+  plug :ensure_registration_enabled when action == :register
+  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {AuthSchema, :register, []}] when action == :register
+  plug :ensure_user_no_exists when action == :register
 
-  def schema do
-    %{"username" => &Schema.user_localpart/1, "password" => :string}
-  end
+  plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {AuthSchema, :refresh, []}] when action == :refresh
+  plug :authenticate_by_refresh_token when action == :refresh
 
   def register(conn, params) do
     with {:ok, %User{} = user} <- new_user(conn, conn.assigns.user_id, Map.fetch!(params, "password")) do
@@ -27,6 +27,28 @@ defmodule RadioBeamWeb.AuthController do
         |> assign(:user, user)
         |> RadioBeamWeb.LoginController.login(Map.take(params, ["device_id", "initial_device_display_name"]))
       end
+    end
+  end
+
+  def refresh(conn, _params) do
+    user = conn.assigns.user
+    refresh_token = conn.assigns.device.refresh_token
+
+    case Auth.refresh(user.id, refresh_token) do
+      {:ok, auth_info} ->
+        json(conn, auth_info)
+
+      {:error, :not_found} ->
+        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false))
+
+      # TODO: should add config to expire refresh tokens after X time. 
+      # Currently, refresh tokens never expire, so it just lives forever unless
+      # the device is destroyed from another session. Would also allow us to 
+      # support soft-logout here
+
+      {:error, error} ->
+        Logger.error("Got error trying to use a refresh token: #{inspect(error)}")
+        conn |> put_status(401) |> json(Errors.unknown())
     end
   end
 
@@ -95,6 +117,30 @@ defmodule RadioBeamWeb.AuthController do
         conn
         |> put_status(500)
         |> json(Errors.unknown())
+    end
+  end
+
+  defp authenticate_by_refresh_token(conn, _) do
+    %{"refresh_token" => refresh_token} = conn.assigns.request
+
+    case Auth.by(:refresh, refresh_token) do
+      {:ok, user, device} ->
+        conn
+        |> assign(:user, user)
+        |> assign(:device, device)
+
+      {:error, :expired} ->
+        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", true)) |> halt()
+
+      {:error, :unknown_token} ->
+        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false)) |> halt()
+
+      {:error, error} ->
+        Logger.error(
+          "A fatal error occurred trying to fetch user/device records for refresh authentication: #{inspect(error)}"
+        )
+
+        conn |> put_status(500) |> json(Errors.unknown()) |> halt()
     end
   end
 end

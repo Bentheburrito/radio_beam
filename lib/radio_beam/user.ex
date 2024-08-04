@@ -33,6 +33,10 @@ defmodule RadioBeam.User do
     |> apply_action(:update)
   end
 
+  @doc "Gets a user by their user ID"
+  @spec get(id()) :: {:ok, t() | nil} | {:error, any()}
+  def get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
+
   def validate_user_id(id) when is_binary(id) do
     case String.split(id, ":") do
       ["@" <> localpart, _server_name] when localpart != "" -> validate_localpart(localpart)

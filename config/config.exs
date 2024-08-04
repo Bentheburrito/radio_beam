@@ -9,6 +9,7 @@ import Config
 
 config :radio_beam,
   # ecto_repos: [RadioBeam.Repo],
+  access_token_lifetime: :timer.hours(72),
   env: config_env(),
   capabilities: %{
     "m.change_password": %{enabled: false},

@@ -27,8 +27,8 @@ defmodule RadioBeamWeb.Router do
         get "/login", HomeserverInfoController, :login_types
         post "/login", LoginController, :login
         post "/register", AuthController, :register
+        post "/refresh", AuthController, :refresh
         ### TOIMPL:
-        # post "/refresh", AuthController, :refresh
         # post "/logout/all", AuthController, :logout_all
         # post "/logout", AuthController, :logout
 

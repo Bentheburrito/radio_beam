@@ -1,26 +1,11 @@
 defmodule RadioBeamWeb.FilterControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.Room.Timeline.Filter
-  alias RadioBeam.Device
-  alias RadioBeam.User
-  alias RadioBeam.Repo
 
   setup %{conn: conn} do
-    {:ok, user} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-    Repo.insert(user)
-
-    {:ok, device} =
-      Device.new(%{
-        id: Device.generate_token(),
-        user_id: user.id,
-        display_name: "da steam deck",
-        access_token: Device.generate_token(),
-        refresh_token: Device.generate_token()
-      })
-
-    Repo.insert(device)
+    user = Fixtures.user()
+    device = Fixtures.device(user.id)
 
     %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
   end

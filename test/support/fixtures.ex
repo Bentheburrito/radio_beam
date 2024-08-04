@@ -15,17 +15,10 @@ defmodule Fixtures do
   end
 
   def device(user_id, display_name \\ Device.default_device_name()) do
-    {:ok, device} =
-      Device.new(%{
-        id: Device.generate_token(),
-        user_id: user_id,
-        display_name: display_name,
-        access_token: Device.generate_token(),
-        refresh_token: Device.generate_token()
-      })
-
-    Memento.transaction!(fn -> Memento.Query.write(device) end)
+    device = Device.new(user_id, display_name: display_name)
+    Memento.transaction!(fn -> Device.persist(device) end)
   end
 
+  def write!(%Device{} = device), do: Memento.transaction!(fn -> Device.persist(device) end)
   def write!(struct), do: Memento.transaction!(fn -> Memento.Query.write(struct) end)
 end

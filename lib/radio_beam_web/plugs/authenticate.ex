@@ -5,24 +5,29 @@ defmodule RadioBeamWeb.Plugs.Authenticate do
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
 
-  alias RadioBeam.Device
   alias RadioBeam.Errors
-  alias RadioBeam.Repo
+  alias RadioBeam.User.Auth
+
+  require Logger
 
   def init(default), do: default
 
   def call(%{assigns: %{access_token: access_token}} = conn, _opts) do
-    with %Device{expires_at: expires_at} = device <- get_device(conn, access_token),
-         :not_expired <- verify_not_expired(conn, expires_at) do
-      case Repo.get(RadioBeam.User, device.user_id) do
-        {:ok, nil} ->
-          raise "The associated user for the authenticated device does not exist"
+    case Auth.by(:access, access_token) do
+      {:ok, user, device} ->
+        conn
+        |> assign(:user, user)
+        |> assign(:device_id, device.id)
 
-        {:ok, user} ->
-          conn
-          |> assign(:user, user)
-          |> assign(:device_id, device.id)
-      end
+      {:error, :expired} ->
+        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", true)) |> halt()
+
+      {:error, :unknown_token} ->
+        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false)) |> halt()
+
+      {:error, error} ->
+        Logger.error("A fatal error occurred trying to fetch user/device records for authentication: #{inspect(error)}")
+        conn |> put_status(500) |> json(Errors.unknown()) |> halt()
     end
   end
 
@@ -37,28 +42,8 @@ defmodule RadioBeamWeb.Plugs.Authenticate do
             conn |> assign(:access_token, token) |> call(opts)
 
           _ ->
-            conn |> put_status(400) |> json(Errors.missing_token()) |> halt()
+            conn |> put_status(401) |> json(Errors.missing_token()) |> halt()
         end
-    end
-  end
-
-  defp get_device(conn, access_token) do
-    case Device.by_access_token(access_token) do
-      {:ok, %Device{} = device} ->
-        device
-
-      {:error, :not_found} ->
-        conn |> put_status(400) |> json(Errors.unknown_token()) |> halt()
-    end
-  end
-
-  defp verify_not_expired(conn, expires_at) do
-    case DateTime.compare(DateTime.utc_now(), expires_at) do
-      :lt ->
-        :not_expired
-
-      _ ->
-        conn |> put_status(400) |> json(Errors.unknown_token()) |> halt()
     end
   end
 end

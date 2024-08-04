@@ -18,7 +18,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       assert %{"access_token" => _, "device_id" => ^device_id, "expires_in_ms" => _, "user_id" => user_id} =
                json_response(conn, 200)
 
-      assert {:ok, %Device{display_name: ^device_display_name}} = Repo.get(Device, device_id)
+      assert {:ok, %Device{display_name: ^device_display_name}} = Device.get(user_id, device_id)
       assert ^user_id = "@#{username}:localhost"
     end
 
@@ -86,6 +86,44 @@ defmodule RadioBeamWeb.AuthControllerTest do
                "errcode" => "M_BAD_JSON",
                "error" => "Expected 'user' or 'guest' as the kind, got 'wood_elf'"
              } = json_response(conn, 403)
+    end
+  end
+
+  describe "refresh/2" do
+    setup do
+      user = Fixtures.user()
+      device = Fixtures.device(user.id)
+      %{user: user, device: device}
+    end
+
+    test "successfully refreshes a user's session/access token", %{conn: conn, device: device} do
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
+
+      assert %{"access_token" => at, "refresh_token" => rt, "expires_in_ms" => expires_in} = json_response(conn, 200)
+      assert at != device.access_token
+      assert rt != device.refresh_token
+      assert is_integer(expires_in)
+    end
+
+    test "successfully repeats a refresh if the client did not apparently record the first attempt", %{
+      conn: conn,
+      device: device
+    } do
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
+
+      assert %{"access_token" => at, "refresh_token" => rt} = json_response(conn, 200)
+      assert at != device.access_token
+      assert rt != device.refresh_token
+
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => rt})
+
+      assert %{"access_token" => ^at, "refresh_token" => ^rt} = json_response(conn, 200)
+    end
+
+    test "errors with M_UNKNOWN_TOKEN (401) if the refresh token is invalid", %{conn: conn} do
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => "asdfasdf123354"})
+
+      assert %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => false} = json_response(conn, 401)
     end
   end
 

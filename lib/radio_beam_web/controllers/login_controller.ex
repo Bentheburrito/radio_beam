@@ -5,6 +5,7 @@ defmodule RadioBeamWeb.LoginController do
 
   alias Polyjuice.Util.Schema
   alias RadioBeam.{Device, Errors, Repo, User}
+  alias RadioBeam.User.Auth
 
   plug RadioBeamWeb.Plugs.EnforceSchema, get_schema: {__MODULE__, :schema, []}
   plug :identify
@@ -18,48 +19,14 @@ defmodule RadioBeamWeb.LoginController do
 
   def login(conn, params) do
     device_id = Map.get_lazy(params, "device_id", &Device.generate_token/0)
+    display_name = Map.get(params, "initial_device_display_name", Device.default_device_name())
     user = conn.assigns.user
 
-    device_params =
-      case Repo.get(Device, device_id) do
-        {:ok, nil} ->
-          %{
-            id: device_id,
-            user_id: user.id,
-            display_name: Map.get(params, "initial_device_display_name", Device.default_device_name()),
-            access_token: Device.generate_token(),
-            refresh_token: Device.generate_token()
-          }
+    case Auth.login(user.id, device_id, display_name) do
+      {:ok, auth_info} ->
+        json(conn, Map.merge(auth_info, %{device_id: device_id, user_id: user.id}))
 
-        {:ok, %Device{} = device} ->
-          %{
-            id: device.id,
-            user_id: device.user_id,
-            display_name: device.display_name,
-            access_token: Device.generate_token(),
-            refresh_token: Device.generate_token()
-          }
-      end
-
-    case Device.new(device_params) do
-      {:ok, device} ->
-        # this will overwrite any existing device with the same `:id` in the 
-        # table, invalidating previous tokens.
-        Repo.insert!(device)
-
-        json(conn, %{
-          device_id: device.id,
-          access_token: device.access_token,
-          refresh_token: device.refresh_token,
-          expires_in_ms: DateTime.diff(device.expires_at, DateTime.utc_now(), :millisecond),
-          user_id: device.user_id
-        })
-
-      {:error, changeset} ->
-        # TODO? register uses this, and maybe we should delete the user and 
-        # have them restart the registration process
-        Logger.error("Error creating user #{user.id}'s device during login: #{inspect(changeset)}")
-
+      {:error, _error} ->
         conn
         |> put_status(500)
         |> json(Errors.unknown("Error creating device for user #{user.id}. Please try again."))

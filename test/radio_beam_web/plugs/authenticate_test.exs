@@ -22,27 +22,27 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
       assert %{user: ^user} = conn.assigns
     end
 
-    test "returns a missing token (400) error when a token isn't given" do
+    test "returns a missing token (401) error when a token isn't given" do
       conn =
         :post
         |> conn("/_matrix/v3/some_endpoint", %{})
         |> Authenticate.call([])
 
-      assert {400, _headers, body} = sent_resp(conn)
+      assert {401, _headers, body} = sent_resp(conn)
       assert body =~ "M_MISSING_TOKEN"
     end
 
-    test "returns an unknown token (400) error when the provided token isn't known" do
+    test "returns an unknown token (401) error when the provided token isn't known" do
       conn =
         :post
         |> conn("/_matrix/v3/some_endpoint?access_token=55burgers55fries")
         |> Authenticate.call([])
 
-      assert {400, _headers, body} = sent_resp(conn)
+      assert {401, _headers, body} = sent_resp(conn)
       assert body =~ "M_UNKNOWN_TOKEN"
     end
 
-    test "returns an unknown token (400) error when an otherwise valid token has expired", %{device: device} do
+    test "returns an unknown token (401) error when an otherwise valid token has expired", %{device: device} do
       device = %Device{device | expires_at: DateTime.utc_now()}
       Fixtures.write!(device)
 
@@ -51,7 +51,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
         |> conn("/_matrix/v3/some_endpoint?access_token=#{device.access_token}")
         |> Authenticate.call([])
 
-      assert {400, _headers, body} = sent_resp(conn)
+      assert {401, _headers, body} = sent_resp(conn)
       assert body =~ "M_UNKNOWN_TOKEN"
     end
   end

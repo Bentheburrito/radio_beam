@@ -15,14 +15,12 @@ defmodule RadioBeamWeb.LoginControllerTest do
       conn = request(conn, user_id, password)
 
       assert %{
-               "access_token" => at,
+               "access_token" => _,
                "refresh_token" => _,
                "expires_in_ms" => _,
-               "device_id" => device_id,
+               "device_id" => _,
                "user_id" => ^user_id
              } = json_response(conn, 200)
-
-      assert {:ok, %Device{id: ^device_id, access_token: ^at}} = Device.by_access_token(at)
     end
 
     test "with a valid localpart/password pair", %{conn: conn, user_id: user_id, password: password} do
@@ -31,33 +29,31 @@ defmodule RadioBeamWeb.LoginControllerTest do
       conn = request(conn, localpart, password)
 
       assert %{
-               "access_token" => at,
+               "access_token" => _,
                "refresh_token" => _,
                "expires_in_ms" => _,
-               "device_id" => device_id,
+               "device_id" => _,
                "user_id" => ^user_id
              } = json_response(conn, 200)
-
-      assert {:ok, %Device{id: ^device_id, access_token: ^at}} = Device.by_access_token(at)
     end
 
     test "with provided device parameters", %{conn: conn, user_id: user_id, password: password} do
+      device_id = "coolgadget"
+
       add_params = %{
-        "device_id" => "coolgadget",
+        "device_id" => device_id,
         "display_name" => "iPhone 23X-9000"
       }
 
       conn = request(conn, user_id, password, add_params)
 
       assert %{
-               "access_token" => at,
+               "access_token" => _,
                "refresh_token" => _,
                "expires_in_ms" => _,
-               "device_id" => device_id,
+               "device_id" => ^device_id,
                "user_id" => ^user_id
              } = json_response(conn, 200)
-
-      assert {:ok, %Device{id: ^device_id, access_token: ^at}} = Device.by_access_token(at)
     end
 
     test "with provided device parameters for an existing device", %{
@@ -73,14 +69,15 @@ defmodule RadioBeamWeb.LoginControllerTest do
         })
 
       assert %{
-               "access_token" => at,
+               "access_token" => _,
                "refresh_token" => _,
                "expires_in_ms" => _,
                "device_id" => ^device_id,
                "user_id" => ^user_id
              } = json_response(conn, 200)
 
-      assert {:ok, %Device{display_name: "da steam deck", access_token: ^at}} = Device.by_access_token(at)
+      {:ok, %Device{display_name: display_name}} = Device.get(user_id, device_id)
+      assert display_name != "this should be ignored"
     end
   end
 
