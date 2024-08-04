@@ -37,6 +37,25 @@ defmodule RadioBeam.User do
   @spec get(id()) :: {:ok, t() | nil} | {:error, any()}
   def get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
 
+  @doc """
+  Persists a User to the DB, unless a record with the same ID already exists.
+  """
+  @spec put_new(t()) :: :ok | {:error, :already_exists | any()}
+  def put_new(%__MODULE__{} = user) do
+    fn ->
+      case Memento.Query.read(__MODULE__, user.id) do
+        %__MODULE__{} -> :already_exists
+        nil -> Memento.Query.write(user)
+      end
+    end
+    |> Memento.transaction()
+    |> case do
+      {:ok, :already_exists} -> {:error, :already_exists}
+      {:ok, %__MODULE__{}} -> :ok
+      error -> error
+    end
+  end
+
   def validate_user_id(id) when is_binary(id) do
     case String.split(id, ":") do
       ["@" <> localpart, _server_name] when localpart != "" -> validate_localpart(localpart)

@@ -2,30 +2,30 @@ defmodule RadioBeamWeb.AuthController do
   use RadioBeamWeb, :controller
 
   alias RadioBeam.User.Auth
-  alias RadioBeam.{Credentials, Device, Errors, Repo, User}
+  alias RadioBeam.{Credentials, Device, Errors, User}
   alias RadioBeamWeb.Schemas.Auth, as: AuthSchema
 
   require Logger
 
   plug :ensure_registration_enabled when action == :register
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {AuthSchema, :register, []}] when action == :register
-  plug :ensure_user_no_exists when action == :register
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [get_schema: {AuthSchema, :refresh, []}] when action == :refresh
   plug :authenticate_by_refresh_token when action == :refresh
 
   def register(conn, params) do
-    with {:ok, %User{} = user} <- new_user(conn, conn.assigns.user_id, Map.fetch!(params, "password")) do
-      Repo.insert!(user)
+    %{"username" => {_version, localpart}, "password" => pwd} = conn.assigns.request
 
+    with {:ok, %User{} = user} <- new_user(conn, localpart, pwd) do
       if Map.get(params, "inhibit_login", false) do
         json(conn, %{user_id: user.id})
       else
-        params = Map.put_new_lazy(params, "device_id", &Device.generate_token/0)
+        device_id = Map.get_lazy(params, "device_id", &Device.generate_token/0)
+        display_name = Map.get_lazy(params, "initial_device_display_name", &Device.default_device_name/0)
 
-        conn
-        |> assign(:user, user)
-        |> RadioBeamWeb.LoginController.login(Map.take(params, ["device_id", "initial_device_display_name"]))
+        {:ok, auth_info} = Auth.login(user.id, device_id, display_name)
+
+        json(conn, Map.merge(auth_info, %{device_id: device_id, user_id: user.id}))
       end
     end
   end
@@ -80,26 +80,18 @@ defmodule RadioBeamWeb.AuthController do
     end
   end
 
-  defp ensure_user_no_exists(conn, _) do
+  defp new_user(conn, localpart, password) do
     server_name = Application.fetch_env!(:radio_beam, :server_name)
-    user_id = "@#{Map.fetch!(conn.params, "username")}:#{server_name}"
+    user_id = "@#{localpart}:#{server_name}"
 
-    case Repo.get(User, user_id) do
-      {:ok, %User{}} ->
+    with {:ok, user} <- User.new(user_id, password),
+         :ok <- User.put_new(user) do
+      {:ok, user}
+    else
+      {:error, :already_exists} ->
         conn
         |> put_status(400)
         |> json(Errors.endpoint_error(:user_in_use, "That username is already taken."))
-        |> halt()
-
-      {:ok, nil} ->
-        assign(conn, :user_id, user_id)
-    end
-  end
-
-  defp new_user(conn, user_id, password) do
-    case User.new(user_id, password) do
-      {:ok, user} ->
-        {:ok, user}
 
       {:error, %{errors: [id: {error_message, _}]}} ->
         conn
