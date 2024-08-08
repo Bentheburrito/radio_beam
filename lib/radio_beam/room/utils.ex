@@ -36,9 +36,18 @@ defmodule RadioBeam.Room.Utils do
   @membership_values [:join, :invite, :leave, :kick, :ban]
 
   def create_event(room_id, creator_id, room_version, create_content) do
-    create_content = create_content |> Map.put("creator", creator_id) |> Map.put("room_version", room_version)
+    create_content =
+      create_content
+      |> maybe_put_creator(room_version, creator_id)
+      |> Map.put("room_version", room_version)
+
     state_event(room_id, "m.room.create", creator_id, create_content)
   end
+
+  defp maybe_put_creator(content, version, creator_id) when version in ~w|1 2 3 4 5 6 7 8 9 10|,
+    do: Map.put(content, "creator", creator_id)
+
+  defp maybe_put_creator(content, _version, _creator_id), do: content
 
   def membership_event(room_id, sender_id, subject_id, membership, reason \\ nil)
       when membership in @membership_values do

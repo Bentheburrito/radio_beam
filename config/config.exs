@@ -7,22 +7,25 @@
 # General application configuration
 import Config
 
+### STATIC CONFIG / SUPPORTED FUNCTIONS ###
 config :radio_beam,
   # ecto_repos: [RadioBeam.Repo],
   access_token_lifetime: :timer.hours(72),
   env: config_env(),
   capabilities: %{
     "m.change_password": %{enabled: false},
-    "m.room_versions": %{available: %{"5" => "stable", "4" => "stable"}, default: "5"},
+    "m.room_versions": %{
+      available: Map.new(3..11, &{"#{&1}", "stable"}),
+      default: "11"
+    },
     "m.set_displayname": %{enabled: false},
     "m.set_avatar_url": %{enabled: false},
     "m.3pid_changes": %{enabled: false}
   },
   generators: [timestamp_type: :utc_datetime, binary_id: true],
-  ### STATIC CONFIG / SUPPORTED FUNCTIONS ###
   # TOIMPL: m.login.token
   login_types: %{flows: [%{type: "m.login.password"}]},
-  max_events: [timeline: 400, state: 200],
+  max_events: [timeline: 200, state: 100],
   registration_enabled: true,
   versions: %{unstable_versions: %{}, versions: ["v1.9"]}
 

@@ -8,8 +8,8 @@ defmodule RadioBeam.RoomTest do
   alias RadioBeam.RoomRegistry
   alias RadioBeam.User
 
-  # TODO: add more room versions here as support is implemented
-  @room_versions_to_test ["5"]
+  @room_versions_to_test Application.compile_env!(:radio_beam, [:capabilities, :"m.room_versions", :available])
+                         |> Map.keys()
 
   describe "create/4" do
     setup do
@@ -23,7 +23,7 @@ defmodule RadioBeam.RoomTest do
 
     test "successfully creates a minimal room", %{creator: creator} do
       for room_version <- @room_versions_to_test do
-        assert {:ok, room_id} = Room.create(creator)
+        assert {:ok, room_id} = Room.create(creator, room_version: room_version)
         assert [{pid, _}] = Registry.lookup(RoomRegistry, room_id)
         assert is_pid(pid)
 
@@ -34,26 +34,35 @@ defmodule RadioBeam.RoomTest do
 
     test "successfully creates a room with all the different optional args", %{creator: creator, to_invite: invitee} do
       server_name = RadioBeam.server_name()
-      power_levels_content = %{"users" => %{creator.id => 99}, "ban" => "60", "state_default" => 51}
-
-      opts = [
-        power_levels: power_levels_content,
-        preset: :trusted_private_chat,
-        # override the join_rules of the preset, but name should not affect anything
-        addl_state_events: [join_rule_event(), name_event()],
-        alias: "computer",
-        content: %{"m.federate" => false},
-        name: "The Computer Room",
-        topic: "this one's for the nerds",
-        direct?: false,
-        visibility: :public,
-        invite: [invitee.id],
-        # TODO
-        invite_3pid: []
-      ]
 
       for room_version <- @room_versions_to_test do
-        assert {:ok, room_id} = Room.create(creator, opts)
+        maybe_deprecated_string_pl = if room_version in ~w|10 11|, do: 60, else: "60"
+
+        power_levels_content = %{
+          "users" => %{creator.id => 99},
+          "ban" => maybe_deprecated_string_pl,
+          "state_default" => 51
+        }
+
+        alias_localpart = "computer-rv-#{room_version}"
+
+        opts = [
+          power_levels: power_levels_content,
+          preset: :trusted_private_chat,
+          # override the join_rules of the preset, but name should not affect anything
+          addl_state_events: [join_rule_event(), name_event()],
+          alias: alias_localpart,
+          content: %{"m.federate" => false},
+          name: "The Computer Room",
+          topic: "this one's for the nerds",
+          direct?: false,
+          visibility: :public,
+          invite: [invitee.id],
+          # TODO
+          invite_3pid: []
+        ]
+
+        assert {:ok, room_id} = Room.create(creator, Keyword.put(opts, :room_version, room_version))
         assert [{pid, _}] = Registry.lookup(RoomRegistry, room_id)
         assert is_pid(pid)
 
@@ -69,7 +78,7 @@ defmodule RadioBeam.RoomTest do
         assert %{"history_visibility" => "shared"} = get_in(state, [{"m.room.history_visibility", ""}, "content"])
         assert %{"guest_access" => "can_join"} = get_in(state, [{"m.room.guest_access", ""}, "content"])
 
-        alias = "#computer:#{server_name}"
+        alias = "##{alias_localpart}:#{server_name}"
         assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
         assert {:ok, %Room.Alias{alias: ^alias, room_id: ^room_id}} = Repo.get(Room.Alias, alias)
 

@@ -34,13 +34,13 @@ defmodule RadioBeam.Room.Timeline do
     case timeline(room.id, user_id, from_event_ids, to_event_ids, filter, latest_joined_at_depth, order) do
       %{limited: true, events: events, prev_batch: prev_batch} ->
         members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
-        events = events |> Enum.reverse() |> format(filter)
+        events = events |> Enum.reverse() |> format(filter, room.version)
         # TOIMPL: add support for lazy_load_members and include_redundant_members
         %{chunk: events, state: MapSet.to_list(members), start: from, end: prev_batch}
 
       %{limited: false, events: events} ->
         members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
-        events = events |> Enum.reverse() |> format(filter)
+        events = events |> Enum.reverse() |> format(filter, room.version)
         %{chunk: events, state: MapSet.to_list(members), start: from}
     end
   end
@@ -223,10 +223,10 @@ defmodule RadioBeam.Room.Timeline do
             []
 
           not Keyword.has_key?(opts, :since) or full_state? ->
-            state_delta(nil, oldest_event, filter.state)
+            state_delta(nil, oldest_event, filter.state, room.version)
 
           :else ->
-            state_delta(List.last(stop_at_any), oldest_event, filter.state)
+            state_delta(List.last(stop_at_any), oldest_event, filter.state, room.version)
         end
 
       if Enum.empty?(state_delta) and Enum.empty?(tl_events) do
@@ -235,7 +235,7 @@ defmodule RadioBeam.Room.Timeline do
         %{
           # TODO: I think the event format needs to apply to state events here too? 
           state: state_delta,
-          timeline: %{timeline | events: format(tl_events, filter)},
+          timeline: %{timeline | events: format(tl_events, filter, room.version)},
           # TOIMPL
           account_data: %{},
           ephemeral: %{},
@@ -302,25 +302,25 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp format(timeline, filter) do
+  defp format(timeline, filter, room_version) do
     format = String.to_existing_atom(filter.format)
-    Enum.map(timeline, &(&1 |> PDU.to_event(:strings, format) |> Filter.take_fields(filter.fields)))
+    Enum.map(timeline, &(&1 |> PDU.to_event(room_version, :strings, format) |> Filter.take_fields(filter.fields)))
   end
 
-  defp state_delta(nil, tl_start_event, filter) do
+  defp state_delta(nil, tl_start_event, filter, _room_version) do
     tl_start_event.prev_state
     |> Stream.map(fn {_, event} -> event end)
     |> Enum.filter(&:radio_beam_room_queries.passes_filter(filter, &1["type"], &1["sender"], &1["content"]))
   end
 
-  defp state_delta(last_sync_event_id, tl_start_event, filter) do
+  defp state_delta(last_sync_event_id, tl_start_event, filter, room_version) do
     {:ok, last_sync_event} = PDU.get(last_sync_event_id)
 
     old_state =
       if is_nil(last_sync_event.state_key) do
         last_sync_event.prev_state
       else
-        event = PDU.to_event(last_sync_event, :strings)
+        event = PDU.to_event(last_sync_event, room_version, :strings)
         Map.put(last_sync_event.prev_state, {last_sync_event.type, last_sync_event.state_key}, event)
       end
 

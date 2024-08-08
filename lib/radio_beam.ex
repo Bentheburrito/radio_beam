@@ -14,7 +14,7 @@ defmodule RadioBeam do
   @cs_event_keys ["content", "event_id", "origin_server_ts", "room_id", "sender", "state_key", "type", "unsigned"]
   @doc """
   Strips an event/map of all keys that don't belong to a Client-Server
-  API-defined event. The map must use string keys (see PDU.to_event/1 for
+  API-defined event. The map must use string keys (see PDU.to_event/2-4 for
   converting a PDU struct to a similar object).
   """
   def client_event(event) when is_map(event) do

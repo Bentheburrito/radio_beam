@@ -32,6 +32,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "successfully creates a room with all options specified", %{conn: conn} do
       server_name = RadioBeam.server_name()
 
+      version = "10"
+
       req_body = %{
         "creation_content" => %{
           "m.federate" => false
@@ -48,10 +50,10 @@ defmodule RadioBeamWeb.RoomControllerTest do
         "invite_3pid" => [],
         "is_direct" => false,
         "name" => "Club Aqua",
-        "power_level_content_override" => %{"ban" => 124, "kick" => "123"},
+        "power_level_content_override" => %{"ban" => 124, "kick" => 123},
         "preset" => "trusted_private_chat",
         "room_alias_name" => "aqua",
-        "room_version" => "4",
+        "room_version" => version,
         "topic" => "Club aqua? You get in there?",
         "visibility" => "public"
       }
@@ -61,7 +63,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"room_id" => room_id} = json_response(conn, 200)
       assert [{_pid, _}] = Registry.lookup(RoomRegistry, room_id)
 
-      assert {:ok, %Room{id: ^room_id, version: "4", state: state}} = Room.get(room_id)
+      assert {:ok, %Room{id: ^room_id, version: ^version, state: state}} = Room.get(room_id)
 
       assert %{"join_rule" => "public"} = get_in(state, [{"m.room.join_rules", ""}, "content"])
 

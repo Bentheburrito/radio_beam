@@ -125,13 +125,13 @@ defmodule RadioBeam.Room.Ops do
         room
         |> Map.update!(:depth, &(&1 + 1))
         |> Map.replace!(:latest_event_ids, [pdu.event_id])
-        |> update_room_state(PDU.to_event(pdu, :strings))
+        |> update_room_state(PDU.to_event(pdu, room.version, :strings))
 
       {:ok, room, pdu}
     end
   end
 
-  defp update_room_state(room, event) do
+  defp update_room_state(%Room{} = room, event) do
     if is_map_key(event, "state_key") do
       %Room{room | state: Map.put(room.state, {event["type"], event["state_key"]}, event)}
     else

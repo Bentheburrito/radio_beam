@@ -14,7 +14,6 @@ defmodule RadioBeam.PDU.Table do
     :hashes,
     :prev_events,
     :prev_state,
-    :redacts,
     :sender,
     :signatures,
     :state_key,
@@ -35,7 +34,7 @@ defmodule RadioBeam.PDU.Table do
   @spec to_pdu(tuple()) :: PDU.t()
   def to_pdu(
         {__MODULE__, {room_id, neg_depth, os_ts}, event_id, auth_events, content, hashes, prev_events, prev_state,
-         redacts, sender, signatures, state_key, type, unsigned}
+         sender, signatures, state_key, type, unsigned}
       ) do
     %PDU{
       auth_events: auth_events,
@@ -46,7 +45,6 @@ defmodule RadioBeam.PDU.Table do
       origin_server_ts: os_ts,
       prev_events: prev_events,
       prev_state: prev_state,
-      redacts: redacts,
       room_id: room_id,
       sender: sender,
       signatures: signatures,
@@ -129,13 +127,13 @@ defmodule RadioBeam.PDU.Table do
 
   defp depth_ms(room_id, event_ids) do
     for event_id <- event_ids do
-      match_head = {__MODULE__, {room_id, :"$1", :_}, event_id, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_}
+      match_head = {__MODULE__, {room_id, :"$1", :_}, event_id, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_}
       {match_head, [], [:"$1"]}
     end
   end
 
   defp joined_after_ms(room_id, user_id) do
-    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :_, :_, :_, :"$2", :_, :_, :_, :_, :_, :_}
+    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :_, :_, :_, :"$2", :_, :_, :_, :_, :_}
 
     is_sender_member_key_present = {:is_map_key, {{"m.room.member", user_id}}, :"$2"}
 
