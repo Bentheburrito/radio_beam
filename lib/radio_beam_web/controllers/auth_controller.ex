@@ -7,8 +7,9 @@ defmodule RadioBeamWeb.AuthController do
   require Logger
 
   plug :ensure_registration_enabled when action == :register
-  plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Auth
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Auth] when action in [:register, :refresh]
   plug :authenticate_by_refresh_token when action == :refresh
+  plug RadioBeamWeb.Plugs.Authenticate when action == :whoami
 
   def register(conn, params) do
     %{"username" => {_version, localpart}, "password" => pwd} = conn.assigns.request
@@ -47,6 +48,15 @@ defmodule RadioBeamWeb.AuthController do
         Logger.error("Got error trying to use a refresh token: #{inspect(error)}")
         conn |> put_status(401) |> json(Errors.unknown())
     end
+  end
+
+  # TOIMPL: application service users
+  def whoami(conn, _params) do
+    json(conn, %{
+      device_id: conn.assigns.device_id,
+      is_guest: false,
+      user_id: conn.assigns.user.id
+    })
   end
 
   defp ensure_registration_enabled(conn, _) do

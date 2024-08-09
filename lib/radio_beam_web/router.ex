@@ -61,6 +61,10 @@ defmodule RadioBeamWeb.Router do
           get "/:room_id/timestamp_to_event", RoomController, :get_nearest_event
         end
 
+        scope "/account" do
+          get "/whoami", AuthController, :whoami
+        end
+
         scope "/user/:user_id" do
           post "/filter", FilterController, :put
           get "/filter/:filter_id", FilterController, :get

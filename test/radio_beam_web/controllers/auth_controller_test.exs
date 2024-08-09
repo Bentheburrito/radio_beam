@@ -127,6 +127,29 @@ defmodule RadioBeamWeb.AuthControllerTest do
     end
   end
 
+  describe "whoami/2" do
+    setup do
+      user = Fixtures.user()
+      device = Fixtures.device(user.id)
+      %{user: user, device: device}
+    end
+
+    test "successfully gets a known users's info", %{
+      conn: conn,
+      device: %{id: device_id} = device,
+      user: %{id: user_id}
+    } do
+      conn = get(conn, ~p"/_matrix/client/v3/account/whoami?access_token=#{device.access_token}", %{})
+
+      assert %{"device_id" => ^device_id, "user_id" => ^user_id} = json_response(conn, 200)
+    end
+
+    test "returns 401 for an unknown access token", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v3/account/whoami?access_token=asdgUYGFuywsg", %{})
+      assert %{"errcode" => "M_UNKNOWN_TOKEN"} = json_response(conn, 401)
+    end
+  end
+
   defp request(conn, username, add_params \\ %{}) do
     req_body =
       Map.merge(
