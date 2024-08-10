@@ -81,7 +81,7 @@ defmodule RadioBeam.Room.Timeline do
       # TOIMPL
       account_data: %{},
       device_lists: [],
-      device_one_time_keys_count: 0,
+      device_one_time_keys_count: %{},
       presence: %{},
       to_device: %{}
     }

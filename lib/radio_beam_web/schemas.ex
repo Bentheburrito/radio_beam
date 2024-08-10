@@ -12,4 +12,12 @@ defmodule RadioBeamWeb.Schemas do
       {:ok, value}
     end
   end
+
+  def as_integer(value) do
+    case Integer.parse(value) do
+      {number, ""} -> {:ok, number}
+      {_number, _non_empty_binary} -> {:error, :invalid}
+      :error -> {:error, :invalid}
+    end
+  end
 end

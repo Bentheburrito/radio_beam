@@ -6,6 +6,8 @@ defmodule RadioBeamWeb.Schemas.Room do
     %{"user_id" => &Schema.user_id/1, "reason" => optional(:string)}
   end
 
+  def leave, do: %{"reason" => optional(:string)}
+
   def join do
     # TOIMPL: third_party_signed
     %{"third_party_signed" => optional(:any), "reason" => optional(:string)}

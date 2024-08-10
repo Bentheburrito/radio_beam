@@ -312,6 +312,56 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
   end
 
+  describe "leave/2" do
+    setup %{conn: conn} do
+      user = Fixtures.user()
+      device = Fixtures.device(user.id)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "successfully leaves a room the sender has joined", %{conn: conn, user: user} do
+      creator = Fixtures.user("@calicocutpantssupporter:#{RadioBeam.server_name()}")
+
+      {:ok, room_id} = Room.create(creator, preset: :private_chat)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/leave", %{"reason" => "I didn't even ask to use it"})
+
+      assert res = json_response(conn, 200)
+      assert 0 = map_size(res)
+    end
+
+    test "fails to leave a room the user is not joined/invited to", %{conn: conn} do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator)
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/leave", %{"reason" => "lol"})
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
+      assert ^error_message = "You need to be invited or joined to this room to leave"
+    end
+
+    test "successfully rejects an invite", %{conn: conn, user: user} do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/leave", %{
+          "reason" => "HEY HOLD THAT DOOR HOLD THAT DOOR"
+        })
+
+      assert res = json_response(conn, 200)
+      assert 0 = map_size(res)
+    end
+  end
+
   describe "send/2" do
     setup %{conn: conn} do
       user = Fixtures.user()
@@ -527,6 +577,60 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
   end
 
+  describe "put_state/2" do
+    setup %{conn: conn} do
+      user = Fixtures.user()
+      device = Fixtures.device(user.id)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "puts the state event (200) when the requester is in the room and has permission to do so", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, room_id} = Room.create(user)
+
+      conn =
+        put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.membership/#{user.id}", %{
+          "membership" => "join",
+          "displayname" => "glorpbot"
+        })
+
+      assert %{"event_id" => _} = json_response(conn, 200)
+    end
+
+    test "returns a state event content (200) with an empty state_key", %{conn: conn, user: user} do
+      {:ok, room_id} = Room.create(user)
+
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.name/", %{"name" => "A Cool Room"})
+      assert %{"event_id" => _} = json_response(conn, 200)
+    end
+
+    test "returns an M_FORBIDDEN (403) error when requester is not in the room", %{conn: conn} do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator)
+
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.name/", %{"name" => "Not My Room"})
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+
+    test "returns an M_FORBIDDEN (403) error when the user does not have permission to set state events", %{
+      conn: conn,
+      user: user
+    } do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator, power_levels: %{"state_default" => 100})
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.name/", %{"name" => "Can't do this :("})
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+  end
+
   describe "get_state_event/2" do
     setup %{conn: conn} do
       user = Fixtures.user()
@@ -540,6 +644,14 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.member/#{user.id}", %{})
       assert %{"membership" => "join"} = json_response(conn, 200)
+    end
+
+    test "returns a state event content (200) with an empty state_key", %{conn: conn, user: user} do
+      rv = "10"
+      {:ok, room_id} = Room.create(user, room_version: rv)
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.create/", %{})
+      assert %{"room_version" => ^rv} = json_response(conn, 200)
     end
 
     test "returns an M_FORBIDDEN (403) error when requester is not in the room", %{conn: conn} do

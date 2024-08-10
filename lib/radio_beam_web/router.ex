@@ -15,6 +15,7 @@ defmodule RadioBeamWeb.Router do
   end
 
   get "/", HomeserverInfoController, :home
+  get "/.well-known/matrix/client", HomeserverInfoController, :well_known_client
 
   scope "/_matrix" do
     pipe_through :spec
@@ -42,21 +43,24 @@ defmodule RadioBeamWeb.Router do
         scope "/rooms" do
           post "/:room_id/invite", RoomController, :invite
           post "/:room_id/join", RoomController, :join
+          post "/:room_id/leave", RoomController, :leave
           # TOIMPL:
           # post "/:room_id/forget", RoomController, :forget
-          # post "/:room_id/leave", RoomController, :leave
           # post "/:room_id/kick", RoomController, :kick
           # post "/:room_id/ban", RoomController, :ban
           # post "/:room_id/unban", RoomController, :unban
+          post "/:room_id/:membership_action", RoomController, :membership_action
 
           put "/:room_id/send/:event_type/:transaction_id", RoomController, :send
           put "/:room_id/state/:event_type/:state_key", RoomController, :put_state
+          put "/:room_id/state/:event_type", RoomController, :put_state
 
           get "/:room_id/event/:event_id", RoomController, :get_event
           get "/:room_id/joined_members", RoomController, :get_joined_members
           get "/:room_id/members", RoomController, :get_members
           get "/:room_id/state", RoomController, :get_state
           get "/:room_id/state/:event_type/:state_key", RoomController, :get_state_event
+          get "/:room_id/state/:event_type", RoomController, :get_state_event
           get "/:room_id/messages", SyncController, :get_messages
           get "/:room_id/timestamp_to_event", RoomController, :get_nearest_event
         end

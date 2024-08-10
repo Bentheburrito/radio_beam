@@ -2,14 +2,15 @@ defmodule RadioBeamWeb.Schemas.Sync do
   alias RadioBeam.Room.Timeline
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.Filter
+  alias RadioBeamWeb.Schemas
 
   def sync do
     %{
-      "filter" => optional(Schema.any_of([&filter_by_id/1, Filter.filter()])),
+      "filter" => optional(Schema.any_of([&filter_by_id/1, &Filter.json_filter/1, Filter.filter()])),
       "full_state" => [:boolean, default: false],
       "set_presence" => [Schema.enum(presence()), default: :online],
       "since" => optional(:string),
-      "timeout" => [:integer, default: 0]
+      "timeout" => [&Schemas.as_integer/1, default: 0]
     }
   end
 

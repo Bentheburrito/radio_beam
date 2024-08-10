@@ -52,6 +52,9 @@ defmodule RadioBeamWeb.Plugs.EnforceSchema do
           )
         end
 
+      {:error, :invalid_value, field_path, {:error, :no_match}} ->
+        error(conn, "Could not match #{Enum.join(field_path, ".")}")
+
       {:error, :invalid_value, field_path, {:error, error, value}} ->
         error(conn, "Could not parse #{Enum.join(field_path, ".")}: #{inspect(error)}, got '#{inspect(value)}'")
 

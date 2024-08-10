@@ -14,6 +14,15 @@ defmodule RadioBeamWeb.Schemas.Filter do
     }
   end
 
+  def json_filter("{" <> _rest = json_encoded_filter) do
+    with {:ok, filter} <- Jason.decode(json_encoded_filter),
+         {:ok, filter} <- Schema.match(filter, filter()) do
+      {:ok, filter}
+    end
+  end
+
+  def json_filter(_whatever), do: {:error, :invalid}
+
   defp event_filter do
     %{
       "limit" => optional(&limit/1),

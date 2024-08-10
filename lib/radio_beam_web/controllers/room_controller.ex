@@ -8,8 +8,10 @@ defmodule RadioBeamWeb.RoomController do
   alias RadioBeam.{Errors, Room, Transaction, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
+  @schema_actions [:create, :invite, :join, :leave, :get_nearest_event]
+
   plug RadioBeamWeb.Plugs.Authenticate
-  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in [:create, :invite, :join, :get_nearest_event]
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in @schema_actions
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema, with_params?: true] when action == :send
 
   @missing_req_param_msg "Your request is missing one or more required parameters"
@@ -109,6 +111,18 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
+  def leave(conn, %{"room_id" => room_id}) do
+    %User{} = joiner = conn.assigns.user
+    request = conn.assigns.request
+
+    with {:ok, _event_id} <- Room.leave(room_id, joiner.id, request["reason"]) do
+      json(conn, %{})
+    else
+      # TODO: should we translate all errors to 404, since it could leak existence of a room?
+      {:error, error} -> handle_common_error(conn, error, "You need to be invited or joined to this room to leave")
+    end
+  end
+
   def send(conn, %{"room_id" => room_id, "event_type" => event_type, "transaction_id" => txn_id}) do
     %User{} = sender = conn.assigns.user
     content = conn.assigns.request
@@ -135,19 +149,16 @@ defmodule RadioBeamWeb.RoomController do
     |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
 
-  def put_state(conn, %{"room_id" => room_id, "event_type" => event_type, "state_key" => state_key}) do
+  def put_state(conn, %{"room_id" => room_id, "event_type" => event_type} = params) do
     %User{} = sender = conn.assigns.user
-    content = conn.assigns.request
+    content = conn.body_params
+    state_key = Map.get(params, "state_key", "")
 
     with {:ok, event_id} <- Room.put_state(room_id, sender.id, event_type, state_key, content) do
       json(conn, %{event_id: event_id})
     else
       {:error, error} -> handle_common_error(conn, error)
     end
-  end
-
-  def put_state(conn, %{"room_id" => _, "event_type" => _} = params) do
-    put_state(conn, Map.put(params, "state_key", ""))
   end
 
   def put_state(conn, _params) do
@@ -216,7 +227,9 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
-  def get_state_event(conn, %{"room_id" => room_id, "event_type" => type, "state_key" => state_key}) do
+  def get_state_event(conn, %{"room_id" => room_id, "event_type" => type} = params) do
+    state_key = Map.get(params, "state_key", "")
+
     case Room.get_state(room_id, conn.assigns.user.id, type, state_key) do
       {:ok, event} -> json(conn, Map.get(event, "content", %{}))
       {:error, error} -> handle_common_error(conn, error)

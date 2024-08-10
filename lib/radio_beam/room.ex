@@ -424,7 +424,11 @@ defmodule RadioBeam.Room do
   defp call_if_alive(room_id, message) do
     GenServer.call(via(room_id), message)
   catch
-    :exit, {:noproc, _} -> {:error, :room_does_not_exist}
+    :exit, {:noproc, _} ->
+      case revive(room_id) do
+        {:ok, ^room_id} -> GenServer.call(via(room_id), message)
+        {:error, _} = error -> error
+      end
   end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}

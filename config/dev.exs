@@ -22,9 +22,14 @@ config :radio_beam, RadioBeamWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4000],
   check_origin: false,
   code_reloader: true,
-  debug_errors: true,
+  # clients will get confused with 200 the responses from debug_errors
+  debug_errors: false,
   secret_key_base: "9ecAggd84rh0M/JB8+1W7mbwdheVluVOwRQsqI/Ov6zfGBF8FfCbZmKRH5HtUYu4",
   watchers: []
+
+config :radio_beam,
+  server_name: "test-server.dev",
+  well_known_client: %{"m.homeserver" => %{"base_url" => "localhost:4000"}}
 
 # ## SSL Support
 #

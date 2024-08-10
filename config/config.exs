@@ -27,7 +27,7 @@ config :radio_beam,
   login_types: %{flows: [%{type: "m.login.password"}]},
   max_events: [timeline: 200, state: 100],
   registration_enabled: true,
-  versions: %{unstable_versions: %{}, versions: ["v1.9"]}
+  versions: %{unstable_features: %{}, versions: ["v1.8", "v1.9", "v1.10", "v1.11"]}
 
 # Configures the endpoint
 config :radio_beam, RadioBeamWeb.Endpoint,
