@@ -29,6 +29,7 @@ defmodule RadioBeamWeb.SyncController do
       user.id
       |> Room.all_where_has_membership()
       |> Timeline.sync(user.id, opts)
+      |> put_account_data(user)
 
     json(conn, response)
   end
@@ -54,5 +55,16 @@ defmodule RadioBeamWeb.SyncController do
       {:ok, response} -> json(conn, response)
       {:error, error} -> handle_common_error(conn, error)
     end
+  end
+
+  defp put_account_data(sync, user) do
+    sync
+    |> Map.merge(%{account_data: Map.get(user.account_data, :global, %{})})
+    |> update_in(
+      [:rooms, :join],
+      &Map.new(&1, fn {room_id, room_sync} ->
+        {room_id, Map.put(room_sync, :account_data, Map.get(user.account_data, room_id, %{}))}
+      end)
+    )
   end
 end

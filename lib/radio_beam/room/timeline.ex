@@ -79,7 +79,6 @@ defmodule RadioBeam.Room.Timeline do
       rooms: rooms,
       next_batch: next_batch,
       # TOIMPL
-      account_data: %{},
       device_lists: [],
       device_one_time_keys_count: %{},
       presence: %{},
@@ -237,7 +236,6 @@ defmodule RadioBeam.Room.Timeline do
           state: state_delta,
           timeline: %{timeline | events: format(tl_events, filter, room.version)},
           # TOIMPL
-          account_data: %{},
           ephemeral: %{},
           summary: %{},
           unread_notifications: %{},
