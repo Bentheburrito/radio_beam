@@ -54,12 +54,8 @@ defmodule RadioBeam.Room.Timeline.Filter do
     event_fields
     |> Stream.map(&String.split(&1, "."))
     |> Enum.reduce(%{}, fn path, new_event ->
-      put_nested(new_event, path, get_in(event, path))
+      RadioBeam.put_nested(new_event, path, get_in(event, path))
     end)
-  end
-
-  defp put_nested(data, path, value) do
-    put_in(data, Enum.map(path, &Access.key(&1, %{})), value)
   end
 
   @doc """

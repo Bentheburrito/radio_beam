@@ -2,6 +2,7 @@ defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
   alias RadioBeamWeb.{
+    AccountController,
     AuthController,
     FilterController,
     HomeserverInfoController,
@@ -72,6 +73,11 @@ defmodule RadioBeamWeb.Router do
         scope "/user/:user_id" do
           post "/filter", FilterController, :put
           get "/filter/:filter_id", FilterController, :get
+
+          get "/account_data/:type", AccountController, :get_config
+          put "/account_data/:type", AccountController, :put_config
+          get "/rooms/:room_id/account_data/:type", AccountController, :get_config
+          put "/rooms/:room_id/account_data/:type", AccountController, :put_config
         end
 
         post "/join/:room_id_or_alias", RoomController, :join
