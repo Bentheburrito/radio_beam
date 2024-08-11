@@ -87,7 +87,7 @@ defmodule RadioBeam.Room.Timeline do
       |> sync_with_room_ids(user_id, opts)
       |> await_if_no_updates(rooms, user_id, opts)
 
-    {:ok, next_batch} = SyncBatch.put(batch_map)
+    {:ok, next_batch} = SyncBatch.put(batch_map, Keyword.get(opts, :since, nil))
 
     %{
       rooms: rooms_sync,
@@ -213,8 +213,8 @@ defmodule RadioBeam.Room.Timeline do
   defp parse_since_token(:latest), do: %{}
 
   defp parse_since_token(since) do
-    case SyncBatch.pop(since) do
-      {:ok, %SyncBatch{batch_map: batch_map}} ->
+    case SyncBatch.get(since) do
+      {:ok, batch_map} ->
         batch_map
 
       {:error, error} ->
