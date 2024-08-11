@@ -72,11 +72,25 @@ defmodule RadioBeam.Room.Timeline do
     filter = opts |> Keyword.get(:filter, %{}) |> Filter.parse()
     opts = Keyword.put(opts, :filter, filter)
 
-    {rooms, batch_map} = sync_with_room_ids(room_ids, user_id, opts)
+    room_ids =
+      case filter.rooms do
+        {:allowlist, allowlist} -> Enum.filter(room_ids, &(&1 in allowlist))
+        {:denylist, denylist} -> Enum.reject(room_ids, &(&1 in denylist))
+        :none -> room_ids
+      end
+
+    for room_id <- room_ids, do: PubSub.subscribe(PS, PS.all_room_events(room_id))
+    {:ok, rooms} = Room.all(room_ids)
+
+    {rooms_sync, batch_map} =
+      rooms
+      |> sync_with_room_ids(user_id, opts)
+      |> await_if_no_updates(rooms, user_id, opts)
+
     {:ok, next_batch} = SyncBatch.put(batch_map)
 
     %{
-      rooms: rooms,
+      rooms: rooms_sync,
       next_batch: next_batch,
       # TOIMPL
       device_lists: [],
@@ -87,31 +101,24 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _batch_map = %{}}
-  defp sync_with_room_ids(room_ids, user_id, opts) do
+  defp sync_with_room_ids(rooms, user_id, opts) do
     since = Keyword.get(opts, :since, :latest)
     filter = Keyword.get(opts, :filter, %{})
     last_sync_event_map = parse_since_token(since)
 
-    room_ids =
-      case filter.rooms do
-        {:allowlist, allowlist} -> Enum.filter(room_ids, &(&1 in allowlist))
-        {:denylist, denylist} -> Enum.reject(room_ids, &(&1 in denylist))
-        :none -> room_ids
-      end
-
-    room_ids
-    |> Enum.reduce(@init_rooms_acc, &build_room_sync(&1, user_id, last_sync_event_map, filter.include_leave?, &2, opts))
-    |> await_if_no_updates(user_id, opts)
+    Enum.reduce(
+      rooms,
+      @init_rooms_acc,
+      &build_room_sync(&1, user_id, last_sync_event_map, filter.include_leave?, &2, opts)
+    )
   end
 
-  defp build_room_sync(room_id, user_id, last_sync_event_map, include_leave?, {rooms, batch_map}, opts) do
-    %Room{} = room = Memento.transaction!(fn -> Memento.Query.read(Room, room_id) end)
+  defp build_room_sync(room, user_id, last_sync_event_map, include_leave?, {rooms, batch_map}, opts) do
+    %Room{id: room_id} = room
 
     case get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) do
       "join" ->
         stop_at_any = Map.get(last_sync_event_map, room.id, [])
-
-        :ok = PubSub.subscribe(PS, PS.all_room_events(room_id))
 
         opts = Keyword.put(opts, :latest_joined_at_depth, room.depth)
 
@@ -157,29 +164,47 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp await_if_no_updates({rooms, batch_map}, user_id, opts) do
-    if Enum.all?(rooms, fn {_, map} -> map_size(map) == 0 end) do
+  defp await_if_no_updates({rooms_sync, batch_map}, rooms, user_id, opts) do
+    if Enum.all?(rooms_sync, fn {_, map} -> map_size(map) == 0 end) do
       timeout = Keyword.get(opts, :timeout, 0)
 
-      case await_next_event(timeout) do
+      # TODO - only scanning for join rooms rn, will probably want to listen for
+      # new invites, knocks, etc. too
+      interested_room_ids =
+        for room <- rooms,
+            room.state[{"m.room.member", user_id}]["content"]["membership"] == "join",
+            into: MapSet.new(),
+            do: room.id
+
+      case await_next_event(interested_room_ids, user_id, timeout) do
         :timeout ->
-          {rooms, batch_map}
+          {rooms_sync, batch_map}
 
         {:update, room_id, rem_timeout} ->
-          sync_with_room_ids([room_id], user_id, Keyword.put(opts, :timeout, rem_timeout))
+          opts = Keyword.put(opts, :timeout, rem_timeout)
+          {:ok, room} = Room.get(room_id)
+
+          [room]
+          |> sync_with_room_ids(user_id, opts)
+          |> await_if_no_updates(rooms, user_id, opts)
       end
     else
-      {rooms, batch_map}
+      {rooms_sync, batch_map}
     end
   end
 
-  defp await_next_event(timeout) do
+  defp await_next_event(interested_room_ids, user_id, timeout) do
     time_before_wait = :os.system_time(:millisecond)
 
     receive do
       {:room_update, room_id} ->
         new_timeout = max(0, timeout - (:os.system_time(:millisecond) - time_before_wait))
-        {:update, room_id, new_timeout}
+
+        if room_id in interested_room_ids do
+          {:update, room_id, new_timeout}
+        else
+          await_next_event(interested_room_ids, user_id, new_timeout)
+        end
     after
       timeout -> :timeout
     end

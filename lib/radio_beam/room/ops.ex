@@ -26,7 +26,6 @@ defmodule RadioBeam.Room.Ops do
 
       with true <- authorized?(room, event, auth_events),
            {:ok, %Room{} = room, %PDU{} = pdu} <- update_room(room, event, auth_events) do
-        PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_update, room.id})
         {:cont, {room, [pdu | pdus]}}
       else
         false ->
@@ -39,7 +38,14 @@ defmodule RadioBeam.Room.Ops do
     end)
     |> case do
       {%Room{} = room, pdus} ->
-        persist_put_events(room, pdus)
+        case persist_put_events(room, pdus) do
+          {:ok, _} = ok ->
+            PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_update, room.id})
+            ok
+
+          error ->
+            error
+        end
 
       error ->
         error
