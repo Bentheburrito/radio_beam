@@ -53,7 +53,7 @@ defmodule RadioBeamWeb.AuthController do
   # TOIMPL: application service users
   def whoami(conn, _params) do
     json(conn, %{
-      device_id: conn.assigns.device_id,
+      device_id: conn.assigns.device.id,
       is_guest: false,
       user_id: conn.assigns.user.id
     })

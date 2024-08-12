@@ -17,7 +17,7 @@ defmodule RadioBeamWeb.Plugs.Authenticate do
       {:ok, user, device} ->
         conn
         |> assign(:user, user)
-        |> assign(:device_id, device.id)
+        |> assign(:device, device)
 
       {:error, :expired} ->
         conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", true)) |> halt()

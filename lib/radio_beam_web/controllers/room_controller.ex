@@ -126,7 +126,7 @@ defmodule RadioBeamWeb.RoomController do
   def send(conn, %{"room_id" => room_id, "event_type" => event_type, "transaction_id" => txn_id}) do
     %User{} = sender = conn.assigns.user
     content = conn.assigns.request
-    device_id = conn.assigns.device_id
+    device_id = conn.assigns.device.id
 
     with {:ok, handle} <- Transaction.begin(txn_id, device_id, conn.request_path),
          {:ok, event_id} <- Room.send(room_id, sender.id, event_type, content) do
