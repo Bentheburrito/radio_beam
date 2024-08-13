@@ -123,6 +123,23 @@ defmodule RadioBeam.PDU.Table do
     end
   end
 
+  @doc """
+  Selects all raw PDU.Table tuple records by their event IDs
+  """
+  @spec get_all_records([String.t()]) :: {:ok, [tuple()]} | {:error, any()}
+  def get_all_records(ids) do
+    match_head = __MODULE__.__info__().query_base
+    match_spec = for id <- ids, do: {put_elem(match_head, 2, id), [], [:"$_"]}
+
+    fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end
+    |> Memento.transaction()
+    |> case do
+      {:ok, records} when is_list(records) -> {:ok, records}
+      {:ok, :"$end_of_table"} -> {:ok, []}
+      {:error, error} -> {:error, error}
+    end
+  end
+
   ### MATCH SPECS ###
 
   defp depth_ms(room_id, event_ids) do

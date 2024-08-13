@@ -81,7 +81,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert Enum.any?(state, &match?(%{"type" => "m.room.create"}, &1))
       assert Enum.any?(state, &match?(%{"type" => "m.room.member"}, &1))
-      assert %{"event_id" => pl_event_id} = Enum.find(state, &(&1["type"] == "m.room.power_levels"))
+      assert %{"event_id" => "$" <> hash64} = Enum.find(state, &(&1["type"] == "m.room.power_levels"))
 
       assert %{
                limited: true,
@@ -92,7 +92,7 @@ defmodule RadioBeam.Room.TimelineTest do
                  %{"type" => "m.room.member"},
                  %{"type" => "m.room.member"}
                ],
-               prev_batch: ^pl_event_id
+               prev_batch: "batch:" <> ^hash64
              } =
                timeline
 
@@ -288,7 +288,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
 
-      assert [%{"event_id" => name_event_id}] = state
+      assert [%{"event_id" => "$" <> hash64}] = state
 
       assert %{
                limited: true,
@@ -296,7 +296,7 @@ defmodule RadioBeam.Room.TimelineTest do
                  %{"type" => "m.room.name", "content" => %{"name" => "First name update"}},
                  %{"type" => "m.room.name", "content" => %{"name" => "Second name update"}}
                ],
-               prev_batch: ^name_event_id
+               prev_batch: "batch:" <> ^hash64
              } =
                timeline
 

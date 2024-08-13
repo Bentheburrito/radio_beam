@@ -7,7 +7,6 @@ defmodule RadioBeam.Repo do
 
   alias RadioBeam.Device
   alias RadioBeam.Room.Timeline.Filter
-  alias RadioBeam.Room.Timeline.SyncBatch
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.User
@@ -34,7 +33,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, Device, PDU.Table, Room, Room.Alias, SyncBatch, Filter]
+  @tables [User, Device, PDU.Table, Room, Room.Alias, Filter]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =

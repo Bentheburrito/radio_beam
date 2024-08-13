@@ -4,11 +4,12 @@ defmodule RadioBeam.Room.Timeline do
   syncing with clients.
   """
 
+  import RadioBeam.Room.Timeline.Utils
+
   require Logger
 
   alias Phoenix.PubSub
   alias RadioBeam.Room.Timeline.Filter
-  alias RadioBeam.Room.Timeline.SyncBatch
   alias RadioBeam.PDU
   alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
@@ -55,10 +56,7 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp parse_token("batch:" <> _ = next_batch_token, room, _dir),
-    do: Map.get(parse_since_token(next_batch_token), room.id, [])
-
-  defp parse_token("$" <> _ = prev_batch_token, _room, _dir), do: String.split(prev_batch_token, "|")
+  defp parse_token("batch:" <> _ = token, _room, _dir), do: decode_since_token(token)
   defp parse_token(:limit, room, :forward), do: room.latest_event_ids
   defp parse_token(:limit, _room, :backward), do: []
   defp parse_token(:first, _room, :forward), do: []
@@ -82,16 +80,14 @@ defmodule RadioBeam.Room.Timeline do
     for room_id <- room_ids, do: PubSub.subscribe(PS, PS.all_room_events(room_id))
     {:ok, rooms} = Room.all(room_ids)
 
-    {rooms_sync, batch_map} =
+    {rooms_sync, event_ids} =
       rooms
       |> sync_with_room_ids(user_id, opts)
       |> await_if_no_updates(rooms, user_id, opts)
 
-    {:ok, next_batch} = SyncBatch.put(batch_map, Keyword.get(opts, :since, nil))
-
     %{
       rooms: rooms_sync,
-      next_batch: next_batch,
+      next_batch: encode_since_token(event_ids),
       # TOIMPL
       device_lists: [],
       device_one_time_keys_count: %{},
@@ -100,7 +96,7 @@ defmodule RadioBeam.Room.Timeline do
     }
   end
 
-  @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _batch_map = %{}}
+  @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _event_ids = []}
   defp sync_with_room_ids(rooms, user_id, opts) do
     since = Keyword.get(opts, :since, :latest)
     filter = Keyword.get(opts, :filter, %{})
@@ -113,7 +109,7 @@ defmodule RadioBeam.Room.Timeline do
     )
   end
 
-  defp build_room_sync(room, user_id, last_sync_event_map, include_leave?, {rooms, batch_map}, opts) do
+  defp build_room_sync(room, user_id, last_sync_event_map, include_leave?, {rooms, event_ids}, opts) do
     %Room{id: room_id} = room
 
     case get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) do
@@ -128,23 +124,22 @@ defmodule RadioBeam.Room.Timeline do
             room_update -> put_in(rooms, [:join, room_id], room_update)
           end
 
-        {rooms, Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
+        {rooms, room.latest_event_ids ++ event_ids}
 
       # TODO: should the invite reflect changes to stripped state events that
       # happened after the invite?
       "invite" when is_map_key(last_sync_event_map, room_id) ->
-        {rooms, Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
+        {rooms, room.latest_event_ids ++ event_ids}
 
       "invite" ->
-        {put_in(rooms, [:invite, room_id], invited_room_sync(room)),
-         Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
+        {put_in(rooms, [:invite, room_id], invited_room_sync(room)), room.latest_event_ids ++ event_ids}
 
       "knock" ->
         Logger.info("TOIMPL: sync with knock rooms")
-        {rooms, batch_map}
+        {rooms, event_ids}
 
       "leave" when not include_leave? ->
-        {rooms, Map.update(batch_map, room.id, room.latest_event_ids, &(room.latest_event_ids ++ &1))}
+        {rooms, room.latest_event_ids ++ event_ids}
 
       "leave" ->
         stop_at_any = Map.get(last_sync_event_map, room.id, [])
@@ -160,11 +155,11 @@ defmodule RadioBeam.Room.Timeline do
             room_update -> put_in(rooms, [:leave, room_id], room_update)
           end
 
-        {rooms, Map.update(batch_map, room.id, [pdu.event_id], &[pdu.event_id | &1])}
+        {rooms, [pdu.event_id | event_ids]}
     end
   end
 
-  defp await_if_no_updates({rooms_sync, batch_map}, rooms, user_id, opts) do
+  defp await_if_no_updates({rooms_sync, event_ids}, rooms, user_id, opts) do
     if Enum.all?(rooms_sync, fn {_, map} -> map_size(map) == 0 end) do
       timeout = Keyword.get(opts, :timeout, 0)
 
@@ -178,7 +173,7 @@ defmodule RadioBeam.Room.Timeline do
 
       case await_next_event(interested_room_ids, user_id, timeout) do
         :timeout ->
-          {rooms_sync, batch_map}
+          {rooms_sync, event_ids}
 
         {:update, room_id, rem_timeout} ->
           opts = Keyword.put(opts, :timeout, rem_timeout)
@@ -189,7 +184,7 @@ defmodule RadioBeam.Room.Timeline do
           |> await_if_no_updates(rooms, user_id, opts)
       end
     else
-      {rooms_sync, batch_map}
+      {rooms_sync, event_ids}
     end
   end
 
@@ -213,17 +208,8 @@ defmodule RadioBeam.Room.Timeline do
   defp parse_since_token(:latest), do: %{}
 
   defp parse_since_token(since) do
-    case SyncBatch.get(since) do
-      {:ok, batch_map} ->
-        batch_map
-
-      {:error, error} ->
-        Logger.error(
-          "error trying to get a sync batch using `since` token #{inspect(since)}: #{inspect(error)}. Doing an inital sync instead"
-        )
-
-        parse_since_token(:latest)
-    end
+    {:ok, pdus} = since |> decode_since_token() |> PDU.all()
+    Enum.group_by(pdus, & &1.room_id, & &1.event_id)
   end
 
   @spec room_timeline_sync(Room.t(), String.t(), list(), list(), keyword()) :: map() | :no_update
@@ -316,8 +302,8 @@ defmodule RadioBeam.Room.Timeline do
         %{limited: false, events: timeline}
 
       {:ok, {next_event, timeline}} ->
-        prev_batch = if order == :descending, do: next_event.event_id, else: Enum.join(next_event.prev_events, "|")
-        %{limited: true, events: timeline, prev_batch: prev_batch}
+        event_ids = if order == :descending, do: [next_event.event_id], else: next_event.prev_events
+        %{limited: true, events: timeline, prev_batch: encode_since_token(event_ids)}
 
       {:error, error} ->
         Logger.error("tried to fetch a timeline of events for #{inspect(user_id)}, but got error: #{inspect(error)}")

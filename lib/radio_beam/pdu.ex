@@ -84,6 +84,17 @@ defmodule RadioBeam.PDU do
   end
 
   @doc """
+  Get a list of PDUs by their event IDs
+  """
+  @spec all(event_ids :: [String.t()]) :: {:ok, [t()]} | {:error, any()}
+  def all(event_ids) do
+    case Table.get_all_records(event_ids) do
+      {:ok, records} -> {:ok, Enum.map(records, &Table.to_pdu(&1))}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  @doc """
   Events began using the URL-safe variant in Room Version 4.
 
   It's not planned to support Room Versions 1 or 2 currently, since they
