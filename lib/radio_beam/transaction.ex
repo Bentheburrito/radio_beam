@@ -34,6 +34,14 @@ defmodule RadioBeam.Transaction do
     GenServer.call(__MODULE__, {:done, handle, response})
   end
 
+  @doc """
+  Ends a transaction. The `handle` should be a handle previously returned by
+  `begin/3`.
+  """
+  def abort(handle) do
+    GenServer.cast(__MODULE__, {:abort, handle})
+  end
+
   ### IMPL ###
 
   @impl GenServer
@@ -62,5 +70,22 @@ defmodule RadioBeam.Transaction do
     for from <- waiting, do: GenServer.reply(from, response)
 
     {:reply, :ok, Map.put(state, key, response)}
+  end
+
+  @impl GenServer
+  def handle_cast({:abort, key}, state) when is_map_key(state, key) do
+    {:waiting, waiting} = Map.fetch!(state, key)
+
+    state =
+      case waiting do
+        [next | waiting] ->
+          GenServer.reply(next, {:ok, key})
+          Map.put(state, key, {:waiting, waiting})
+
+        [] ->
+          Map.delete(state, key)
+      end
+
+    {:noreply, state}
   end
 end
