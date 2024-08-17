@@ -1,5 +1,3 @@
 defmodule RadioBeam.DeviceTest do
-  use ExUnit.Case
-
-  # alias RadioBeam.Device
+  use ExUnit.Case, async: true
 end

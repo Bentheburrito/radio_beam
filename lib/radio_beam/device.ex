@@ -117,30 +117,7 @@ defmodule RadioBeam.Device do
           :refresh_token -> select_by_refresh_token(value, :write)
         end
 
-      case device do
-        %__MODULE__{user_id: ^user_id, prev_refresh_token: nil} = device ->
-          persist(%__MODULE__{
-            device
-            | access_token: generate_token(),
-              refresh_token: generate_token(),
-              prev_refresh_token: device.refresh_token
-          })
-
-        # if prev_refresh_token is not nil, do nothing; the client probably 
-        # didn't receive the response for the initial refresh call
-        %__MODULE__{user_id: ^user_id} = device ->
-          device
-
-        _not_found ->
-          case on_not_found do
-            :error ->
-              :not_found
-
-            {:create, opts} ->
-              device = new(user_id, Keyword.put(opts, field, value))
-              persist(device)
-          end
-      end
+      try_refresh(device, user_id, field, value, on_not_found)
     end
     |> Memento.transaction()
     |> case do
@@ -148,6 +125,33 @@ defmodule RadioBeam.Device do
       {:ok, :not_found} -> {:error, :not_found}
       {:ok, :user_does_not_exist} -> {:error, :user_does_not_exist}
       error -> error
+    end
+  end
+
+  defp try_refresh(device, user_id, field, value, on_not_found) do
+    case device do
+      %__MODULE__{user_id: ^user_id, prev_refresh_token: nil} = device ->
+        persist(%__MODULE__{
+          device
+          | access_token: generate_token(),
+            refresh_token: generate_token(),
+            prev_refresh_token: device.refresh_token
+        })
+
+      # if prev_refresh_token is not nil, do nothing; the client probably 
+      # didn't receive the response for the initial refresh call
+      %__MODULE__{user_id: ^user_id} = device ->
+        device
+
+      _not_found ->
+        case on_not_found do
+          :error ->
+            :not_found
+
+          {:create, opts} ->
+            device = new(user_id, Keyword.put(opts, field, value))
+            persist(device)
+        end
     end
   end
 

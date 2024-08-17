@@ -71,9 +71,10 @@ defmodule RadioBeamWeb.RoomController do
     request = conn.assigns.request
     invitee_id = to_string(Map.fetch!(request, "user_id"))
 
-    with {:ok, _event_id} <- Room.invite(room_id, inviter.id, invitee_id, request["reason"]) do
-      json(conn, %{})
-    else
+    case Room.invite(room_id, inviter.id, invitee_id, request["reason"]) do
+      {:ok, _event_id} ->
+        json(conn, %{})
+
       {:error, error} ->
         handle_common_error(
           conn,
@@ -104,9 +105,8 @@ defmodule RadioBeamWeb.RoomController do
     %User{} = joiner = conn.assigns.user
     request = conn.assigns.request
 
-    with {:ok, _event_id} <- Room.join(room_id, joiner.id, request["reason"]) do
-      json(conn, %{room_id: room_id})
-    else
+    case Room.join(room_id, joiner.id, request["reason"]) do
+      {:ok, _event_id} -> json(conn, %{room_id: room_id})
       {:error, error} -> handle_common_error(conn, error, "You need to be invited by a member of this room to join")
     end
   end
@@ -115,9 +115,8 @@ defmodule RadioBeamWeb.RoomController do
     %User{} = joiner = conn.assigns.user
     request = conn.assigns.request
 
-    with {:ok, _event_id} <- Room.leave(room_id, joiner.id, request["reason"]) do
-      json(conn, %{})
-    else
+    case Room.leave(room_id, joiner.id, request["reason"]) do
+      {:ok, _event_id} -> json(conn, %{})
       # TODO: should we translate all errors to 404, since it could leak existence of a room?
       {:error, error} -> handle_common_error(conn, error, "You need to be invited or joined to this room to leave")
     end
@@ -154,9 +153,8 @@ defmodule RadioBeamWeb.RoomController do
     content = conn.body_params
     state_key = Map.get(params, "state_key", "")
 
-    with {:ok, event_id} <- Room.put_state(room_id, sender.id, event_type, state_key, content) do
-      json(conn, %{event_id: event_id})
-    else
+    case Room.put_state(room_id, sender.id, event_type, state_key, content) do
+      {:ok, event_id} -> json(conn, %{event_id: event_id})
       {:error, error} -> handle_common_error(conn, error)
     end
   end

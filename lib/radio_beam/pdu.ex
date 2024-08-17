@@ -116,35 +116,37 @@ defmodule RadioBeam.PDU do
       |> Map.put("signatures", %{})
       |> Map.put("unsigned", %{})
 
-    with {:ok, hash} <- RoomVersion.compute_reference_hash(room_version, Map.delete(params, "prev_state")) do
-      content = Map.fetch!(params, "content")
-      # %PDU{} has the V11 shape, but we want to be backwards-compatible with older versions
-      content =
-        if params["type"] == "m.room.redaction" and room_version not in @pre_v11_format_versions do
-          Map.put_new_lazy(content, "redacts", fn -> Map.fetch!(params, "redacts") end)
-        else
-          content
-        end
+    case RoomVersion.compute_reference_hash(room_version, Map.delete(params, "prev_state")) do
+      {:ok, hash} ->
+        content = Map.fetch!(params, "content")
+        # %PDU{} has the V11 shape, but we want to be backwards-compatible with older versions
+        content =
+          if params["type"] == "m.room.redaction" and room_version not in @pre_v11_format_versions do
+            Map.put_new_lazy(content, "redacts", fn -> Map.fetch!(params, "redacts") end)
+          else
+            content
+          end
 
-      {:ok,
-       %__MODULE__{
-         auth_events: Map.fetch!(params, "auth_events"),
-         content: content,
-         depth: Map.fetch!(params, "depth"),
-         event_id: "$#{encode_reference_hash(room_version, hash)}",
-         hashes: Map.fetch!(params, "hashes"),
-         origin_server_ts: now,
-         prev_events: Map.fetch!(params, "prev_events"),
-         prev_state: Map.fetch!(params, "prev_state"),
-         room_id: Map.fetch!(params, "room_id"),
-         sender: Map.fetch!(params, "sender"),
-         signatures: Map.fetch!(params, "signatures"),
-         state_key: Map.get(params, "state_key"),
-         type: Map.fetch!(params, "type"),
-         unsigned: Map.fetch!(params, "unsigned")
-       }}
-    else
-      :error -> {:error, :could_not_compute_ref_hash}
+        {:ok,
+         %__MODULE__{
+           auth_events: Map.fetch!(params, "auth_events"),
+           content: content,
+           depth: Map.fetch!(params, "depth"),
+           event_id: "$#{encode_reference_hash(room_version, hash)}",
+           hashes: Map.fetch!(params, "hashes"),
+           origin_server_ts: now,
+           prev_events: Map.fetch!(params, "prev_events"),
+           prev_state: Map.fetch!(params, "prev_state"),
+           room_id: Map.fetch!(params, "room_id"),
+           sender: Map.fetch!(params, "sender"),
+           signatures: Map.fetch!(params, "signatures"),
+           state_key: Map.get(params, "state_key"),
+           type: Map.fetch!(params, "type"),
+           unsigned: Map.fetch!(params, "unsigned")
+         }}
+
+      :error ->
+        {:error, :could_not_compute_ref_hash}
     end
   rescue
     e in KeyError -> {:error, {:required_param, e.key}}

@@ -25,6 +25,7 @@ defmodule RadioBeamWeb.Plugs.EnforceSchema do
 
   def init(default), do: default
 
+  # credo:disable-for-lines:44 Credo.Check.Refactor.CyclomaticComplexity
   def call(%Plug.Conn{} = conn, opts) do
     module = Keyword.fetch!(opts, :mod)
     function = Keyword.get_lazy(opts, :fun, fn -> Map.get(conn.private, :phoenix_action, :schema) end)

@@ -7,7 +7,7 @@ defmodule RadioBeam.Application do
 
   require Logger
 
-  @impl true
+  @impl Application
   def start(_type, _args) do
     Logger.info("Initializing Mnesia...")
     db_init_result = RadioBeam.Repo.init_mnesia()
@@ -38,7 +38,7 @@ defmodule RadioBeam.Application do
 
   # Tell Phoenix to update the endpoint configuration
   # whenever the application is updated.
-  @impl true
+  @impl Application
   def config_change(changed, _new, removed) do
     RadioBeamWeb.Endpoint.config_change(changed, removed)
     :ok

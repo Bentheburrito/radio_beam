@@ -1,4 +1,8 @@
 defmodule RadioBeam.Room.Timeline.Utils do
+  @moduledoc """
+  Utility functions for Timeline
+  """
+
   @doc """
   Encodes a list of event IDs into a `since` token that can be provided in the
   `next_batch` or `prev_batch` field of a sync response, or the /messages

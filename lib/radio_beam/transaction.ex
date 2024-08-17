@@ -16,7 +16,7 @@ defmodule RadioBeam.Transaction do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  @timeout 12000
+  @timeout 12_000
   @doc """
   Begins a transaction for a request from a specific device. Returns a handle 
   for the transaction. Must call `done/2` with the handle and the result of the

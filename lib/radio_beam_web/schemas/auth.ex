@@ -1,4 +1,6 @@
 defmodule RadioBeamWeb.Schemas.Auth do
+  @moduledoc false
+
   alias Polyjuice.Util.Schema
 
   def refresh, do: %{"refresh_token" => :string}

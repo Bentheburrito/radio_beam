@@ -1,4 +1,7 @@
 defmodule RadioBeam.Room.Utils do
+  @moduledoc """
+  Utility functiosn for Room servers
+  """
   require Logger
 
   alias Polyjuice.Util.Identifiers.V1.RoomAliasIdentifier

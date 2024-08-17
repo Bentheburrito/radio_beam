@@ -1,5 +1,5 @@
 defmodule RadioBeam.UserTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias RadioBeam.Room
   alias RadioBeam.User

@@ -47,7 +47,8 @@ defmodule RadioBeam.MixProject do
       {:memento, "~> 0.3.2"},
       {:argon2_elixir, "~> 4.0"},
       {:dotenv_parser, "~> 1.2"},
-      {:polyjuice_util, path: "../../polyjuice_util"}
+      {:polyjuice_util, path: "../../polyjuice_util"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 

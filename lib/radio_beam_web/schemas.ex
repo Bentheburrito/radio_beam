@@ -1,4 +1,6 @@
 defmodule RadioBeamWeb.Schemas do
+  @moduledoc false
+
   alias Polyjuice.Util.Schema
 
   def user_id(value) do

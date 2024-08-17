@@ -1,4 +1,6 @@
 defmodule RadioBeamWeb.Schemas.Filter do
+  @moduledoc false
+
   import RadioBeamWeb.Schemas, only: [user_id: 1, room_id: 1]
 
   alias Polyjuice.Util.Schema
@@ -15,9 +17,8 @@ defmodule RadioBeamWeb.Schemas.Filter do
   end
 
   def json_filter("{" <> _rest = json_encoded_filter) do
-    with {:ok, filter} <- Jason.decode(json_encoded_filter),
-         {:ok, filter} <- Schema.match(filter, filter()) do
-      {:ok, filter}
+    with {:ok, filter} <- Jason.decode(json_encoded_filter) do
+      Schema.match(filter, filter())
     end
   end
 

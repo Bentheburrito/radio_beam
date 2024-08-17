@@ -1,3 +1,3 @@
 defmodule RadioBeamTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 end

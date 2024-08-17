@@ -1,4 +1,8 @@
 defmodule RadioBeam.Device.Message do
+  @moduledoc """
+  Functions for Send-to-Device messaging
+  """
+
   alias RadioBeam.Device
 
   @derive Jason.Encoder

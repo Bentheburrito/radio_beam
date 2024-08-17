@@ -82,21 +82,17 @@ defmodule RadioBeam.Room.Timeline do
 
     {rooms_sync, event_ids} =
       rooms
-      |> sync_with_room_ids(user_id, opts)
+      |> sync_rooms(user_id, opts)
       |> await_if_no_updates(rooms, user_id, opts)
 
     %{
       rooms: rooms_sync,
-      next_batch: encode_since_token(event_ids),
-      # TOIMPL
-      device_lists: [],
-      device_one_time_keys_count: %{},
-      presence: %{}
+      next_batch: encode_since_token(event_ids)
     }
   end
 
   @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _event_ids = []}
-  defp sync_with_room_ids(rooms, user_id, opts) do
+  defp sync_rooms(rooms, user_id, opts) do
     since = Keyword.get(opts, :since, :latest)
     filter = Keyword.get(opts, :filter, %{})
     last_sync_event_map = parse_since_token(since)
@@ -104,57 +100,63 @@ defmodule RadioBeam.Room.Timeline do
     Enum.reduce(
       rooms,
       @init_rooms_acc,
-      &build_room_sync(&1, user_id, last_sync_event_map, filter.include_leave?, &2, opts)
+      &sync_room(&1, user_id, last_sync_event_map, filter.include_leave?, &2, opts)
     )
   end
 
-  defp build_room_sync(room, user_id, last_sync_event_map, include_leave?, {rooms, event_ids}, opts) do
+  defp sync_room(room, user_id, last_sync_event_map, include_leave?, {rooms, event_ids}, opts) do
     %Room{id: room_id} = room
 
-    case get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) do
-      "join" ->
+    membership = get_in(room.state, [{"m.room.member", user_id}, "content", "membership"])
+
+    case get_sync_limit_by_membership(room, user_id, membership, last_sync_event_map, include_leave?) do
+      {:limit, room_type, latest_join_depth, latest_event_ids} ->
+        opts = Keyword.put(opts, :latest_joined_at_depth, latest_join_depth)
         stop_at_any = Map.get(last_sync_event_map, room.id, [])
 
-        opts = Keyword.put(opts, :latest_joined_at_depth, room.depth)
-
         rooms =
-          case room_timeline_sync(room, user_id, room.latest_event_ids, stop_at_any, opts) do
+          case sync_room_timeline(room, user_id, latest_event_ids, stop_at_any, opts) do
             :no_update -> rooms
-            room_update -> put_in(rooms, [:join, room_id], room_update)
+            room_update -> put_in(rooms, [room_type, room_id], room_update)
           end
 
-        {rooms, room.latest_event_ids ++ event_ids}
+        {rooms, latest_event_ids ++ event_ids}
 
-      # TODO: should the invite reflect changes to stripped state events that
-      # happened after the invite?
-      "invite" when is_map_key(last_sync_event_map, room_id) ->
-        {rooms, room.latest_event_ids ++ event_ids}
-
-      "invite" ->
+      :invite ->
         {put_in(rooms, [:invite, room_id], invited_room_sync(room)), room.latest_event_ids ++ event_ids}
 
-      "knock" ->
+      :knock ->
         Logger.info("TOIMPL: sync with knock rooms")
         {rooms, event_ids}
 
-      "leave" when not include_leave? ->
+      :none ->
         {rooms, room.latest_event_ids ++ event_ids}
+    end
+  end
+
+  defp get_sync_limit_by_membership(room, user_id, membership, last_sync_event_map, include_leave?) do
+    case membership do
+      "join" ->
+        {:limit, :join, room.depth, room.latest_event_ids}
+
+      # TODO: should the invite reflect changes to stripped state events that
+      # happened after the invite?
+      "invite" when is_map_key(last_sync_event_map, room.id) ->
+        :none
+
+      "invite" ->
+        :invite
+
+      "knock" ->
+        :knock
+
+      "leave" when not include_leave? ->
+        :none
 
       "leave" ->
-        stop_at_any = Map.get(last_sync_event_map, room.id, [])
-
         user_leave_event_id = room.state[{"m.room.member", user_id}]["event_id"]
         {:ok, pdu} = PDU.get(user_leave_event_id)
-
-        opts = Keyword.put(opts, :latest_joined_at_depth, pdu.depth - 1)
-
-        rooms =
-          case room_timeline_sync(room, user_id, [user_leave_event_id], stop_at_any, opts) do
-            :no_update -> rooms
-            room_update -> put_in(rooms, [:leave, room_id], room_update)
-          end
-
-        {rooms, [pdu.event_id | event_ids]}
+        {:limit, :leave, pdu.depth - 1, [user_leave_event_id]}
     end
   end
 
@@ -179,7 +181,7 @@ defmodule RadioBeam.Room.Timeline do
           {:ok, room} = Room.get(room_id)
 
           [room]
-          |> sync_with_room_ids(user_id, opts)
+          |> sync_rooms(user_id, opts)
           |> await_if_no_updates(rooms, user_id, opts)
       end
     else
@@ -211,8 +213,8 @@ defmodule RadioBeam.Room.Timeline do
     Enum.group_by(pdus, & &1.room_id, & &1.event_id)
   end
 
-  @spec room_timeline_sync(Room.t(), String.t(), list(), list(), keyword()) :: map() | :no_update
-  defp room_timeline_sync(room, user_id, event_ids, stop_at_any, opts) do
+  @spec sync_room_timeline(Room.t(), String.t(), list(), list(), keyword()) :: map() | :no_update
+  defp sync_room_timeline(room, user_id, event_ids, stop_at_any, opts) do
     full_state? = Keyword.get(opts, :full_state?, false)
     filter = Keyword.get(opts, :filter, %{})
     latest_joined_at_depth = Keyword.get(opts, :latest_joined_at_depth, -1)
@@ -224,18 +226,16 @@ defmodule RadioBeam.Room.Timeline do
     if is_nil(oldest_event) and not full_state? do
       :no_update
     else
-      tl_events = if allowed_room?(room.id, filter.timeline.rooms), do: timeline.events, else: []
-
-      state_delta =
+      {tl_events, state_delta} =
         cond do
           not allowed_room?(room.id, filter.state.rooms) ->
-            []
+            {[], []}
 
           not Keyword.has_key?(opts, :since) or full_state? ->
-            state_delta(nil, oldest_event, filter.state, room.version)
+            {timeline.events, state_delta(nil, oldest_event, filter.state, room.version)}
 
           :else ->
-            state_delta(List.last(stop_at_any), oldest_event, filter.state, room.version)
+            {timeline.events, state_delta(List.last(stop_at_any), oldest_event, filter.state, room.version)}
         end
 
       if Enum.empty?(state_delta) and Enum.empty?(tl_events) do
@@ -244,12 +244,7 @@ defmodule RadioBeam.Room.Timeline do
         %{
           # TODO: I think the event format needs to apply to state events here too? 
           state: state_delta,
-          timeline: %{timeline | events: format(tl_events, filter, room.version)},
-          # TOIMPL
-          ephemeral: %{},
-          summary: %{},
-          unread_notifications: %{},
-          unread_thread_notifications: %{}
+          timeline: %{timeline | events: format(tl_events, filter, room.version)}
         }
       end
     end

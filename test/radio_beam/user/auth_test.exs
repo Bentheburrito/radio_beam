@@ -1,5 +1,5 @@
 defmodule RadioBeam.User.AuthTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog, only: [capture_log: 1]
 

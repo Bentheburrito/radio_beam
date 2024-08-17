@@ -1,4 +1,6 @@
 defmodule RadioBeamWeb.Schemas.Sync do
+  @moduledoc false
+
   alias RadioBeam.Room.Timeline
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.Filter

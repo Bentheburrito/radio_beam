@@ -126,7 +126,7 @@ defmodule RadioBeam.Room.Ops do
       |> Map.put("prev_events", room.latest_event_ids)
       |> Map.put("prev_state", room.state)
 
-    with {:ok, pdu} = PDU.new(pdu_attrs, room.version) do
+    with {:ok, pdu} <- PDU.new(pdu_attrs, room.version) do
       room =
         room
         |> Map.update!(:depth, &(&1 + 1))

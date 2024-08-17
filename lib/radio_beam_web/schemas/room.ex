@@ -1,4 +1,6 @@
 defmodule RadioBeamWeb.Schemas.Room do
+  @moduledoc false
+
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.InstantMessaging
 

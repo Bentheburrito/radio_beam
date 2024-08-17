@@ -1,4 +1,8 @@
 defmodule RadioBeam.User.Auth do
+  @moduledoc """
+  Functions for authenticating users
+  """
+
   alias RadioBeam.Device
   alias RadioBeam.User
 

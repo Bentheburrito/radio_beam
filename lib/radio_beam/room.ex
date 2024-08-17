@@ -52,6 +52,7 @@ defmodule RadioBeam.Room do
           | {:version, String.t()}
           | {:visibility, :public | :private}
 
+  # credo:disable-for-lines:75 Credo.Check.Refactor.CyclomaticComplexity
   @doc """
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
   room was successfully started.
@@ -291,9 +292,8 @@ defmodule RadioBeam.Room do
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
     latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
 
-    with {:ok, %PDU{} = pdu} <- PDU.get_if_visible_to_user(at_event_id, user_id, latest_joined_at_depth) do
-      get_members_from_state(pdu.prev_state, membership_filter)
-    else
+    case PDU.get_if_visible_to_user(at_event_id, user_id, latest_joined_at_depth) do
+      {:ok, %PDU{} = pdu} -> get_members_from_state(pdu.prev_state, membership_filter)
       _ -> {:error, :unauthorized}
     end
   end
