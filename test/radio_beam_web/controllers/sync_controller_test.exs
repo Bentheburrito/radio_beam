@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.Device
   alias RadioBeam.User
   alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.Room
@@ -10,11 +11,16 @@ defmodule RadioBeamWeb.SyncControllerTest do
     user2 = Fixtures.user()
     device = Fixtures.device(user1.id, "da steam deck")
 
-    %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user1, creator: user2}
+    %{
+      conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"),
+      user: user1,
+      creator: user2,
+      device: device
+    }
   end
 
   describe "sync/2" do
-    test "successfully syncs with a room", %{conn: conn, creator: creator, user: user} do
+    test "successfully syncs with a room", %{conn: conn, creator: creator, user: user, device: device} do
       conn = get(conn, ~p"/_matrix/client/v3/sync", %{})
 
       assert %{"account_data" => account_data, "rooms" => rooms, "next_batch" => since} = json_response(conn, 200)
@@ -28,11 +34,14 @@ defmodule RadioBeamWeb.SyncControllerTest do
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       :ok = User.put_account_data(user.id, :global, "m.some_config", %{"hello" => "world"})
       :ok = User.put_account_data(user.id, room_id1, "m.some_config", %{"hello" => "room"})
+      message = Device.Message.new(%{"hello" => "world"}, "@hello:world", "com.spectrum.corncobtv.new_release")
+      Device.Message.put(user.id, device.id, message)
 
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}", %{})
 
       assert %{
                "account_data" => account_data,
+               "to_device" => [%{"hello" => "world"}],
                "rooms" => %{
                  "join" => join_map,
                  "invite" => %{^room_id1 => %{"invite_state" => %{"events" => invite_state}}},
@@ -57,10 +66,15 @@ defmodule RadioBeamWeb.SyncControllerTest do
       {:ok, _event_id} = Room.join(room_id1, user.id)
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "yo")
 
+      Device.Message.put(user.id, device.id, message)
+      message = Device.Message.new(%{"hello2" => "world"}, "@hello:world", "com.spectrum.corncobtv.notification")
+      Device.Message.put(user.id, device.id, message)
+
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}", %{})
 
       assert %{
                "account_data" => account_data,
+               "to_device" => [%{"hello" => "world"}, %{"hello2" => "world"}],
                "rooms" => %{
                  "join" => %{^room_id1 => %{"account_data" => room_account_data, "state" => [], "timeline" => timeline}},
                  "invite" => invite_map,
@@ -121,20 +135,20 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert 1 = length(state)
       assert [%{"type" => "m.room.history_visibility"}, %{"type" => "m.room.join_rules"}, _] = chunk
     end
-  end
 
-  test "fails with M_FORBIDDEN (403) when the room doesn't exist or the requester isn't currently in it", %{
-    conn: conn,
-    creator: creator
-  } do
-    {:ok, room_id} = Room.create(creator, name: "This is a cool room")
+    test "fails with M_FORBIDDEN (403) when the room doesn't exist or the requester isn't currently in it", %{
+      conn: conn,
+      creator: creator
+    } do
+      {:ok, room_id} = Room.create(creator, name: "This is a cool room")
 
-    query_params = %{
-      dir: "b"
-    }
+      query_params = %{
+        dir: "b"
+      }
 
-    conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/messages?#{query_params}", %{})
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/messages?#{query_params}", %{})
 
-    assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
   end
 end

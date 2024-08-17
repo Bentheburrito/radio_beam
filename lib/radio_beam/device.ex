@@ -4,7 +4,16 @@ defmodule RadioBeam.Device do
   access/refresh tokens.
   """
 
-  @attrs [:id, :user_id, :display_name, :access_token, :refresh_token, :prev_refresh_token, :expires_at]
+  @attrs [
+    :id,
+    :user_id,
+    :display_name,
+    :access_token,
+    :refresh_token,
+    :prev_refresh_token,
+    :expires_at,
+    :messages
+  ]
   use Memento.Table,
     attributes: @attrs,
     index: [:user_id, :access_token, :refresh_token, :prev_refresh_token],
@@ -43,15 +52,35 @@ defmodule RadioBeam.Device do
       access_token: generate_token(),
       refresh_token: if(refreshable?, do: generate_token(), else: nil),
       prev_refresh_token: nil,
-      expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond)
+      expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
+      messages: %{}
     }
   end
 
+  @doc "Gets a %Device{}"
   def get(user_id, device_id) do
-    case Memento.transaction(fn -> Memento.Query.read(__MODULE__, {user_id, device_id}) end) do
+    case Memento.transaction(fn -> getT(user_id, device_id) end) do
       {:ok, nil} -> {:error, :not_found}
-      {:ok, device} -> {:ok, format(device)}
+      {:ok, device} -> {:ok, device}
       error -> error
+    end
+  end
+
+  @doc """
+  Similar to `get/2`, but must be called inside a transaction.
+  """
+  def getT(user_id, device_id, opts \\ []) do
+    format(Memento.Query.read(__MODULE__, {user_id, device_id}, opts))
+  end
+
+  def get_all_by_user(user_id) do
+    match_head = __MODULE__.__info__().query_base
+    match_spec = [{put_elem(match_head, 1, {user_id, :_}), [], [:"$_"]}]
+
+    case Memento.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec) end) do
+      {:ok, records} when is_list(records) -> {:ok, Enum.map(records, &format/1)}
+      {:ok, :"$end_of_table"} -> {:ok, []}
+      {:error, error} -> {:error, error}
     end
   end
 

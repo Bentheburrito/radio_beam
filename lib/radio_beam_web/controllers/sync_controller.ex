@@ -5,6 +5,7 @@ defmodule RadioBeamWeb.SyncController do
 
   require Logger
 
+  alias RadioBeam.Device
   alias RadioBeam.User
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline
@@ -14,6 +15,7 @@ defmodule RadioBeamWeb.SyncController do
 
   def sync(conn, _params) do
     %User{} = user = conn.assigns.user
+    %Device{} = device = conn.assigns.device
     request = conn.assigns.request
 
     opts =
@@ -30,6 +32,7 @@ defmodule RadioBeamWeb.SyncController do
       |> Room.all_where_has_membership()
       |> Timeline.sync(user.id, opts)
       |> put_account_data(user)
+      |> put_to_device_messages(user.id, device.id, Keyword.get(opts, :since))
 
     json(conn, response)
   end
@@ -66,5 +69,19 @@ defmodule RadioBeamWeb.SyncController do
         {room_id, Map.put(room_sync, :account_data, Map.get(user.account_data, room_id, %{}))}
       end)
     )
+  end
+
+  defp put_to_device_messages(response, user_id, device_id, mark_as_read) do
+    case Device.Message.take_unsent(user_id, device_id, response.next_batch, mark_as_read) do
+      {:ok, unsent_messages} ->
+        Map.put(response, :to_device, Enum.map(unsent_messages, & &1.content))
+
+      :none ->
+        response
+
+      error ->
+        Logger.error("error when fetching unsent device messages: #{inspect(error)}")
+        response
+    end
   end
 end

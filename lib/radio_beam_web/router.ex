@@ -4,6 +4,7 @@ defmodule RadioBeamWeb.Router do
   alias RadioBeamWeb.{
     AccountController,
     AuthController,
+    ClientController,
     FilterController,
     HomeserverInfoController,
     LoginController,
@@ -40,6 +41,8 @@ defmodule RadioBeamWeb.Router do
 
         post "/createRoom", RoomController, :create
         get "/joined_rooms", RoomController, :joined
+
+        put "/sendToDevice/:type/:transaction_id", ClientController, :send_to_device
 
         scope "/rooms" do
           post "/:room_id/invite", RoomController, :invite
