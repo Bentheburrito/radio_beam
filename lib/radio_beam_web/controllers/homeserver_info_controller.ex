@@ -20,6 +20,6 @@ defmodule RadioBeamWeb.HomeserverInfoController do
   end
 
   def well_known_client(conn, _params) do
-    json(conn, Application.fetch_env!(:radio_beam, :well_known_client))
+    json(conn, Application.get_env(:radio_beam, :well_known_client, %{"m.homeserver" => RadioBeam.server_name()}))
   end
 end

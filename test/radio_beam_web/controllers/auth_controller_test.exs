@@ -67,6 +67,17 @@ defmodule RadioBeamWeb.AuthControllerTest do
                "error" => "That username is already taken."
              } = json_response(conn, 400)
     end
+
+    test "with M_WEAK_PASSWORD (400) when the supplied password is not strong enough", %{conn: conn} do
+      conn = request(conn, "dukesilver", %{"password" => "password123"})
+
+      assert %{
+               "errcode" => "M_WEAK_PASSWORD",
+               "error" => error
+             } = json_response(conn, 400)
+
+      assert error =~ "include a password with at least"
+    end
   end
 
   describe "invalid user registration requests fail" do
@@ -124,6 +135,15 @@ defmodule RadioBeamWeb.AuthControllerTest do
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => "asdfasdf123354"})
 
       assert %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => false} = json_response(conn, 401)
+    end
+
+    test "errors with M_UNKNOWN_TOKEN (401) if the refresh token has expired", %{conn: conn, user: user, device: device} do
+      {:ok, device} = Device.get(user.id, device.id)
+      Fixtures.write!(%Device{device | expires_at: DateTime.add(DateTime.utc_now(), -100)})
+
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
+
+      assert %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => true} = json_response(conn, 401)
     end
   end
 
