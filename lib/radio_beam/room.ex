@@ -24,11 +24,14 @@ defmodule RadioBeam.Room do
   require Logger
 
   alias :radio_beam_room_queries, as: Queries
+  alias Phoenix.PubSub
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
   alias RadioBeam.PDU
+  alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
+  alias RadioBeam.Room.Core
   alias RadioBeam.Room.Ops
-  alias RadioBeam.Room.Utils
+  alias RadioBeam.Room.Events
   alias RadioBeam.RoomSupervisor
   alias RadioBeam.User
 
@@ -67,14 +70,14 @@ defmodule RadioBeam.Room do
         Application.get_env(:radio_beam, :capabilities)[:"m.room_versions"][:default]
       end)
 
-    create_event = Utils.create_event(room_id, creator.id, room_version, Keyword.get(opts, :content, %{}))
-    creator_join_event = Utils.membership_event(room_id, creator.id, creator.id, :join)
-    power_levels_event = Utils.power_levels_event(room_id, creator.id, Keyword.get(opts, :power_levels, %{}))
+    create_event = Events.create(room_id, creator.id, room_version, Keyword.get(opts, :content, %{}))
+    creator_join_event = Events.membership(room_id, creator.id, creator.id, :join)
+    power_levels_event = Events.power_levels(room_id, creator.id, Keyword.get(opts, :power_levels, %{}))
 
     wrapped_canonical_alias_event =
       case Keyword.get(opts, :alias) do
         nil -> []
-        alias_localpart -> [Utils.canonical_alias_event(room_id, creator.id, alias_localpart, server_name)]
+        alias_localpart -> [Events.canonical_alias(room_id, creator.id, alias_localpart, server_name)]
       end
 
     visibility = Keyword.get(opts, :visibility, :private)
@@ -89,24 +92,24 @@ defmodule RadioBeam.Room do
       raise "option :preset must be one of [:public_chat, :private_chat, :trusted_private_chat]"
     end
 
-    preset_events = Utils.state_events_from_preset(preset, room_id, creator.id)
+    preset_events = Events.from_preset(preset, room_id, creator.id)
 
     wrapped_name_event =
       case Keyword.get(opts, :name) do
         nil -> []
-        name -> [Utils.name_event(room_id, creator.id, name)]
+        name -> [Events.name(room_id, creator.id, name)]
       end
 
     wrapped_topic_event =
       case Keyword.get(opts, :topic) do
         nil -> []
-        topic -> [Utils.topic_event(room_id, creator.id, topic)]
+        topic -> [Events.topic(room_id, creator.id, topic)]
       end
 
     invite_events =
       opts
       |> Keyword.get(:invite, [])
-      |> Enum.map(&Utils.membership_event(room_id, creator.id, &1, :invite))
+      |> Enum.map(&Events.membership(room_id, creator.id, &1, :invite))
 
     # TOIMPL
     invite_3pid_events = []
@@ -178,7 +181,7 @@ defmodule RadioBeam.Room do
   @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t() | nil) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def invite(room_id, inviter_id, invitee_id, reason \\ nil) do
-    event = Utils.membership_event(room_id, inviter_id, invitee_id, :invite, reason)
+    event = Events.membership(room_id, inviter_id, invitee_id, :invite, reason)
 
     call_if_alive(room_id, {:put_event, event})
   end
@@ -187,7 +190,7 @@ defmodule RadioBeam.Room do
   @spec join(room_id :: String.t(), joiner_id :: String.t(), reason :: String.t() | nil) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def join(room_id, joiner_id, reason \\ nil) do
-    event = Utils.membership_event(room_id, joiner_id, joiner_id, :join, reason)
+    event = Events.membership(room_id, joiner_id, joiner_id, :join, reason)
 
     call_if_alive(room_id, {:put_event, event})
   end
@@ -196,7 +199,7 @@ defmodule RadioBeam.Room do
   @spec leave(room_id :: String.t(), user_id :: String.t(), reason :: String.t() | nil) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def leave(room_id, user_id, reason \\ nil) do
-    event = Utils.membership_event(room_id, user_id, user_id, :leave, reason)
+    event = Events.membership(room_id, user_id, user_id, :leave, reason)
 
     call_if_alive(room_id, {:put_event, event})
   end
@@ -205,7 +208,7 @@ defmodule RadioBeam.Room do
   @spec set_name(room_id :: String.t(), user_id :: String.t(), name :: String.t()) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def set_name(room_id, user_id, name) do
-    event = Utils.name_event(room_id, user_id, name)
+    event = Events.name(room_id, user_id, name)
 
     call_if_alive(room_id, {:put_event, event})
   end
@@ -225,7 +228,7 @@ defmodule RadioBeam.Room do
           {:ok, event_id :: String.t()}
           | {:error, :alias_in_use | :invalid_alias | :unauthorized | :room_does_not_exist | :internal}
   def put_state(room_id, user_id, type, state_key \\ "", content) do
-    event = Utils.state_event(room_id, type, user_id, content, state_key)
+    event = Events.state(room_id, type, user_id, content, state_key)
 
     call_if_alive(room_id, {:put_event, event})
   end
@@ -234,7 +237,7 @@ defmodule RadioBeam.Room do
   @spec send(room_id :: String.t(), user_id :: String.t(), type :: String.t(), content :: String.t()) ::
           {:ok, event_id :: String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def send(room_id, user_id, type, content) do
-    event = Utils.message_event(room_id, user_id, type, content)
+    event = Events.message(room_id, user_id, type, content)
 
     call_if_alive(room_id, {:put_event, event})
   end
@@ -373,8 +376,12 @@ defmodule RadioBeam.Room do
   def init({room_id, events_or_room}) do
     case events_or_room do
       [%{"type" => "m.room.create", "content" => %{"room_version" => version}} | _] = events ->
-        case Ops.put_events(%Room{id: room_id, depth: 0, latest_event_ids: [], state: %{}, version: version}, events) do
-          {:ok, %Room{}} = result -> result
+        init_room = %Room{id: room_id, depth: 0, latest_event_ids: [], state: %{}, version: version}
+
+        with {:ok, %Room{} = room, pdus} <- Core.put_events(init_room, events),
+             {:ok, _} <- Ops.persist_with_pdus(room, pdus) do
+          {:ok, room}
+        else
           {:error, :unauthorized} -> {:stop, :invalid_state}
           {:error, %Ecto.Changeset{} = changeset} -> {:stop, inspect(changeset.errors)}
           {:error, {:transaction_aborted, reason}} -> {:stop, reason}
@@ -395,7 +402,23 @@ defmodule RadioBeam.Room do
   def handle_call({:put_event, event}, _from, %Room{} = room) do
     # TOIMPL: handle duplicate annotations - M_DUPLICATE_ANNOTATION
     event_kind = if is_map_key(event, "state_key"), do: "state", else: "message"
-    Utils.put_event_and_handle(room, event, "#{event_kind} (#{event["type"]})")
+
+    with {:ok, room, pdu} <- Core.put_event(room, event),
+         {:ok, _} <- Ops.persist_with_pdus(room, [pdu]) do
+      PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_update, room.id})
+      {:reply, {:ok, pdu.event_id}, room}
+    else
+      {:error, :unauthorized} = e ->
+        Logger.info("rejecting a(n) #{event_kind} event for being unauthorized: #{inspect(event)}")
+        {:reply, e, room}
+
+      {:error, error} ->
+        Logger.error("an error occurred trying to put a(n) #{event_kind} event: #{inspect(error)}")
+        {:reply, {:error, :internal}, room}
+
+      error ->
+        error
+    end
   end
 
   @impl GenServer

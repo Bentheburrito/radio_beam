@@ -55,6 +55,13 @@ defmodule RadioBeamWeb.RoomController do
         |> put_status(400)
         |> json(Errors.endpoint_error(:room_in_use, "The provided room alias is already being used for another room"))
 
+      {:error, {error, stacktrace}} when is_list(stacktrace) ->
+        Logger.error("error creating room from /createRoom: #{Exception.format(:error, error, stacktrace)}")
+
+        conn
+        |> put_status(500)
+        |> json(Errors.unknown("A problem occurred while creating the room. Please try again"))
+
       {:error, reason} ->
         Logger.error("error creating room from /createRoom: #{inspect(reason)}")
 

@@ -69,7 +69,7 @@ defmodule RadioBeam.RoomTest do
         assert {:ok, %Room{id: ^room_id, version: ^room_version, state: state}} = Repo.get(Room, room_id)
         assert %{"membership" => "join"} = get_in(state, [{"m.room.member", creator.id}, "content"])
 
-        pl_content = Map.merge(Room.Utils.default_power_level_content(creator.id), power_levels_content)
+        pl_content = Map.merge(Room.Events.default_power_level_content(creator.id), power_levels_content)
 
         assert ^pl_content = get_in(state, [{"m.room.power_levels", ""}, "content"])
 
