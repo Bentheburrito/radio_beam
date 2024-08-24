@@ -40,6 +40,8 @@ defmodule RadioBeam.TransactionTest do
   test "can manage a request abort with two concurrent requests" do
     assert {:ok, handle} = Transaction.begin("1234", "abcd", "/_matrix/client/v3/2-failing-endpoint")
     task = Task.async(fn -> Transaction.begin("1234", "abcd", "/_matrix/client/v3/2-failing-endpoint") end)
+    assert is_nil(Task.yield(task, 50))
+
     assert :ok = Transaction.abort(handle)
     assert {:ok, handle} = Task.await(task)
     :ok = Transaction.done(handle, :all_done)

@@ -55,6 +55,7 @@ defmodule RadioBeamWeb.ClientController do
   end
 
   defp parse_args(nil, _sender_id, _type), do: :no_messages
+  defp parse_args(empty, _sender_id, _type) when map_size(empty) == 0, do: :no_messages
 
   defp parse_args(messages, sender_id, type) do
     servername = RadioBeam.server_name()

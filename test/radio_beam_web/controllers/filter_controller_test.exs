@@ -15,7 +15,7 @@ defmodule RadioBeamWeb.FilterControllerTest do
       req_body = %{
         "event_fields" => ["type", "content", "sender"],
         "event_format" => "client",
-        "room" => %{"timeline" => %{"not_senders" => ["@spam:localhost"]}}
+        "room" => %{"timeline" => %{"not_senders" => ["@spam:localhost"], "rooms" => ["!asdf:localhost"]}}
       }
 
       conn = post(conn, ~p"/_matrix/client/v3/user/#{user_id}/filter", req_body)
@@ -66,6 +66,12 @@ defmodule RadioBeamWeb.FilterControllerTest do
       conn = get(conn, ~p"/_matrix/client/v3/user/@whenami:localhost/filter/#{filter_id}")
 
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+
+    test "returns M_NOT_FOUND when no filter is known under the given ID", %{conn: conn, user: %{id: user_id}} do
+      conn = get(conn, ~p"/_matrix/client/v3/user/#{user_id}/filter/whatava")
+
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
 end

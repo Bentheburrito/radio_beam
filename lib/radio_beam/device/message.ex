@@ -29,13 +29,19 @@ defmodule RadioBeam.Device.Message do
   end
 
   def put_many(entries) do
-    Memento.transaction(fn ->
-      for {user_id, device_id, %__MODULE__{} = message} <- entries, reduce: 0 do
-        acc ->
-          %Device{} = putT(user_id, device_id, message)
-          acc + 1
-      end
-    end)
+    fn ->
+      Enum.reduce_while(entries, 0, fn {user_id, device_id, %__MODULE__{} = message}, acc ->
+        case putT(user_id, device_id, message) do
+          %Device{} -> {:cont, acc + 1}
+          :not_found -> {:halt, :not_found}
+        end
+      end)
+    end
+    |> Memento.transaction()
+    |> case do
+      {:ok, :not_found} -> {:error, :not_found}
+      {:ok, count} -> {:ok, count}
+    end
   end
 
   @doc """
@@ -77,9 +83,14 @@ defmodule RadioBeam.Device.Message do
   def expand_device_id(_user_id, device_id), do: [device_id]
 
   defp putT(user_id, device_id, %__MODULE__{} = message) do
-    %Device{} = device = Device.getT(user_id, device_id, lock: :write)
-    messages = Map.update(device.messages, :unsent, [message], &[message | &1])
-    Device.persist(%Device{device | messages: messages})
+    case Device.getT(user_id, device_id, lock: :write) do
+      %Device{} = device ->
+        messages = Map.update(device.messages, :unsent, [message], &[message | &1])
+        Device.persist(%Device{device | messages: messages})
+
+      nil ->
+        :not_found
+    end
   end
 
   defp mark_as_read(messages, nil), do: messages

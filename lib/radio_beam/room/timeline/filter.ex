@@ -47,6 +47,10 @@ defmodule RadioBeam.Room.Timeline.Filter do
   Strips the given event of any fields not in `event_fields`. Supports 
   dot-separated nested field names. If `event_fields` is `nil`, returns the
   event unmodified.
+    
+    iex> event = %{"state_key" => "@test:localhost", "content" => %{"my_key" => 123, "other_key" => 321}}
+    iex> RadioBeam.Room.Timeline.Filter.take_fields(event, ~w|state_key content.my_key|)
+    %{"state_key" => "@test:localhost", "content" => %{"my_key" => 123}}
   """
   def take_fields(%{} = event, nil), do: event
 

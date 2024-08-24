@@ -11,8 +11,13 @@ defmodule RadioBeam.Room.Alias do
 
   @type t() :: %__MODULE__{}
 
-  # TOIMPL: check the room alias grammar. Upstream polyjuice_util to check for < 255 byte limit + localpart validation
-  def put(room_alias, room_id) do
+  # TOIMPL: check the room alias grammar
+  @doc """
+  Adds a new room alias mapping. Returns `{:ok, %Alias{}}` on success, or
+  `{:error, error}` otherwise, where `error` is either `:room_does_not_exist` or
+  `:alias_in_use`.
+  """
+  def putT(room_alias, room_id) do
     case {Memento.Query.read(__MODULE__, room_alias), Memento.Query.read(RadioBeam.Room, room_id)} do
       {_, nil} ->
         {:error, :room_does_not_exist}

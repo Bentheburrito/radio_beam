@@ -12,7 +12,9 @@ defmodule RadioBeam.MixProject do
       deps: deps(),
       test_coverage: [
         ignore_modules: [
+          RadioBeam.Application,
           RadioBeam.DataCase,
+          RadioBeamWeb.Telemetry,
           Fixtures,
           # to remove later
           RadioBeamWeb.Plugs.UserInteractiveAuth

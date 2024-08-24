@@ -310,6 +310,16 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
+
+    test "successfully joins sender to a public room via the room ID", %{conn: conn} do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator, preset: :public_chat)
+
+      conn = post(conn, ~p"/_matrix/client/v3/join/#{room_id}", %{"reason" => "you gotta give"})
+
+      assert %{"room_id" => ^room_id} = json_response(conn, 200)
+    end
   end
 
   describe "leave/2" do
@@ -402,6 +412,16 @@ defmodule RadioBeamWeb.RoomControllerTest do
       conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/32345", content)
 
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+
+    test "rejects a message event if request path does not have all required params", %{conn: conn, user: creator} do
+      {:ok, room_id} = Room.create(creator)
+
+      content = %{"msgtype" => "m.text", "body" => "This is another test message"}
+      # missing txn ID
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message", content)
+
+      assert %{"errcode" => "M_MISSING_PARAM"} = json_response(conn, 400)
     end
   end
 

@@ -53,8 +53,8 @@ defmodule RadioBeamWeb.Router do
           # post "/:room_id/kick", RoomController, :kick
           # post "/:room_id/ban", RoomController, :ban
           # post "/:room_id/unban", RoomController, :unban
-          post "/:room_id/:membership_action", RoomController, :membership_action
 
+          put "/:room_id/send/:event_type", RoomController, :send
           put "/:room_id/send/:event_type/:transaction_id", RoomController, :send
           put "/:room_id/state/:event_type/:state_key", RoomController, :put_state
           put "/:room_id/state/:event_type", RoomController, :put_state

@@ -22,8 +22,36 @@ defmodule RadioBeamWeb.ClientControllerTest do
     end
 
     test "returns M_BAD_JSON (400) when no messages are provided", %{conn: conn} do
-      conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/abc", %{})
+      conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/abc123", %{})
 
+      assert %{"errcode" => "M_BAD_JSON"} = json_response(conn, 400)
+    end
+
+    test "(tochange): returns M_UNRECOGNIZED (404) when a user is not on the same homserver", %{conn: conn} do
+      messages = %{"@test:somewhere.else" => %{"idontexist" => %{"hello" => "world"}}}
+      conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/abc123", %{"messages" => messages})
+
+      assert %{"errcode" => "M_UNRECOGNIZED"} = json_response(conn, 404)
+    end
+
+    @tag :capture_log
+    test "returns M_UNKNOWN (500) and cleanly aborts the transaction when put_many fails", %{conn: conn, user: user} do
+      messages = %{user.id => %{"idontexist" => %{"hello" => "world"}}}
+      conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/xyz123", %{"messages" => messages})
+
+      assert %{"errcode" => "M_UNKNOWN"} = json_response(conn, 500)
+      # if this doesn't hang, the txn must have been aborted
+      assert {:ok, _handle} =
+               RadioBeam.Transaction.begin("xyz123", "idontexist", "/_matrix/client/v3/sendToDevice/m.what/xyz123")
+    end
+
+    test "rejects an incomplete request body with M_BAD_JSON (400)", %{conn: conn} do
+      conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/abc123", %{})
+
+      assert %{"errcode" => "M_BAD_JSON"} = json_response(conn, 400)
+
+      messages = %{}
+      conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/abc123", %{"messages" => messages})
       assert %{"errcode" => "M_BAD_JSON"} = json_response(conn, 400)
     end
   end

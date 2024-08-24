@@ -73,7 +73,7 @@ defmodule RadioBeam.Room.Ops do
 
   defp get_pdu_followup_actions(%PDU{type: "m.room.canonical_alias"} = pdu) do
     for room_alias <- [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])], not is_nil(room_alias) do
-      fn -> Room.Alias.put(room_alias, pdu.room_id) end
+      fn -> Room.Alias.putT(room_alias, pdu.room_id) end
     end
   end
 

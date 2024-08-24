@@ -129,28 +129,6 @@ defmodule RadioBeam.Room do
     end
   end
 
-  @doc """
-  Starts the GenServer for an existing room. Returns `{:ok, room_id}` if the 
-  room was successfully started.
-  """
-  @spec revive(String.t()) :: {:ok, String.t()} | {:error, :room_does_not_exist | any()}
-  def revive(room_id) do
-    case get(room_id) do
-      {:ok, %Room{} = room} ->
-        case DynamicSupervisor.start_child(RoomSupervisor, {__MODULE__, {room.id, room}}) do
-          {:ok, _pid} -> {:ok, room_id}
-          error -> error
-        end
-
-      {:ok, nil} ->
-        {:error, :room_does_not_exist}
-
-      {:error, error} ->
-        Logger.error("Error reviving #{room_id}: #{inspect(error)}")
-        {:error, error}
-    end
-  end
-
   def start_link({room_id, _events_or_room} = init_arg) do
     GenServer.start_link(__MODULE__, init_arg, name: via(room_id))
   end
@@ -440,6 +418,23 @@ defmodule RadioBeam.Room do
         {:ok, ^room_id} -> GenServer.call(via(room_id), message)
         {:error, _} = error -> error
       end
+  end
+
+  defp revive(room_id) do
+    case get(room_id) do
+      {:ok, %Room{} = room} ->
+        case DynamicSupervisor.start_child(RoomSupervisor, {__MODULE__, {room.id, room}}) do
+          {:ok, _pid} -> {:ok, room_id}
+          error -> error
+        end
+
+      {:ok, nil} ->
+        {:error, :room_does_not_exist}
+
+      {:error, error} ->
+        Logger.error("Error reviving #{room_id}: #{inspect(error)}")
+        {:error, error}
+    end
   end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}
