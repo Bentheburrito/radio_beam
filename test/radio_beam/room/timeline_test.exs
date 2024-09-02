@@ -423,6 +423,60 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{"type" => "m.room.name", "content" => %{"name" => "General Chat"}} = List.last(events)
     end
+
+    test "applies lazy_load_members to state delta", %{creator: creator, user: user} do
+      user2 = Fixtures.user()
+      user3 = Fixtures.user()
+
+      {:ok, room_id1} = Room.create(creator, name: "Introductions")
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user2.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user3.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user2.id)
+      {:ok, _event_id} = Room.join(room_id1, user3.id)
+
+      send_msg = &Room.send(&1, &2, "m.room.message", %{"msgtype" => "m.text", "body" => &3})
+      {:ok, _event_id} = send_msg.(room_id1, creator.id, "welcome all")
+      {:ok, _event_id} = send_msg.(room_id1, user.id, "hello!")
+      {:ok, _event_id} = send_msg.(room_id1, user2.id, "hi")
+      {:ok, _event_id} = send_msg.(room_id1, user3.id, "yo")
+
+      filter = %{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}}
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+               },
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], user3.id, filter: filter)
+
+      for id <- [creator.id, user.id] do
+        refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
+      end
+
+      for id <- [user2.id, user3.id] do
+        assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
+      end
+
+      # the creator's membership event should always be present
+      assert %{
+               rooms: %{
+                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+               },
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], creator.id, filter: filter)
+
+      for id <- [user.id] do
+        refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
+      end
+
+      for id <- [creator.id, user2.id, user3.id] do
+        assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
+      end
+    end
   end
 
   describe "sync/4 with a timeout" do
@@ -820,6 +874,40 @@ defmodule RadioBeam.Room.TimelineTest do
                %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
                %{"content" => %{"msgtype" => "m.text", "body" => "wow"}}
              ] = chunk
+    end
+
+    test "filters state by relevant senders when lazy_load_members is true", %{
+      creator: creator,
+      user: user
+    } do
+      user2 = Fixtures.user()
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user2.id)
+
+      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "sup"})
+      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "hi"})
+
+      Room.send(room_id, user.id, "m.room.message", %{
+        "msgtype" => "m.text",
+        "body" => "creator shouldn't show up in the response"
+      })
+
+      Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "true"})
+
+      filter = %{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}}
+
+      assert {:ok, %{chunk: [_one, _two], state: state}} =
+               Timeline.get_messages(room_id, user2.id, :backward, :last, :limit, filter: filter)
+
+      for id <- [user.id, user2.id] do
+        assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
+      end
+
+      creator_id = creator.id
+      refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^creator_id}, &1))
     end
   end
 end

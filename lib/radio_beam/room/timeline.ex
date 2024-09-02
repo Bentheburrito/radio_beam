@@ -232,10 +232,12 @@ defmodule RadioBeam.Room.Timeline do
             {[], []}
 
           not Keyword.has_key?(opts, :since) or full_state? ->
-            {timeline.events, state_delta(nil, oldest_event, filter.state, room.version)}
+            senders = get_tl_senders(timeline.events, user_id)
+            {timeline.events, state_delta(nil, oldest_event, filter.state, room.version, senders)}
 
           :else ->
-            {timeline.events, state_delta(List.last(stop_at_any), oldest_event, filter.state, room.version)}
+            senders = get_tl_senders(timeline.events, user_id)
+            {timeline.events, state_delta(List.last(stop_at_any), oldest_event, filter.state, room.version, senders)}
         end
 
       if Enum.empty?(state_delta) and Enum.empty?(tl_events) do
@@ -248,6 +250,12 @@ defmodule RadioBeam.Room.Timeline do
         }
       end
     end
+  end
+
+  defp get_tl_senders(events, user_id) do
+    events
+    |> MapSet.new(& &1.sender)
+    |> MapSet.put(user_id)
   end
 
   defp allowed_room?(room_id, {:allowlist, allowlist}), do: room_id in allowlist
@@ -310,13 +318,13 @@ defmodule RadioBeam.Room.Timeline do
     Enum.map(timeline, &(&1 |> PDU.to_event(room_version, :strings, format) |> Filter.take_fields(filter.fields)))
   end
 
-  defp state_delta(nil, tl_start_event, filter, _room_version) do
+  defp state_delta(nil, tl_start_event, filter, _room_version, senders) do
     tl_start_event.prev_state
     |> Stream.map(fn {_, event} -> event end)
-    |> Enum.filter(&:radio_beam_room_queries.passes_filter(filter, &1["type"], &1["sender"], &1["content"]))
+    |> Enum.filter(&passes_filter?(&1, filter, senders))
   end
 
-  defp state_delta(last_sync_event_id, tl_start_event, filter, room_version) do
+  defp state_delta(last_sync_event_id, tl_start_event, filter, room_version, senders) do
     {:ok, last_sync_event} = PDU.get(last_sync_event_id)
 
     old_state =
@@ -334,18 +342,18 @@ defmodule RadioBeam.Room.Timeline do
             acc
 
           _cur_event_id_or_nil ->
-            if :radio_beam_room_queries.passes_filter(
-                 filter,
-                 cur_event["type"],
-                 cur_event["sender"],
-                 cur_event["content"]
-               ) do
+            if passes_filter?(cur_event, filter, senders) do
               [cur_event | acc]
             else
               acc
             end
         end
     end
+  end
+
+  defp passes_filter?(event, filter, senders) do
+    (not filter.lazy_load_members or event["sender"] in senders) and
+      :radio_beam_room_queries.passes_filter(filter, event["type"], event["sender"], event["content"])
   end
 
   @stripped_state_keys [

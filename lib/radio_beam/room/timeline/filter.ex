@@ -104,6 +104,7 @@ defmodule RadioBeam.Room.Timeline.Filter do
     end
     |> Map.merge(%{
       contains_url: Map.get(filter, "contains_url", :none),
+      lazy_load_members: Map.get(filter, "lazy_load_members", false),
       limit: filter |> Map.get("limit", max_events) |> min(max_events)
     })
   end
