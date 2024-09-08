@@ -4,21 +4,40 @@ defmodule RadioBeam.Room.Timeline do
   syncing with clients.
   """
 
-  import RadioBeam.Room.Timeline.Utils
-
   require Logger
 
   alias Phoenix.PubSub
+  alias RadioBeam.Room.Timeline.Core
   alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.PDU
   alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
 
+  @attrs ~w|events sync|a
+  @enforce_keys @attrs
+  defstruct @attrs
+  @type t() :: %__MODULE__{events: [PDU.t()], sync: {:partial, prev_batch_token()} | :complete}
+
+  @type prev_batch_token() :: String.t()
+
+  defimpl Jason.Encoder do
+    def encode(%{sync: {:partial, prev_batch}} = timeline, opts) do
+      Jason.Encode.map(%{events: timeline.events, limited: true, prev_batch: prev_batch}, opts)
+    end
+
+    def encode(%{sync: :complete} = timeline, opts) do
+      Jason.Encode.map(%{events: timeline.events, limited: false}, opts)
+    end
+  end
+
+  def complete(events), do: %__MODULE__{events: events, sync: :complete}
+  def partial(events, token), do: %__MODULE__{events: events, sync: {:partial, token}}
+
   def get_messages(room_id, user_id, direction, from, to, opts \\ [])
 
   def get_messages(%Room{} = room, user_id, direction, from, to, opts) do
-    from_event_ids = parse_token(from, room, direction)
-    to_event_ids = parse_token(to, room, direction)
+    from_event_ids = parse_message_window_boundary(from, room, direction)
+    to_event_ids = parse_message_window_boundary(to, room, direction)
 
     order =
       case direction do
@@ -26,22 +45,22 @@ defmodule RadioBeam.Room.Timeline do
         :backward -> :descending
       end
 
-    filter = opts |> Keyword.get(:filter, %{}) |> Filter.parse()
+    filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
     # TODO...there's possibly a :limit opt passed too, but the filter 
     # also has limiting capabilities???
 
     latest_joined_at_depth = Room.users_latest_join_depth(room.id, user_id)
 
     case timeline(room.id, user_id, from_event_ids, to_event_ids, filter, latest_joined_at_depth, order) do
-      %{limited: true, events: events, prev_batch: prev_batch} ->
+      %__MODULE__{sync: {:partial, prev_batch}, events: events} ->
         members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
-        events = events |> Enum.reverse() |> format(filter, room.version)
+        events = events |> Enum.reverse() |> Core.format(filter, room.version)
         # TOIMPL: add support for lazy_load_members and include_redundant_members
         %{chunk: events, state: MapSet.to_list(members), start: from, end: prev_batch}
 
-      %{limited: false, events: events} ->
+      %__MODULE__{sync: :complete, events: events} ->
         members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
-        events = events |> Enum.reverse() |> format(filter, room.version)
+        events = events |> Enum.reverse() |> Core.format(filter, room.version)
         %{chunk: events, state: MapSet.to_list(members), start: from}
     end
   end
@@ -56,19 +75,19 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp parse_token("batch:" <> _ = token, _room, _dir), do: decode_since_token(token)
-  defp parse_token(:limit, room, :forward), do: room.latest_event_ids
-  defp parse_token(:limit, _room, :backward), do: []
-  defp parse_token(:first, _room, :forward), do: []
-  defp parse_token(:last, room, :backward), do: room.latest_event_ids
+  defp parse_message_window_boundary("batch:" <> _ = token, _room, _dir), do: Core.decode_since_token(token)
+  defp parse_message_window_boundary(:limit, room, :forward), do: room.latest_event_ids
+  defp parse_message_window_boundary(:limit, _room, :backward), do: []
+  defp parse_message_window_boundary(:first, _room, :forward), do: []
+  defp parse_message_window_boundary(:last, room, :backward), do: room.latest_event_ids
 
   def max_events(type) when type in [:timeline, :state] do
     Application.get_env(:radio_beam, :max_events)[type]
   end
 
+  @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _config_map = %{}, _event_ids = []}
   def sync(room_ids, user_id, opts \\ []) do
-    filter = opts |> Keyword.get(:filter, %{}) |> Filter.parse()
-    opts = Keyword.put(opts, :filter, filter)
+    filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
 
     room_ids =
       case filter.rooms do
@@ -77,129 +96,140 @@ defmodule RadioBeam.Room.Timeline do
         :none -> room_ids
       end
 
-    for room_id <- room_ids, do: PubSub.subscribe(PS, PS.all_room_events(room_id))
-    {:ok, rooms} = Room.all(room_ids)
+    last_sync_rooms_to_pdus_map = opts |> Keyword.get(:since, :latest) |> parse_since_token()
+
+    PubSub.subscribe(PS, PS.invite_events(user_id))
+
+    {rooms_sync, config_map, event_ids} =
+      Enum.reduce(room_ids, @init_rooms_acc, fn room_id, {sync_acc, configs, event_ids} ->
+        last_sync_pdus = Map.get(last_sync_rooms_to_pdus_map, room_id, :none)
+
+        case sync_one(room_id, user_id, last_sync_pdus, opts) do
+          {:ok, tl_config, sync_result} ->
+            {put_in(sync_acc, [tl_config.room_sync_type, room_id], sync_result), Map.put(configs, room_id, tl_config),
+             tl_config.sync_event_ids ++ event_ids}
+
+          {:ok, room_sync_type, sync_event_ids, sync_result} ->
+            {put_in(sync_acc, [room_sync_type, room_id], sync_result), configs, sync_event_ids ++ event_ids}
+
+          {:no_update, tl_config} when is_map(tl_config) ->
+            {sync_acc, Map.put(configs, room_id, tl_config), tl_config.sync_event_ids ++ event_ids}
+
+          {:no_update, sync_event_ids} ->
+            {sync_acc, configs, sync_event_ids ++ event_ids}
+
+          :noop ->
+            {sync_acc, configs, event_ids}
+        end
+      end)
 
     {rooms_sync, event_ids} =
-      rooms
-      |> sync_rooms(user_id, opts)
-      |> await_if_no_updates(rooms, user_id, opts)
+      if Enum.all?(rooms_sync, fn {_, map} -> map_size(map) == 0 end) do
+        timeout = Keyword.get(opts, :timeout, 0)
+
+        case await_updates_until_timeout(config_map, event_ids, user_id, timeout) do
+          :timeout -> {rooms_sync, event_ids}
+          res -> res
+        end
+      else
+        {rooms_sync, event_ids}
+      end
 
     %{
       rooms: rooms_sync,
-      next_batch: encode_since_token(event_ids)
+      next_batch: Core.encode_since_token(event_ids)
     }
   end
 
-  @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _event_ids = []}
-  defp sync_rooms(rooms, user_id, opts) do
-    since = Keyword.get(opts, :since, :latest)
-    filter = Keyword.get(opts, :filter, %{})
-    last_sync_event_map = parse_since_token(since)
+  defp sync_one(room_id, user_id, last_sync_pdus, opts) do
+    filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
 
-    Enum.reduce(
-      rooms,
-      @init_rooms_acc,
-      &sync_room(&1, user_id, last_sync_event_map, filter.include_leave?, &2, opts)
-    )
-  end
+    membership =
+      case Room.get_membership(room_id, user_id) do
+        %{"content" => %{"membership" => membership}} -> membership
+        :not_found -> :not_found
+      end
 
-  defp sync_room(room, user_id, last_sync_event_map, include_leave?, {rooms, event_ids}, opts) do
-    %Room{id: room_id} = room
-
-    membership = get_in(room.state, [{"m.room.member", user_id}, "content", "membership"])
-
-    case get_sync_limit_by_membership(room, user_id, membership, last_sync_event_map, include_leave?) do
-      {:limit, room_type, latest_join_depth, latest_event_ids} ->
-        opts = Keyword.put(opts, :latest_joined_at_depth, latest_join_depth)
-        stop_at_any = Map.get(last_sync_event_map, room.id, [])
-
-        rooms =
-          case sync_room_timeline(room, user_id, latest_event_ids, stop_at_any, opts) do
-            :no_update -> rooms
-            room_update -> put_in(rooms, [room_type, room_id], room_update)
-          end
-
-        {rooms, latest_event_ids ++ event_ids}
-
-      :invite ->
-        {put_in(rooms, [:invite, room_id], invited_room_sync(room)), room.latest_event_ids ++ event_ids}
-
-      :knock ->
-        Logger.info("TOIMPL: sync with knock rooms")
-        {rooms, event_ids}
-
-      :none ->
-        {rooms, room.latest_event_ids ++ event_ids}
-    end
-  end
-
-  defp get_sync_limit_by_membership(room, user_id, membership, last_sync_event_map, include_leave?) do
     case membership do
-      "join" ->
-        {:limit, :join, room.depth, room.latest_event_ids}
+      "leave" when not filter.include_leave? ->
+        {:ok, room} = Room.get(room_id)
+        {:no_update, room.latest_event_ids}
+
+      membership when membership in ~w|ban join leave| ->
+        full_state? = Keyword.get(opts, :full_state?, false)
+        timeline_config = make_config(room_id, user_id, membership, last_sync_pdus, filter, full_state?)
+
+        case Core.sync_timeline(timeline_config, user_id) do
+          :no_update -> {:no_update, timeline_config}
+          timeline -> {:ok, timeline_config, timeline}
+        end
 
       # TODO: should the invite reflect changes to stripped state events that
       # happened after the invite?
-      "invite" when is_map_key(last_sync_event_map, room.id) ->
-        :none
+      "invite" when last_sync_pdus == :none ->
+        PubSub.subscribe(PS, PS.stripped_state_events(room_id))
+        {:ok, room} = Room.get(room_id)
+        {:ok, :invite, room.latest_event_ids, %{invite_state: %{events: Room.stripped_state(room)}}}
 
       "invite" ->
-        :invite
+        {:no_update, Enum.map(last_sync_pdus, & &1.event_id)}
 
       "knock" ->
-        :knock
+        # TOIMPL
+        {:no_update, []}
 
-      "leave" when not include_leave? ->
-        :none
+      :not_found ->
+        :noop
+    end
+  end
 
-      "leave" ->
+  defp make_config(room_id, user_id, membership, last_sync_pdus, filter, full_state?) do
+    last_sync_event_ids = if last_sync_pdus == :none, do: [], else: Enum.map(last_sync_pdus, & &1.event_id)
+
+    case membership do
+      "join" ->
+        PubSub.subscribe(PS, PS.all_room_events(room_id))
+        {:ok, room} = Room.get(room_id)
+
+        %{
+          event_producer: &timeline(room_id, user_id, room.latest_event_ids, last_sync_event_ids, &1, room.depth),
+          filter: filter,
+          full_state?: full_state?,
+          last_sync_pdus: last_sync_pdus,
+          latest_joined_depth: room.depth,
+          room: room,
+          room_sync_type: :join,
+          sync_event_ids: room.latest_event_ids
+        }
+
+      membership when membership in ~w|ban leave| ->
+        {:ok, room} = Room.get(room_id)
         user_leave_event_id = room.state[{"m.room.member", user_id}]["event_id"]
         {:ok, pdu} = PDU.get(user_leave_event_id)
-        {:limit, :leave, pdu.depth - 1, [user_leave_event_id]}
+
+        %{
+          event_producer: &timeline(room_id, user_id, [user_leave_event_id], last_sync_event_ids, &1, pdu.depth - 1),
+          filter: filter,
+          full_state?: full_state?,
+          last_sync_pdus: last_sync_pdus,
+          latest_joined_depth: pdu.depth - 1,
+          room: room,
+          room_sync_type: :leave,
+          sync_event_ids: [user_leave_event_id]
+        }
     end
   end
 
-  defp await_if_no_updates({rooms_sync, event_ids}, rooms, user_id, opts) do
-    if Enum.all?(rooms_sync, fn {_, map} -> map_size(map) == 0 end) do
-      timeout = Keyword.get(opts, :timeout, 0)
-
-      # TODO - only scanning for join rooms rn, will probably want to listen for
-      # new invites, knocks, etc. too
-      interested_room_ids =
-        for room <- rooms,
-            room.state[{"m.room.member", user_id}]["content"]["membership"] == "join",
-            into: MapSet.new(),
-            do: room.id
-
-      case await_next_event(interested_room_ids, user_id, timeout) do
-        :timeout ->
-          {rooms_sync, event_ids}
-
-        {:update, room_id, rem_timeout} ->
-          opts = Keyword.put(opts, :timeout, rem_timeout)
-          {:ok, room} = Room.get(room_id)
-
-          [room]
-          |> sync_rooms(user_id, opts)
-          |> await_if_no_updates(rooms, user_id, opts)
-      end
-    else
-      {rooms_sync, event_ids}
-    end
-  end
-
-  defp await_next_event(interested_room_ids, user_id, timeout) do
+  defp await_updates_until_timeout(config_map, event_ids, user_id, timeout) do
     time_before_wait = :os.system_time(:millisecond)
 
     receive do
-      {:room_update, room_id} ->
-        new_timeout = max(0, timeout - (:os.system_time(:millisecond) - time_before_wait))
+      {msg_type, _, _} = msg when msg_type in ~w|room_event room_stripped_state room_invite|a ->
+        rem_timeout = max(0, timeout - (:os.system_time(:millisecond) - time_before_wait))
 
-        if room_id in interested_room_ids do
-          {:update, room_id, new_timeout}
-        else
-          await_next_event(interested_room_ids, user_id, new_timeout)
+        case Core.handle_room_message(msg, config_map, user_id) do
+          :keep_waiting -> await_updates_until_timeout(config_map, event_ids, user_id, rem_timeout)
+          {rooms_sync, sync_event_ids} -> {rooms_sync, sync_event_ids ++ event_ids}
         end
     after
       timeout -> :timeout
@@ -209,58 +239,9 @@ defmodule RadioBeam.Room.Timeline do
   defp parse_since_token(:latest), do: %{}
 
   defp parse_since_token(since) do
-    {:ok, pdus} = since |> decode_since_token() |> PDU.all()
-    Enum.group_by(pdus, & &1.room_id, & &1.event_id)
+    {:ok, pdus} = since |> Core.decode_since_token() |> PDU.all()
+    Enum.group_by(pdus, & &1.room_id)
   end
-
-  @spec sync_room_timeline(Room.t(), String.t(), list(), list(), keyword()) :: map() | :no_update
-  defp sync_room_timeline(room, user_id, event_ids, stop_at_any, opts) do
-    full_state? = Keyword.get(opts, :full_state?, false)
-    filter = Keyword.get(opts, :filter, %{})
-    latest_joined_at_depth = Keyword.get(opts, :latest_joined_at_depth, -1)
-
-    timeline = timeline(room.id, user_id, event_ids, stop_at_any, filter, latest_joined_at_depth)
-
-    oldest_event = List.first(timeline.events)
-
-    if is_nil(oldest_event) and not full_state? do
-      :no_update
-    else
-      {tl_events, state_delta} =
-        cond do
-          not allowed_room?(room.id, filter.state.rooms) ->
-            {[], []}
-
-          not Keyword.has_key?(opts, :since) or full_state? ->
-            senders = get_tl_senders(timeline.events, user_id)
-            {timeline.events, state_delta(nil, oldest_event, filter.state, room.version, senders)}
-
-          :else ->
-            senders = get_tl_senders(timeline.events, user_id)
-            {timeline.events, state_delta(List.last(stop_at_any), oldest_event, filter.state, room.version, senders)}
-        end
-
-      if Enum.empty?(state_delta) and Enum.empty?(tl_events) do
-        :no_update
-      else
-        %{
-          # TODO: I think the event format needs to apply to state events here too? 
-          state: state_delta,
-          timeline: %{timeline | events: format(tl_events, filter, room.version)}
-        }
-      end
-    end
-  end
-
-  defp get_tl_senders(events, user_id) do
-    events
-    |> MapSet.new(& &1.sender)
-    |> MapSet.put(user_id)
-  end
-
-  defp allowed_room?(room_id, {:allowlist, allowlist}), do: room_id in allowlist
-  defp allowed_room?(room_id, {:denylist, denylist}), do: room_id not in denylist
-  defp allowed_room?(_room_id, :none), do: true
 
   defp timeline(room_id, user_id, begin_event_ids, end_event_ids, filter, latest_joined_at_depth, order \\ :descending) do
     fn ->
@@ -301,75 +282,15 @@ defmodule RadioBeam.Room.Timeline do
     |> Memento.transaction()
     |> case do
       {:ok, {:none, timeline}} ->
-        %{limited: false, events: timeline}
+        complete(timeline)
 
       {:ok, {next_event, timeline}} ->
         event_ids = if order == :descending, do: [next_event.event_id], else: next_event.prev_events
-        %{limited: true, events: timeline, prev_batch: encode_since_token(event_ids)}
+        partial(timeline, Core.encode_since_token(event_ids))
 
       {:error, error} ->
         Logger.error("tried to fetch a timeline of events for #{inspect(user_id)}, but got error: #{inspect(error)}")
-        %{limited: false, events: []}
+        complete([])
     end
   end
-
-  defp format(timeline, filter, room_version) do
-    format = String.to_existing_atom(filter.format)
-    Enum.map(timeline, &(&1 |> PDU.to_event(room_version, :strings, format) |> Filter.take_fields(filter.fields)))
-  end
-
-  defp state_delta(nil, tl_start_event, filter, _room_version, senders) do
-    tl_start_event.prev_state
-    |> Stream.map(fn {_, event} -> event end)
-    |> Enum.filter(&passes_filter?(&1, filter, senders))
-  end
-
-  defp state_delta(last_sync_event_id, tl_start_event, filter, room_version, senders) do
-    {:ok, last_sync_event} = PDU.get(last_sync_event_id)
-
-    old_state =
-      if is_nil(last_sync_event.state_key) do
-        last_sync_event.prev_state
-      else
-        event = PDU.to_event(last_sync_event, room_version, :strings)
-        Map.put(last_sync_event.prev_state, {last_sync_event.type, last_sync_event.state_key}, event)
-      end
-
-    for {k, %{"event_id" => cur_event_id} = cur_event} <- tl_start_event.prev_state, reduce: [] do
-      acc ->
-        case get_in(old_state, [k, "event_id"]) do
-          ^cur_event_id ->
-            acc
-
-          _cur_event_id_or_nil ->
-            if passes_filter?(cur_event, filter, senders) do
-              [cur_event | acc]
-            else
-              acc
-            end
-        end
-    end
-  end
-
-  defp passes_filter?(event, filter, senders) do
-    (not filter.lazy_load_members or event["sender"] in senders) and
-      :radio_beam_room_queries.passes_filter(filter, event["type"], event["sender"], event["content"])
-  end
-
-  @stripped_state_keys [
-    {"m.room.create", ""},
-    {"m.room.name", ""},
-    {"m.room.avatar", ""},
-    {"m.room.topic", ""},
-    {"m.room.join_rules", ""},
-    {"m.room.canonical_alias", ""},
-    {"m.room.encryption", ""}
-  ]
-  defp invited_room_sync(room) do
-    state_events = room.state |> Map.take(@stripped_state_keys) |> Enum.map(fn {_, event} -> strip(event) end)
-    %{invite_state: %{events: state_events}}
-  end
-
-  @stripped_keys ["content", "sender", "state_key", "type"]
-  defp strip(event), do: Map.take(event, @stripped_keys)
 end

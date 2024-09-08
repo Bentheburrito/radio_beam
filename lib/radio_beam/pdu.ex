@@ -83,6 +83,11 @@ defmodule RadioBeam.PDU do
     end
   end
 
+  def visible_to_user?(%__MODULE__{} = pdu, user_id, latest_joined_at_depth) do
+    record = pdu |> Table.from_pdu() |> Memento.Query.Data.dump()
+    Queries.can_view_event(user_id, latest_joined_at_depth, record)
+  end
+
   @doc """
   Get a list of PDUs by their event IDs
   """

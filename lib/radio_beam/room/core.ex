@@ -94,7 +94,7 @@ defmodule RadioBeam.Room.Core do
     end
   end
 
-  defp update_room_state(%Room{} = room, event) do
+  def update_room_state(%Room{} = room, event) do
     if is_map_key(event, "state_key") do
       %Room{room | state: Map.put(room.state, {event["type"], event["state_key"]}, event)}
     else

@@ -9,6 +9,7 @@ defmodule RadioBeamWeb.SyncController do
   alias RadioBeam.User
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline
+  alias RadioBeam.Room.Timeline.Filter
 
   plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Sync
@@ -23,7 +24,7 @@ defmodule RadioBeamWeb.SyncController do
         {"since", since_token}, opts -> Keyword.put(opts, :since, since_token)
         {"timeout", timeout}, opts -> Keyword.put(opts, :timeout, timeout)
         {"full_state", full_state?}, opts -> Keyword.put(opts, :full_state?, full_state?)
-        {"filter", filter}, opts -> Keyword.put(opts, :filter, filter)
+        {"filter", filter}, opts -> Keyword.put(opts, :filter, Filter.parse(filter))
         _, opts -> opts
       end)
 
@@ -50,7 +51,7 @@ defmodule RadioBeamWeb.SyncController do
       request
       |> Map.take(["filter", "limit"])
       |> Enum.reduce([], fn
-        {"filter", filter}, opts -> Keyword.put(opts, :filter, filter)
+        {"filter", filter}, opts -> Keyword.put(opts, :filter, Filter.parse(filter))
         {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
       end)
 

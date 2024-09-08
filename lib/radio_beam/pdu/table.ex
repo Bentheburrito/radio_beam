@@ -54,12 +54,17 @@ defmodule RadioBeam.PDU.Table do
     }
   end
 
+  @spec from_pdu(PDU.t()) :: t()
+  def from_pdu(%PDU{} = pdu) do
+    struct(%__MODULE__{pk: {pdu.room_id, -pdu.depth, pdu.origin_server_ts}}, Map.from_struct(pdu))
+  end
+
   @doc """
   Persist a PDU to the Mnesia table. Must be run inside a transaction.
   """
   @spec persist(PDU.t()) :: PDU.t() | no_return()
   def persist(%PDU{} = pdu) do
-    record = struct(%__MODULE__{pk: {pdu.room_id, -pdu.depth, pdu.origin_server_ts}}, Map.from_struct(pdu))
+    record = from_pdu(pdu)
 
     case Memento.Query.write(record) do
       %__MODULE__{} -> pdu

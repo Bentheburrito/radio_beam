@@ -5,6 +5,7 @@ defmodule RadioBeam.Room.TimelineTest do
   alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline
+  alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.User
 
   setup do
@@ -35,7 +36,7 @@ defmodule RadioBeam.Room.TimelineTest do
       user_id = user.id
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [
                  %{"type" => "m.room.create"},
                  %{"type" => "m.room.member"},
@@ -64,7 +65,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id1, user.id)
 
-      filter = %{"room" => %{"timeline" => %{"limit" => 5}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 5}}})
 
       assert %{
                rooms: %{
@@ -84,15 +85,14 @@ defmodule RadioBeam.Room.TimelineTest do
       assert %{"event_id" => "$" <> hash64} = Enum.find(state, &(&1["type"] == "m.room.power_levels"))
 
       assert %{
-               limited: true,
+               sync: {:partial, "batch:" <> ^hash64},
                events: [
                  %{"type" => "m.room.join_rules"},
                  %{"type" => "m.room.history_visibility"},
                  %{"type" => "m.room.guest_access"},
                  %{"type" => "m.room.member"},
                  %{"type" => "m.room.member"}
-               ],
-               prev_batch: "batch:" <> ^hash64
+               ]
              } =
                timeline
 
@@ -128,7 +128,7 @@ defmodule RadioBeam.Room.TimelineTest do
       user_id = user.id
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [
                  %{"type" => "m.room.create"},
                  %{"type" => "m.room.member"},
@@ -181,7 +181,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 0 = map_size(invite_map)
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [
                  %{"type" => "m.room.member", "state_key" => ^rando_id, "content" => %{"membership" => "invite"}},
                  %{"type" => "m.room.member", "state_key" => ^rando_id, "content" => %{"membership" => "join"}}
@@ -195,7 +195,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.leave(room_id1, user.id, "byeeeeeeeeeeeeeee")
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "alright user is gone let's party!!!!!!!!")
 
-      filter = %{"room" => %{"include_leave" => true}}
+      filter = Filter.parse(%{"room" => %{"include_leave" => true}})
 
       assert %{
                rooms: %{
@@ -217,7 +217,7 @@ defmodule RadioBeam.Room.TimelineTest do
       creator_id = creator.id
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [
                  %{
                    "type" => "m.room.name",
@@ -251,7 +251,7 @@ defmodule RadioBeam.Room.TimelineTest do
       user_id = user.id
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [
                  %{"type" => "m.room.create"},
                  %{"type" => "m.room.member"},
@@ -273,7 +273,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "First name update")
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "Second name update")
 
-      filter = %{"room" => %{"timeline" => %{"limit" => 2}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
       assert %{
                rooms: %{
@@ -291,12 +291,11 @@ defmodule RadioBeam.Room.TimelineTest do
       assert [%{"event_id" => "$" <> hash64}] = state
 
       assert %{
-               limited: true,
+               sync: {:partial, "batch:" <> ^hash64},
                events: [
                  %{"type" => "m.room.name", "content" => %{"name" => "First name update"}},
                  %{"type" => "m.room.name", "content" => %{"name" => "Second name update"}}
-               ],
-               prev_batch: "batch:" <> ^hash64
+               ]
              } =
                timeline
 
@@ -313,12 +312,11 @@ defmodule RadioBeam.Room.TimelineTest do
                Timeline.sync([room_id1], user.id, since: since, filter: filter)
 
       assert %{
-               limited: true,
+               sync: {:partial, _},
                events: [
                  %{"type" => "m.room.message", "content" => %{"body" => "Hello? Is anyone there?"}},
                  %{"type" => "m.room.message", "content" => %{"body" => "HE CAN'T HIT"}}
-               ],
-               prev_batch: _
+               ]
              } =
                timeline
 
@@ -331,12 +329,11 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 8 = length(state)
 
       assert %{
-               limited: true,
+               sync: {:partial, _},
                events: [
                  %{"type" => "m.room.message", "content" => %{"body" => "Hello? Is anyone there?"}},
                  %{"type" => "m.room.message", "content" => %{"body" => "HE CAN'T HIT"}}
-               ],
-               prev_batch: _
+               ]
              } =
                timeline
     end
@@ -359,7 +356,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.set_name(room_id2, creator.id, "General Chat")
 
       event_filter = %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}
-      filter = %{"room" => %{"timeline" => event_filter, "state" => event_filter}}
+      filter = Filter.parse(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
 
       assert %{
                rooms: %{
@@ -376,7 +373,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 0 = map_size(leave_map)
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [%{"type" => "m.room.create"} | _] = events
              } =
                timeline
@@ -399,7 +396,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       {:ok, _event_id} = Room.set_name(room_id2, creator.id, "General Chat")
 
-      filter = %{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}}
+      filter = Filter.parse(%{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}})
 
       assert %{
                rooms: %{
@@ -416,7 +413,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 0 = map_size(leave_map)
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [%{"type" => "m.room.create"} | _] = events
              } =
                timeline
@@ -442,7 +439,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = send_msg.(room_id1, user2.id, "hi")
       {:ok, _event_id} = send_msg.(room_id1, user3.id, "yo")
 
-      filter = %{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}}
+      filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
       assert %{
                rooms: %{
@@ -496,7 +493,7 @@ defmodule RadioBeam.Room.TimelineTest do
       user_id = user.id
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [
                  %{"type" => "m.room.create"},
                  %{"type" => "m.room.member"},
@@ -510,13 +507,15 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                timeline
 
+      timeout = 800
+      wait_for = div(timeout, 2)
       time_before_wait = :os.system_time(:millisecond)
 
       sync_task =
-        Task.async(fn -> Timeline.sync([room_id], user.id, timeout: 1500, since: since) end)
+        Task.async(fn -> Timeline.sync([room_id], user.id, timeout: timeout, since: since) end)
 
-      Process.sleep(750)
-      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+      Process.sleep(wait_for)
+      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello!!"})
 
       assert %{
                rooms: %{
@@ -524,13 +523,9 @@ defmodule RadioBeam.Room.TimelineTest do
                }
              } = Task.await(sync_task)
 
-      assert %{
-               limited: false,
-               events: [%{"type" => "m.room.message"}]
-             } =
-               timeline
+      assert %{sync: :complete, events: [%{"type" => "m.room.message"}]} = timeline
 
-      assert :os.system_time(:millisecond) - time_before_wait >= 750
+      assert :os.system_time(:millisecond) - time_before_wait >= wait_for
     end
 
     test "will wait for the next room event that matches the filter", %{creator: creator, user: user} do
@@ -549,7 +544,7 @@ defmodule RadioBeam.Room.TimelineTest do
       time_before_wait = :os.system_time(:millisecond)
 
       event_filter = %{"not_senders" => [creator.id]}
-      filter = %{"room" => %{"timeline" => event_filter, "state" => event_filter}}
+      filter = Filter.parse(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
 
       sync_task =
         Task.async(fn -> Timeline.sync([room_id], user.id, filter: filter, timeout: 1000, since: since) end)
@@ -569,7 +564,7 @@ defmodule RadioBeam.Room.TimelineTest do
              } = Task.await(sync_task)
 
       assert %{
-               limited: false,
+               sync: :complete,
                events: [%{"type" => "m.room.message"}]
              } =
                timeline
@@ -634,18 +629,17 @@ defmodule RadioBeam.Room.TimelineTest do
       creator: %{id: creator_id} = creator,
       user: %{id: user_id}
     } do
-      filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
       %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} = Timeline.sync([room_id], creator.id, filter: filter)
 
       %{
-        limited: true,
+        sync: {:partial, prev_batch},
         events: [
           %{"type" => "m.room.message"},
           %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
           %{"type" => "m.room.member"}
-        ],
-        prev_batch: prev_batch
+        ]
       } =
         timeline
 
@@ -672,7 +666,7 @@ defmodule RadioBeam.Room.TimelineTest do
                %{"type" => "m.room.message", "content" => %{"body" => "wait yes I do"}}
              ] = chunk
 
-      filter = %{"room" => %{"timeline" => %{"limit" => 30}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 30}}})
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
                Timeline.get_messages(room_id, creator.id, :backward, next2, :limit, filter: filter)
@@ -688,17 +682,16 @@ defmodule RadioBeam.Room.TimelineTest do
       creator: %{id: creator_id} = creator,
       user: %{id: user_id}
     } do
-      filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
       %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} = Timeline.sync([room_id], creator.id, filter: filter)
 
       %{
-        limited: true,
+        sync: {:partial, prev_batch},
         events: [
           %{"type" => "m.room.message"},
           %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
           %{"type" => "m.room.member"}
-        ],
-        prev_batch: prev_batch
+        ]
       } =
         timeline
 
@@ -732,7 +725,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "can successfully paginate forward from the beginning of a room", %{room_id: room_id, creator: creator} do
-      filter = %{"room" => %{"timeline" => %{"limit" => 10}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
 
       assert {:ok, %{chunk: chunk, state: state, start: :first, end: next}} =
                Timeline.get_messages(room_id, creator.id, :forward, :first, :limit, filter: filter)
@@ -779,7 +772,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "can successfully paginate backward from the end of a room", %{room_id: room_id, creator: creator} do
-      filter = %{"room" => %{"timeline" => %{"limit" => 10}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
 
       assert {:ok, %{chunk: chunk, state: state, start: :last, end: next}} =
                Timeline.get_messages(room_id, creator.id, :backward, :last, :limit, filter: filter)
@@ -826,9 +819,9 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "can successfully paginate in either direction froma prev_batch_token", %{room_id: room_id, creator: creator} do
-      filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
-      %{rooms: %{join: %{^room_id => %{timeline: %{prev_batch: prev_batch}}}}} =
+      %{rooms: %{join: %{^room_id => %{timeline: %{sync: {:partial, prev_batch}}}}}} =
         Timeline.sync([room_id], creator.id, filter: filter)
 
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
@@ -897,7 +890,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "true"})
 
-      filter = %{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}}
+      filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
       assert {:ok, %{chunk: [_one, _two], state: state}} =
                Timeline.get_messages(room_id, user2.id, :backward, :last, :limit, filter: filter)

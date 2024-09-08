@@ -104,7 +104,7 @@ defmodule RadioBeam.Room.Timeline.Filter do
     end
     |> Map.merge(%{
       contains_url: Map.get(filter, "contains_url", :none),
-      lazy_load_members: Map.get(filter, "lazy_load_members", false),
+      memberships: parse_memberships(filter),
       limit: filter |> Map.get("limit", max_events) |> min(max_events)
     })
   end
@@ -125,6 +125,17 @@ defmodule RadioBeam.Room.Timeline.Filter do
 
       _else ->
         :none
+    end
+  end
+
+  defp parse_memberships(filter) do
+    lazy? = Map.get(filter, "lazy_load_members", false)
+    redundant? = Map.get(filter, "include_redundant_members", false)
+
+    cond do
+      lazy? and redundant? -> :lazy_redundant
+      lazy? -> :lazy
+      :else -> :all
     end
   end
 end

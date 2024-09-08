@@ -261,6 +261,8 @@ defmodule RadioBeam.Room do
     end
   end
 
+  def get_membership(room_id, user_id), do: call_if_alive(room_id, {:membership, user_id})
+
   def get_members(room_id, user_id, at_event_id \\ :current, membership_filter \\ fn _ -> true end)
 
   def get_members(room_id, user_id, :current, membership_filter) do
@@ -370,6 +372,16 @@ defmodule RadioBeam.Room do
     Memento.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec) end)
   end
 
+  @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
+  def stripped_state_types, do: @stripped_state_types
+
+  @stripped_state_keys Enum.map(@stripped_state_types, &{&1, ""})
+  @stripped_keys ["content", "sender", "state_key", "type"]
+  @doc "Returns the stripped state of the given room."
+  def stripped_state(room) do
+    room.state |> Map.take(@stripped_state_keys) |> Enum.map(fn {_, event} -> Map.take(event, @stripped_keys) end)
+  end
+
   ### IMPL ###
 
   @impl GenServer
@@ -405,7 +417,14 @@ defmodule RadioBeam.Room do
 
     with {:ok, room, pdu} <- Core.put_event(room, event),
          {:ok, _} <- Ops.persist_with_pdus(room, [pdu]) do
-      PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_update, room.id})
+      PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_event, room.id, pdu})
+
+      if pdu.type in @stripped_state_types,
+        do: PubSub.broadcast(PS, PS.stripped_state_events(room.id), {:room_stripped_state, room.id, pdu})
+
+      if pdu.type == "m.room.member" and pdu.content["membership"] == "invite",
+        do: PubSub.broadcast(PS, PS.invite_events(pdu.state_key), {:room_invite, room.id, pdu})
+
       {:reply, {:ok, pdu.event_id}, room}
     else
       {:error, :unauthorized} = e ->
