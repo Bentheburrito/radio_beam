@@ -22,6 +22,15 @@ config :radio_beam,
     "m.set_avatar_url": %{enabled: false},
     "m.3pid_changes": %{enabled: false}
   },
+  content_repo: %{
+    # By default, a single file may not exceed 8MB
+    single_file_max_bytes: 8_000_000,
+    # By default, only cache 200MB of remote media
+    remote_media: %{max_bytes: 200_000_000},
+    # By default, each user can only upload a total of 50MB or 50 files 
+    # (whichever limit is reached first)
+    users: %{max_bytes: 50_000_000, max_files: 50}
+  },
   generators: [timestamp_type: :utc_datetime, binary_id: true],
   # TOIMPL: m.login.token
   login_types: %{flows: [%{type: "m.login.password"}]},

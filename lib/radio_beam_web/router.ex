@@ -12,8 +12,15 @@ defmodule RadioBeamWeb.Router do
     SyncController
   }
 
+  @cors %{
+    "access-control-allow-origin" => "*",
+    "access-control-allow-methods" => "GET, POST, PUT, DELETE, OPTIONS",
+    "access-control-allow-headers" => "X-Requested-With, Content-Type, Authorization"
+  }
+
   pipeline :spec do
     plug :accepts, ["json"]
+    plug :put_secure_browser_headers, @cors
   end
 
   get "/", HomeserverInfoController, :home

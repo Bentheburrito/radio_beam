@@ -15,6 +15,7 @@ defmodule RadioBeamWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  @csp "sandbox; default-src 'none'; script-src 'none'; plugin-types application/pdf; style-src 'unsafe-inline'; object-src 'self';"
   # Serve at "/" the static files from "priv/static" directory.
   #
   # You should set gzip to true if you are running phx.digest
@@ -25,9 +26,8 @@ defmodule RadioBeamWeb.Endpoint do
     gzip: false,
     only: RadioBeamWeb.static_paths(),
     headers: %{
-      "Access-Control-Allow-Origin" => "*",
-      "Access-Control-Allow-Methods" => "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers" => "X-Requested-With, Content-Type, Authorization"
+      "content-security-policy" => @csp,
+      "cross-origin-resource-policy" => "cross-origin"
     }
 
   # Code reloading can be explicitly enabled under the
