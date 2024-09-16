@@ -9,16 +9,15 @@ defmodule RadioBeam.Room.TimelineTest do
   alias RadioBeam.User
 
   setup do
-    {:ok, creator} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-    {:ok, creator} = Repo.insert(creator)
-    {:ok, user} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-    {:ok, user} = Repo.insert(user)
+    creator = Fixtures.user()
+    user = Fixtures.user()
+    device = Fixtures.device(user.id)
 
-    %{creator: creator, user: user}
+    %{creator: creator, user: user, device: device}
   end
 
   describe "sync/4 performing an initial sync" do
-    test "successfully syncs all events in a newly created room", %{creator: creator, user: user} do
+    test "successfully syncs all events in a newly created room", %{creator: creator, user: user, device: device} do
       {:ok, room_id1} = Room.create(creator)
       {:ok, room_id2} = Room.create(creator, name: "The Chatroom")
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
@@ -31,21 +30,21 @@ defmodule RadioBeam.Room.TimelineTest do
                  invite: %{^room_id2 => %{invite_state: invite_state}}
                }
              } =
-               Timeline.sync([room_id1, room_id2], user.id)
+               Timeline.sync([room_id1, room_id2], user.id, device.id)
 
       user_id = user.id
 
       assert %{
                sync: :complete,
                events: [
-                 %{"type" => "m.room.create"},
-                 %{"type" => "m.room.member"},
-                 %{"type" => "m.room.power_levels"},
-                 %{"type" => "m.room.join_rules"},
-                 %{"type" => "m.room.history_visibility"},
-                 %{"type" => "m.room.guest_access"},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "invite"}},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "join"}}
+                 %{type: "m.room.create"},
+                 %{type: "m.room.member"},
+                 %{type: "m.room.power_levels"},
+                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.history_visibility"},
+                 %{type: "m.room.guest_access"},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "invite"}},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}}
                ]
              } =
                timeline
@@ -58,7 +57,7 @@ defmodule RadioBeam.Room.TimelineTest do
       refute is_map_key(timeline, :prev_batch)
     end
 
-    test "successfully syncs all events up to n", %{creator: creator, user: user} do
+    test "successfully syncs all events up to n", %{creator: creator, user: user, device: device} do
       {:ok, room_id1} = Room.create(creator)
       {:ok, room_id2} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
@@ -78,7 +77,7 @@ defmodule RadioBeam.Room.TimelineTest do
                  invite: %{^room_id2 => %{invite_state: invite_state}}
                }
              } =
-               Timeline.sync([room_id1, room_id2], user.id, filter: filter)
+               Timeline.sync([room_id1, room_id2], user.id, device.id, filter: filter)
 
       assert Enum.any?(state, &match?(%{"type" => "m.room.create"}, &1))
       assert Enum.any?(state, &match?(%{"type" => "m.room.member"}, &1))
@@ -87,11 +86,11 @@ defmodule RadioBeam.Room.TimelineTest do
       assert %{
                sync: {:partial, "batch:" <> ^hash64},
                events: [
-                 %{"type" => "m.room.join_rules"},
-                 %{"type" => "m.room.history_visibility"},
-                 %{"type" => "m.room.guest_access"},
-                 %{"type" => "m.room.member"},
-                 %{"type" => "m.room.member"}
+                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.history_visibility"},
+                 %{type: "m.room.guest_access"},
+                 %{type: "m.room.member"},
+                 %{type: "m.room.member"}
                ]
              } =
                timeline
@@ -103,8 +102,8 @@ defmodule RadioBeam.Room.TimelineTest do
   end
 
   describe "sync/4 performing a follow-up sync" do
-    test "successfully syncs all new events when there aren't many", %{creator: creator, user: user} do
-      assert %{rooms: %{}, next_batch: since} = Timeline.sync([], user.id)
+    test "successfully syncs all new events when there aren't many", %{creator: creator, user: user, device: device} do
+      assert %{rooms: %{}, next_batch: since} = Timeline.sync([], user.id, device.id)
 
       # ---
 
@@ -120,7 +119,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: since
              } =
-               Timeline.sync([room_id1], user.id, since: since)
+               Timeline.sync([room_id1], user.id, device.id, since: since)
 
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
@@ -130,14 +129,14 @@ defmodule RadioBeam.Room.TimelineTest do
       assert %{
                sync: :complete,
                events: [
-                 %{"type" => "m.room.create"},
-                 %{"type" => "m.room.member"},
-                 %{"type" => "m.room.power_levels"},
-                 %{"type" => "m.room.join_rules"},
-                 %{"type" => "m.room.history_visibility"},
-                 %{"type" => "m.room.guest_access"},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "invite"}},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "join"}}
+                 %{type: "m.room.create"},
+                 %{type: "m.room.member"},
+                 %{type: "m.room.power_levels"},
+                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.history_visibility"},
+                 %{type: "m.room.guest_access"},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "invite"}},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}}
                ]
              } =
                timeline
@@ -156,7 +155,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: since
              } =
-               Timeline.sync([room_id1, room_id2], user.id, since: since)
+               Timeline.sync([room_id1, room_id2], user.id, device.id, since: since)
 
       assert 0 = map_size(join_map)
 
@@ -176,15 +175,15 @@ defmodule RadioBeam.Room.TimelineTest do
                rooms: %{join: %{^room_id1 => %{state: [], timeline: timeline}}, invite: invite_map},
                next_batch: since
              } =
-               Timeline.sync([room_id1, room_id2], user.id, since: since)
+               Timeline.sync([room_id1, room_id2], user.id, device.id, since: since)
 
       assert 0 = map_size(invite_map)
 
       assert %{
                sync: :complete,
                events: [
-                 %{"type" => "m.room.member", "state_key" => ^rando_id, "content" => %{"membership" => "invite"}},
-                 %{"type" => "m.room.member", "state_key" => ^rando_id, "content" => %{"membership" => "join"}}
+                 %{type: "m.room.member", state_key: ^rando_id, content: %{"membership" => "invite"}},
+                 %{type: "m.room.member", state_key: ^rando_id, content: %{"membership" => "join"}}
                ]
              } =
                timeline
@@ -205,7 +204,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: _since
              } =
-               Timeline.sync([room_id1, room_id2], user.id, since: since, filter: filter)
+               Timeline.sync([room_id1, room_id2], user.id, device.id, since: since, filter: filter)
 
       assert 0 = map_size(join_map)
       assert 0 = map_size(invite_map)
@@ -220,17 +219,21 @@ defmodule RadioBeam.Room.TimelineTest do
                sync: :complete,
                events: [
                  %{
-                   "type" => "m.room.name",
-                   "sender" => ^creator_id,
-                   "content" => %{"name" => "should be able to see this"}
+                   type: "m.room.name",
+                   sender: ^creator_id,
+                   content: %{"name" => "should be able to see this"}
                  },
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "leave"}}
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "leave"}}
                ]
              } =
                timeline
     end
 
-    test "successfully syncs, responding with a partial timeline when necessary", %{creator: creator, user: user} do
+    test "successfully syncs, responding with a partial timeline when necessary", %{
+      creator: creator,
+      user: user,
+      device: device
+    } do
       {:ok, room_id1} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id1, user.id)
@@ -243,7 +246,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: since
              } =
-               Timeline.sync([room_id1], user.id)
+               Timeline.sync([room_id1], user.id, device.id)
 
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
@@ -253,14 +256,14 @@ defmodule RadioBeam.Room.TimelineTest do
       assert %{
                sync: :complete,
                events: [
-                 %{"type" => "m.room.create"},
-                 %{"type" => "m.room.member"},
-                 %{"type" => "m.room.power_levels"},
-                 %{"type" => "m.room.join_rules"},
-                 %{"type" => "m.room.history_visibility"},
-                 %{"type" => "m.room.guest_access"},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "invite"}},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "join"}}
+                 %{type: "m.room.create"},
+                 %{type: "m.room.member"},
+                 %{type: "m.room.power_levels"},
+                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.history_visibility"},
+                 %{type: "m.room.guest_access"},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "invite"}},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}}
                ]
              } =
                timeline
@@ -283,7 +286,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: since
              } =
-               Timeline.sync([room_id1], user.id, since: since, filter: filter)
+               Timeline.sync([room_id1], user.id, device.id, since: since, filter: filter)
 
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
@@ -293,8 +296,8 @@ defmodule RadioBeam.Room.TimelineTest do
       assert %{
                sync: {:partial, "batch:" <> ^hash64},
                events: [
-                 %{"type" => "m.room.name", "content" => %{"name" => "First name update"}},
-                 %{"type" => "m.room.name", "content" => %{"name" => "Second name update"}}
+                 %{type: "m.room.name", content: %{"name" => "First name update"}},
+                 %{type: "m.room.name", content: %{"name" => "Second name update"}}
                ]
              } =
                timeline
@@ -309,13 +312,13 @@ defmodule RadioBeam.Room.TimelineTest do
                rooms: %{join: %{^room_id1 => %{state: [%{"type" => "m.room.name"}], timeline: timeline}}},
                next_batch: _since
              } =
-               Timeline.sync([room_id1], user.id, since: since, filter: filter)
+               Timeline.sync([room_id1], user.id, device.id, since: since, filter: filter)
 
       assert %{
                sync: {:partial, _},
                events: [
-                 %{"type" => "m.room.message", "content" => %{"body" => "Hello? Is anyone there?"}},
-                 %{"type" => "m.room.message", "content" => %{"body" => "HE CAN'T HIT"}}
+                 %{type: "m.room.message", content: %{"body" => "Hello? Is anyone there?"}},
+                 %{type: "m.room.message", content: %{"body" => "HE CAN'T HIT"}}
                ]
              } =
                timeline
@@ -324,15 +327,15 @@ defmodule RadioBeam.Room.TimelineTest do
                rooms: %{join: %{^room_id1 => %{state: state, timeline: timeline}}},
                next_batch: _since
              } =
-               Timeline.sync([room_id1], user.id, since: since, filter: filter, full_state?: true)
+               Timeline.sync([room_id1], user.id, device.id, since: since, filter: filter, full_state?: true)
 
       assert 8 = length(state)
 
       assert %{
                sync: {:partial, _},
                events: [
-                 %{"type" => "m.room.message", "content" => %{"body" => "Hello? Is anyone there?"}},
-                 %{"type" => "m.room.message", "content" => %{"body" => "HE CAN'T HIT"}}
+                 %{type: "m.room.message", content: %{"body" => "Hello? Is anyone there?"}},
+                 %{type: "m.room.message", content: %{"body" => "HE CAN'T HIT"}}
                ]
              } =
                timeline
@@ -340,7 +343,11 @@ defmodule RadioBeam.Room.TimelineTest do
   end
 
   describe "sync/4 with a filter" do
-    test "applies timeline- and state-specific rooms and not_rooms filters", %{creator: creator, user: user} do
+    test "applies timeline- and state-specific rooms and not_rooms filters", %{
+      creator: creator,
+      user: user,
+      device: device
+    } do
       {:ok, room_id1} = Room.create(creator, name: "Introductions")
       {:ok, room_id2} = Room.create(creator, name: "General", topic: "whatever you wanna talk about")
       {:ok, room_id3} = Room.create(creator, name: "Media & Photos")
@@ -366,7 +373,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: _since
              } =
-               Timeline.sync([room_id1, room_id2, room_id3], user.id, filter: filter)
+               Timeline.sync([room_id1, room_id2, room_id3], user.id, device.id, filter: filter)
 
       assert 1 = map_size(join_map)
       assert 0 = map_size(invite_map)
@@ -374,14 +381,14 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                sync: :complete,
-               events: [%{"type" => "m.room.create"} | _] = events
+               events: [%{type: "m.room.create"} | _] = events
              } =
                timeline
 
-      assert %{"type" => "m.room.name", "content" => %{"name" => "General Chat"}} = List.last(events)
+      assert %{type: "m.room.name", content: %{"name" => "General Chat"}} = List.last(events)
     end
 
-    test "applies `room`-key-level rooms and not_rooms filters", %{creator: creator, user: user} do
+    test "applies `room`-key-level rooms and not_rooms filters", %{creator: creator, user: user, device: device} do
       {:ok, room_id1} = Room.create(creator, name: "Introductions")
       {:ok, room_id2} = Room.create(creator, name: "General", topic: "whatever you wanna talk about")
       {:ok, room_id3} = Room.create(creator, name: "Media & Photos")
@@ -406,7 +413,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: _since
              } =
-               Timeline.sync([room_id1, room_id2, room_id3], user.id, filter: filter)
+               Timeline.sync([room_id1, room_id2, room_id3], user.id, device.id, filter: filter)
 
       assert 1 = map_size(join_map)
       assert 0 = map_size(invite_map)
@@ -414,11 +421,11 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                sync: :complete,
-               events: [%{"type" => "m.room.create"} | _] = events
+               events: [%{type: "m.room.create"} | _] = events
              } =
                timeline
 
-      assert %{"type" => "m.room.name", "content" => %{"name" => "General Chat"}} = List.last(events)
+      assert %{type: "m.room.name", content: %{"name" => "General Chat"}} = List.last(events)
     end
 
     test "applies lazy_load_members to state delta", %{creator: creator, user: user} do
@@ -447,37 +454,133 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: _since
              } =
-               Timeline.sync([room_id1], user3.id, filter: filter)
+               Timeline.sync([room_id1], user3.id, Fixtures.device(user3.id).id, filter: filter)
 
-      for id <- [creator.id, user.id] do
-        refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
-      end
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
 
-      for id <- [user2.id, user3.id] do
-        assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
-      end
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
 
       # the creator's membership event should always be present
+
       assert %{
                rooms: %{
                  join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
-               Timeline.sync([room_id1], creator.id, filter: filter)
+               Timeline.sync([room_id1], creator.id, Fixtures.device(creator.id).id, filter: filter)
 
-      for id <- [user.id] do
-        refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
-      end
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
 
-      for id <- [creator.id, user2.id, user3.id] do
-        assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
-      end
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+    end
+
+    test "applies lazy_load_members to state delta, excluding redundant membership events from state unless the filter requests it",
+         %{
+           creator: creator,
+           user: user
+         } do
+      user2 = Fixtures.user()
+      user3 = Fixtures.user()
+
+      {:ok, room_id1} = Room.create(creator, name: "Introductions")
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user2.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user3.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user2.id)
+      {:ok, _event_id} = Room.join(room_id1, user3.id)
+
+      send_msg = &Room.send(&1, &2, "m.room.message", %{"msgtype" => "m.text", "body" => &3})
+      {:ok, _event_id} = send_msg.(room_id1, creator.id, "welcome all")
+      {:ok, _event_id} = send_msg.(room_id1, user.id, "hello!")
+      {:ok, _event_id} = send_msg.(room_id1, user2.id, "hi")
+      {:ok, _event_id} = send_msg.(room_id1, user3.id, "yo")
+
+      filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
+      device = Fixtures.device(user3.id)
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+               },
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], user3.id, device.id, filter: filter)
+
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
+
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+
+      # initial sync again - memberships already sent last time should not be 
+      # sent again (unless its the syncing user's membership)
+
+      {:ok, _event_id} = send_msg.(room_id1, user2.id, "so what is the plan")
+      {:ok, _event_id} = send_msg.(room_id1, user.id, "brunch tomorrow @ 11")
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+               },
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], user3.id, device.id, filter: filter)
+
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+
+      # adjust filter to request redundant memberships
+
+      redundant_filter =
+        Filter.parse(%{
+          "room" => %{
+            "state" => %{"lazy_load_members" => true, "include_redundant_members" => true},
+            "timeline" => %{"limit" => 2}
+          }
+        })
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+               },
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], user3.id, device.id, filter: redundant_filter)
+
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
+
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+
+      # and once more without redundant members...should only be the syncing user
+      assert %{
+               rooms: %{
+                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+               },
+               next_batch: _since
+             } =
+               Timeline.sync([room_id1], user3.id, device.id, filter: filter)
+
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
+      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+
+      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
     end
   end
 
   describe "sync/4 with a timeout" do
-    test "will wait for the next room event", %{creator: creator, user: user} do
+    test "will wait for the next room event", %{creator: creator, user: user, device: device} do
       {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
@@ -488,21 +591,21 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: since
              } =
-               Timeline.sync([room_id], user.id)
+               Timeline.sync([room_id], user.id, device.id)
 
       user_id = user.id
 
       assert %{
                sync: :complete,
                events: [
-                 %{"type" => "m.room.create"},
-                 %{"type" => "m.room.member"},
-                 %{"type" => "m.room.power_levels"},
-                 %{"type" => "m.room.join_rules"},
-                 %{"type" => "m.room.history_visibility"},
-                 %{"type" => "m.room.guest_access"},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "invite"}},
-                 %{"type" => "m.room.member", "state_key" => ^user_id, "content" => %{"membership" => "join"}}
+                 %{type: "m.room.create"},
+                 %{type: "m.room.member"},
+                 %{type: "m.room.power_levels"},
+                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.history_visibility"},
+                 %{type: "m.room.guest_access"},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "invite"}},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}}
                ]
              } =
                timeline
@@ -512,7 +615,7 @@ defmodule RadioBeam.Room.TimelineTest do
       time_before_wait = :os.system_time(:millisecond)
 
       sync_task =
-        Task.async(fn -> Timeline.sync([room_id], user.id, timeout: timeout, since: since) end)
+        Task.async(fn -> Timeline.sync([room_id], user.id, device.id, timeout: timeout, since: since) end)
 
       Process.sleep(wait_for)
       Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello!!"})
@@ -523,12 +626,62 @@ defmodule RadioBeam.Room.TimelineTest do
                }
              } = Task.await(sync_task)
 
-      assert %{sync: :complete, events: [%{"type" => "m.room.message"}]} = timeline
+      assert %{sync: :complete, events: [%{type: "m.room.message"}]} = timeline
 
       assert :os.system_time(:millisecond) - time_before_wait >= wait_for
     end
 
-    test "will wait for the next room event that matches the filter", %{creator: creator, user: user} do
+    test "will wait for the next invite event", %{creator: creator, user: user, device: device} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id => %{state: [], timeline: timeline}}
+               },
+               next_batch: since
+             } =
+               Timeline.sync([room_id], user.id, device.id)
+
+      user_id = user.id
+
+      assert %{
+               sync: :complete,
+               events: [
+                 %{type: "m.room.create"},
+                 %{type: "m.room.member"},
+                 %{type: "m.room.power_levels"},
+                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.history_visibility"},
+                 %{type: "m.room.guest_access"},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "invite"}},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}}
+               ]
+             } =
+               timeline
+
+      timeout = 800
+      wait_for = div(timeout, 2)
+      time_before_wait = :os.system_time(:millisecond)
+
+      sync_task =
+        Task.async(fn -> Timeline.sync([room_id], user.id, device.id, timeout: timeout, since: since) end)
+
+      Process.sleep(wait_for)
+      {:ok, room_id2} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
+
+      assert %{
+               rooms: %{
+                 invite: %{^room_id2 => %{invite_state: %{events: _events}}}
+               }
+             } = Task.await(sync_task)
+
+      assert :os.system_time(:millisecond) - time_before_wait >= wait_for
+    end
+
+    test "will wait for the next room event that matches the filter", %{creator: creator, user: user, device: device} do
       {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
@@ -539,7 +692,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: since
              } =
-               Timeline.sync([room_id], user.id)
+               Timeline.sync([room_id], user.id, device.id)
 
       time_before_wait = :os.system_time(:millisecond)
 
@@ -547,7 +700,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = Filter.parse(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
 
       sync_task =
-        Task.async(fn -> Timeline.sync([room_id], user.id, filter: filter, timeout: 1000, since: since) end)
+        Task.async(fn -> Timeline.sync([room_id], user.id, device.id, filter: filter, timeout: 1000, since: since) end)
 
       Process.sleep(100)
       Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
@@ -565,14 +718,14 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                sync: :complete,
-               events: [%{"type" => "m.room.message"}]
+               events: [%{type: "m.room.message"}]
              } =
                timeline
 
       assert :os.system_time(:millisecond) - time_before_wait >= 200
     end
 
-    test "will timeout", %{creator: creator, user: user} do
+    test "will timeout", %{creator: creator, user: user, device: device} do
       {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
@@ -583,9 +736,9 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: since
              } =
-               Timeline.sync([room_id], user.id)
+               Timeline.sync([room_id], user.id, device.id)
 
-      %{rooms: rooms} = Timeline.sync([room_id], user.id, timeout: 300, since: since)
+      %{rooms: rooms} = Timeline.sync([room_id], user.id, device.id, timeout: 300, since: since)
 
       for {_, room_map} <- rooms, do: assert(map_size(room_map) == 0)
     end
@@ -631,45 +784,48 @@ defmodule RadioBeam.Room.TimelineTest do
     } do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
-      %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} = Timeline.sync([room_id], creator.id, filter: filter)
+      device = Fixtures.device(creator.id)
+
+      %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} =
+        Timeline.sync([room_id], creator.id, device.id, filter: filter)
 
       %{
         sync: {:partial, prev_batch},
         events: [
-          %{"type" => "m.room.message"},
-          %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
-          %{"type" => "m.room.member"}
+          %{type: "m.room.message"},
+          %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
+          %{type: "m.room.member"}
         ]
       } =
         timeline
 
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
-               Timeline.get_messages(room_id, creator.id, :backward, prev_batch, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, prev_batch, :limit, filter: filter)
 
       assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
                Enum.sort(state)
 
       assert [
-               %{"type" => "m.room.message", "content" => %{"body" => "wow"}},
-               %{"type" => "m.room.message", "content" => %{"body" => "yeah"}},
-               %{"type" => "m.room.message", "content" => %{"body" => "so you're just using me to test something?"}}
+               %{type: "m.room.message", content: %{"body" => "wow"}},
+               %{type: "m.room.message", content: %{"body" => "yeah"}},
+               %{type: "m.room.message", content: %{"body" => "so you're just using me to test something?"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, :backward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, next, :limit, filter: filter)
 
       assert 1 = length(state)
 
       assert [
-               %{"type" => "m.room.message", "content" => %{"body" => "there we go"}},
-               %{"type" => "m.room.name", "content" => %{"name" => "Get Messages Pagination"}},
-               %{"type" => "m.room.message", "content" => %{"body" => "wait yes I do"}}
+               %{type: "m.room.message", content: %{"body" => "there we go"}},
+               %{type: "m.room.name", content: %{"name" => "Get Messages Pagination"}},
+               %{type: "m.room.message", content: %{"body" => "wait yes I do"}}
              ] = chunk
 
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 30}}})
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
-               Timeline.get_messages(room_id, creator.id, :backward, next2, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, next2, :limit, filter: filter)
 
       refute is_map_key(response, :end)
 
@@ -683,20 +839,23 @@ defmodule RadioBeam.Room.TimelineTest do
       user: %{id: user_id}
     } do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
-      %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} = Timeline.sync([room_id], creator.id, filter: filter)
+      device = Fixtures.device(creator.id)
+
+      %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} =
+        Timeline.sync([room_id], creator.id, device.id, filter: filter)
 
       %{
         sync: {:partial, prev_batch},
         events: [
-          %{"type" => "m.room.message"},
-          %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
-          %{"type" => "m.room.member"}
+          %{type: "m.room.message"},
+          %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
+          %{type: "m.room.member"}
         ]
       } =
         timeline
 
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch} = response} =
-               Timeline.get_messages(room_id, creator.id, :forward, prev_batch, :limit)
+               Timeline.get_messages(room_id, creator.id, device.id, :forward, prev_batch, :limit)
 
       assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
                Enum.sort(state)
@@ -704,168 +863,171 @@ defmodule RadioBeam.Room.TimelineTest do
       refute is_map_key(response, :end)
 
       assert [
-               %{"type" => "m.room.message"},
-               %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
-               %{"type" => "m.room.member"}
+               %{type: "m.room.message"},
+               %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
+               %{type: "m.room.member"}
              ] = chunk
 
       Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
 
       assert {:ok, %{chunk: chunk, state: _state, start: ^prev_batch} = response} =
-               Timeline.get_messages(room_id, creator.id, :forward, prev_batch, :limit)
+               Timeline.get_messages(room_id, creator.id, device.id, :forward, prev_batch, :limit)
 
       refute is_map_key(response, :end)
 
       assert [
-               %{"type" => "m.room.message"},
-               %{"type" => "m.room.message", "content" => %{"body" => "I thought I was more than that to you"}},
-               %{"type" => "m.room.member"},
-               %{"type" => "m.room.message", "content" => %{"body" => "welp"}}
+               %{type: "m.room.message"},
+               %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
+               %{type: "m.room.member"},
+               %{type: "m.room.message", content: %{"body" => "welp"}}
              ] = chunk
     end
 
     test "can successfully paginate forward from the beginning of a room", %{room_id: room_id, creator: creator} do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
+      device = Fixtures.device(creator.id)
 
       assert {:ok, %{chunk: chunk, state: state, start: :first, end: next}} =
-               Timeline.get_messages(room_id, creator.id, :forward, :first, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :forward, :first, :limit, filter: filter)
 
       assert 2 = length(state)
 
       assert [
-               %{"type" => "m.room.create"},
-               %{"type" => "m.room.member"},
-               %{"type" => "m.room.power_levels"},
-               %{"type" => "m.room.join_rules"},
-               %{"type" => "m.room.history_visibility"},
-               %{"type" => "m.room.guest_access"},
-               %{"type" => "m.room.member", "content" => %{"membership" => "invite"}},
-               %{"type" => "m.room.member", "content" => %{"membership" => "join"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "sup"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "yo"}}
+               %{type: "m.room.create"},
+               %{type: "m.room.member"},
+               %{type: "m.room.power_levels"},
+               %{type: "m.room.join_rules"},
+               %{type: "m.room.history_visibility"},
+               %{type: "m.room.guest_access"},
+               %{type: "m.room.member", content: %{"membership" => "invite"}},
+               %{type: "m.room.member", content: %{"membership" => "join"}},
+               %{content: %{"msgtype" => "m.text", "body" => "sup"}},
+               %{content: %{"msgtype" => "m.text", "body" => "yo"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, :forward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :forward, next, :limit, filter: filter)
 
       assert 2 = length(state)
 
       assert [
-               %{"content" => %{"msgtype" => "m.text", "body" => "what is this room about"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "idk"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}},
-               %{"content" => %{"name" => "Get Messages Pagination"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "?"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}}
+               %{content: %{"msgtype" => "m.text", "body" => "what is this room about"}},
+               %{content: %{"msgtype" => "m.text", "body" => "idk"}},
+               %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}},
+               %{content: %{"name" => "Get Messages Pagination"}},
+               %{content: %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
+               %{content: %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{content: %{"msgtype" => "m.text", "body" => "wow"}},
+               %{content: %{"msgtype" => "m.text", "body" => "?"}},
+               %{content: %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
-               Timeline.get_messages(room_id, creator.id, :forward, next2, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :forward, next2, :limit, filter: filter)
 
       assert 1 = length(state)
       refute is_map_key(response, :end)
-      [%{"type" => "m.room.member", "content" => %{"membership" => "leave"}}] = chunk
+      [%{type: "m.room.member", content: %{"membership" => "leave"}}] = chunk
     end
 
     test "can successfully paginate backward from the end of a room", %{room_id: room_id, creator: creator} do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
+      device = Fixtures.device(creator.id)
 
       assert {:ok, %{chunk: chunk, state: state, start: :last, end: next}} =
-               Timeline.get_messages(room_id, creator.id, :backward, :last, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, :last, :limit, filter: filter)
 
       assert 2 = length(state)
 
       assert [
-               %{"type" => "m.room.member", "content" => %{"membership" => "leave"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "?"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}},
-               %{"content" => %{"name" => "Get Messages Pagination"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "idk"}}
+               %{type: "m.room.member", content: %{"membership" => "leave"}},
+               %{content: %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}},
+               %{content: %{"msgtype" => "m.text", "body" => "?"}},
+               %{content: %{"msgtype" => "m.text", "body" => "wow"}},
+               %{content: %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
+               %{content: %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{content: %{"name" => "Get Messages Pagination"}},
+               %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}},
+               %{content: %{"msgtype" => "m.text", "body" => "idk"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, :backward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, next, :limit, filter: filter)
 
       assert 2 = length(state)
 
       assert [
-               %{"content" => %{"msgtype" => "m.text", "body" => "what is this room about"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "yo"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "sup"}},
-               %{"type" => "m.room.member", "content" => %{"membership" => "join"}},
-               %{"type" => "m.room.member", "content" => %{"membership" => "invite"}},
-               %{"type" => "m.room.guest_access"},
-               %{"type" => "m.room.history_visibility"},
-               %{"type" => "m.room.join_rules"},
-               %{"type" => "m.room.power_levels"},
-               %{"type" => "m.room.member"}
+               %{content: %{"msgtype" => "m.text", "body" => "what is this room about"}},
+               %{content: %{"msgtype" => "m.text", "body" => "yo"}},
+               %{content: %{"msgtype" => "m.text", "body" => "sup"}},
+               %{type: "m.room.member", content: %{"membership" => "join"}},
+               %{type: "m.room.member", content: %{"membership" => "invite"}},
+               %{type: "m.room.guest_access"},
+               %{type: "m.room.history_visibility"},
+               %{type: "m.room.join_rules"},
+               %{type: "m.room.power_levels"},
+               %{type: "m.room.member"}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
-               Timeline.get_messages(room_id, creator.id, :backward, next2, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, next2, :limit, filter: filter)
 
       assert 1 = length(state)
       refute is_map_key(response, :end)
-      [%{"type" => "m.room.create"}] = chunk
+      [%{type: "m.room.create"}] = chunk
     end
 
     test "can successfully paginate in either direction froma prev_batch_token", %{room_id: room_id, creator: creator} do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
+      device = Fixtures.device(creator.id)
 
       %{rooms: %{join: %{^room_id => %{timeline: %{sync: {:partial, prev_batch}}}}}} =
-        Timeline.sync([room_id], creator.id, filter: filter)
+        Timeline.sync([room_id], creator.id, device.id, filter: filter)
 
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
-               Timeline.get_messages(room_id, creator.id, :backward, prev_batch, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, prev_batch, :limit, filter: filter)
 
       assert 2 = length(state)
 
       assert [
-               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}}
+               %{content: %{"msgtype" => "m.text", "body" => "wow"}},
+               %{content: %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, :backward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :backward, next, :limit, filter: filter)
 
       assert 1 = length(state)
 
       assert [
-               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}},
-               %{"content" => %{"name" => "Get Messages Pagination"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}}
+               %{content: %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{content: %{"name" => "Get Messages Pagination"}},
+               %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2, end: ^next}} =
-               Timeline.get_messages(room_id, creator.id, :forward, next2, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :forward, next2, :limit, filter: filter)
 
       assert 1 = length(state)
 
       assert [
-               %{"content" => %{"msgtype" => "m.text", "body" => "wait yes I do"}},
-               %{"content" => %{"name" => "Get Messages Pagination"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "there we go"}}
+               %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}},
+               %{content: %{"name" => "Get Messages Pagination"}},
+               %{content: %{"msgtype" => "m.text", "body" => "there we go"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: ^prev_batch}} =
-               Timeline.get_messages(room_id, creator.id, :forward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, :forward, next, :limit, filter: filter)
 
       assert 2 = length(state)
 
       assert [
-               %{"content" => %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "yeah"}},
-               %{"content" => %{"msgtype" => "m.text", "body" => "wow"}}
+               %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
+               %{content: %{"msgtype" => "m.text", "body" => "yeah"}},
+               %{content: %{"msgtype" => "m.text", "body" => "wow"}}
              ] = chunk
     end
 
@@ -893,7 +1055,9 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
       assert {:ok, %{chunk: [_one, _two], state: state}} =
-               Timeline.get_messages(room_id, user2.id, :backward, :last, :limit, filter: filter)
+               Timeline.get_messages(room_id, user2.id, Fixtures.device(user2.id).id, :backward, :last, :limit,
+                 filter: filter
+               )
 
       for id <- [user.id, user2.id] do
         assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))

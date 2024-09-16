@@ -31,7 +31,7 @@ defmodule RadioBeamWeb.SyncController do
     response =
       user.id
       |> Room.all_where_has_membership()
-      |> Timeline.sync(user.id, opts)
+      |> Timeline.sync(user.id, device.id, opts)
       |> put_account_data(user)
       |> put_to_device_messages(user.id, device.id, Keyword.get(opts, :since))
 
@@ -40,6 +40,7 @@ defmodule RadioBeamWeb.SyncController do
 
   def get_messages(conn, %{"room_id" => room_id}) do
     %User{} = user = conn.assigns.user
+    %Device{} = device = conn.assigns.device
     request = conn.assigns.request
 
     dir = Map.fetch!(request, "dir")
@@ -55,7 +56,7 @@ defmodule RadioBeamWeb.SyncController do
         {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
       end)
 
-    case Timeline.get_messages(room_id, user.id, dir, from, to, opts) do
+    case Timeline.get_messages(room_id, user.id, device.id, dir, from, to, opts) do
       {:ok, response} -> json(conn, response)
       {:error, error} -> handle_common_error(conn, error)
     end

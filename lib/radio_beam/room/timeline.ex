@@ -9,6 +9,7 @@ defmodule RadioBeam.Room.Timeline do
   alias Phoenix.PubSub
   alias RadioBeam.Room.Timeline.Core
   alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.PDU
   alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
@@ -33,9 +34,9 @@ defmodule RadioBeam.Room.Timeline do
   def complete(events), do: %__MODULE__{events: events, sync: :complete}
   def partial(events, token), do: %__MODULE__{events: events, sync: {:partial, token}}
 
-  def get_messages(room_id, user_id, direction, from, to, opts \\ [])
+  def get_messages(room_id, user_id, device_id, direction, from, to, opts \\ [])
 
-  def get_messages(%Room{} = room, user_id, direction, from, to, opts) do
+  def get_messages(%Room{} = room, user_id, device_id, direction, from, to, opts) do
     from_event_ids = parse_message_window_boundary(from, room, direction)
     to_event_ids = parse_message_window_boundary(to, room, direction)
 
@@ -51,24 +52,34 @@ defmodule RadioBeam.Room.Timeline do
 
     latest_joined_at_depth = Room.users_latest_join_depth(room.id, user_id)
 
-    case timeline(room.id, user_id, from_event_ids, to_event_ids, filter, latest_joined_at_depth, order) do
-      %__MODULE__{sync: {:partial, prev_batch}, events: events} ->
-        members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
-        events = events |> Enum.reverse() |> Core.format(filter, room.version)
-        # TOIMPL: add support for lazy_load_members and include_redundant_members
-        %{chunk: events, state: MapSet.to_list(members), start: from, end: prev_batch}
+    ignore_memberships_from =
+      if filter.state.memberships == :lazy do
+        known_membership_map = LazyLoadMembersCache.get([room.id], device_id)
+        Map.get(known_membership_map, room.id, [])
+      else
+        []
+      end
 
-      %__MODULE__{sync: :complete, events: events} ->
-        members = MapSet.new(events, &Map.fetch!(room.state, {"m.room.member", &1.sender}))
-        events = events |> Enum.reverse() |> Core.format(filter, room.version)
-        %{chunk: events, state: MapSet.to_list(members), start: from}
+    %__MODULE__{} =
+      timeline = timeline(room.id, user_id, from_event_ids, to_event_ids, filter, latest_joined_at_depth, order)
+
+    keys_to_take = timeline |> Core.all_sender_ids(except: ignore_memberships_from) |> Enum.map(&{"m.room.member", &1})
+    members = room.state |> Map.take(keys_to_take) |> Map.values()
+    events = timeline.events |> Enum.reverse() |> Core.format(filter, room.version)
+
+    case timeline.sync do
+      {:partial, prev_batch} ->
+        %{chunk: events, state: members, start: from, end: prev_batch}
+
+      :complete ->
+        %{chunk: events, state: members, start: from}
     end
   end
 
-  def get_messages(room_id, user_id, direction, from, to, opts) do
+  def get_messages(room_id, user_id, device_id, direction, from, to, opts) do
     case Memento.transaction(fn -> Memento.Query.read(Room, room_id) end) do
       {:ok, %Room{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "join"}}}} = room} ->
-        {:ok, get_messages(room, user_id, direction, from, to, opts)}
+        {:ok, get_messages(room, user_id, device_id, direction, from, to, opts)}
 
       _ ->
         {:error, :unauthorized}
@@ -86,7 +97,7 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _config_map = %{}, _event_ids = []}
-  def sync(room_ids, user_id, opts \\ []) do
+  def sync(room_ids, user_id, device_id, opts \\ []) do
     filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
 
     room_ids =
@@ -97,15 +108,19 @@ defmodule RadioBeam.Room.Timeline do
       end
 
     last_sync_rooms_to_pdus_map = opts |> Keyword.get(:since, :latest) |> parse_since_token()
+    known_membership_map = LazyLoadMembersCache.get(room_ids, device_id)
 
     PubSub.subscribe(PS, PS.invite_events(user_id))
 
     {rooms_sync, config_map, event_ids} =
       Enum.reduce(room_ids, @init_rooms_acc, fn room_id, {sync_acc, configs, event_ids} ->
         last_sync_pdus = Map.get(last_sync_rooms_to_pdus_map, room_id, :none)
+        known_memberships = Map.get(known_membership_map, room_id, MapSet.new())
 
-        case sync_one(room_id, user_id, last_sync_pdus, opts) do
+        case sync_one(room_id, user_id, last_sync_pdus, known_memberships, opts) do
           {:ok, tl_config, sync_result} ->
+            LazyLoadMembersCache.put(device_id, room_id, Core.all_sender_ids(sync_result, except: [user_id]))
+
             {put_in(sync_acc, [tl_config.room_sync_type, room_id], sync_result), Map.put(configs, room_id, tl_config),
              tl_config.sync_event_ids ++ event_ids}
 
@@ -141,7 +156,7 @@ defmodule RadioBeam.Room.Timeline do
     }
   end
 
-  defp sync_one(room_id, user_id, last_sync_pdus, opts) do
+  defp sync_one(room_id, user_id, last_sync_pdus, known_memberships, opts) do
     filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
 
     membership =
@@ -157,7 +172,9 @@ defmodule RadioBeam.Room.Timeline do
 
       membership when membership in ~w|ban join leave| ->
         full_state? = Keyword.get(opts, :full_state?, false)
-        timeline_config = make_config(room_id, user_id, membership, last_sync_pdus, filter, full_state?)
+
+        timeline_config =
+          make_config(room_id, user_id, membership, last_sync_pdus, filter, full_state?, known_memberships)
 
         case Core.sync_timeline(timeline_config, user_id) do
           :no_update -> {:no_update, timeline_config}
@@ -183,7 +200,7 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp make_config(room_id, user_id, membership, last_sync_pdus, filter, full_state?) do
+  defp make_config(room_id, user_id, membership, last_sync_pdus, filter, full_state?, known_memberships) do
     last_sync_event_ids = if last_sync_pdus == :none, do: [], else: Enum.map(last_sync_pdus, & &1.event_id)
 
     case membership do
@@ -199,6 +216,7 @@ defmodule RadioBeam.Room.Timeline do
           latest_joined_depth: room.depth,
           room: room,
           room_sync_type: :join,
+          known_memberships: known_memberships,
           sync_event_ids: room.latest_event_ids
         }
 
@@ -215,6 +233,7 @@ defmodule RadioBeam.Room.Timeline do
           latest_joined_depth: pdu.depth - 1,
           room: room,
           room_sync_type: :leave,
+          known_memberships: known_memberships,
           sync_event_ids: [user_leave_event_id]
         }
     end

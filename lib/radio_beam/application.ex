@@ -7,6 +7,8 @@ defmodule RadioBeam.Application do
 
   require Logger
 
+  alias RadioBeam.Room.Timeline.LazyLoadMembersCache
+
   @impl Application
   def start(_type, _args) do
     Logger.info("Initializing Mnesia...")
@@ -26,6 +28,8 @@ defmodule RadioBeam.Application do
       RadioBeam.Transaction,
       # Start the RoomSupervisor
       {DynamicSupervisor, name: RadioBeam.RoomSupervisor},
+      # Cache to reduce redundant membership events in /sync
+      LazyLoadMembersCache,
       # Start to serve requests, typically the last entry
       RadioBeamWeb.Endpoint
     ]

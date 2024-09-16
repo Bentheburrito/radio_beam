@@ -23,6 +23,7 @@ defmodule RadioBeam.Room do
 
   require Logger
 
+  alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias :radio_beam_room_queries, as: Queries
   alias Phoenix.PubSub
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
@@ -36,6 +37,7 @@ defmodule RadioBeam.Room do
   alias RadioBeam.User
 
   @type t() :: %__MODULE__{}
+  @type id() :: String.t()
 
   ### API ###
 
@@ -422,8 +424,13 @@ defmodule RadioBeam.Room do
       if pdu.type in @stripped_state_types,
         do: PubSub.broadcast(PS, PS.stripped_state_events(room.id), {:room_stripped_state, room.id, pdu})
 
-      if pdu.type == "m.room.member" and pdu.content["membership"] == "invite",
-        do: PubSub.broadcast(PS, PS.invite_events(pdu.state_key), {:room_invite, room.id, pdu})
+      if pdu.type == "m.room.member" do
+        if pdu.content["membership"] == "invite" do
+          PubSub.broadcast(PS, PS.invite_events(pdu.state_key), {:room_invite, room, pdu})
+        end
+
+        LazyLoadMembersCache.mark_dirty(room.id, pdu.state_key)
+      end
 
       {:reply, {:ok, pdu.event_id}, room}
     else

@@ -43,9 +43,9 @@ defmodule RadioBeam.MixProject do
   defp deps do
     [
       {:phoenix, "~> 1.7.11"},
-      {:phoenix_ecto, "~> 4.4"},
+      # {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.10"},
-      {:postgrex, ">= 0.0.0"},
+      # {:postgrex, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:swoosh, "~> 1.5"},
       {:finch, "~> 0.13"},

@@ -46,7 +46,7 @@ defmodule RadioBeam.Room.Timeline.Core do
       :no_update
     else
       get_senders = fn -> get_tl_senders(timeline.events, user_id) end
-      state_delta = build_state_delta(config, oldest_event, get_senders)
+      state_delta = build_state_delta(config, oldest_event, get_senders, config.known_memberships)
 
       cond do
         Enum.empty?(state_delta) and
@@ -65,7 +65,14 @@ defmodule RadioBeam.Room.Timeline.Core do
 
   def format(timeline, filter, room_version) do
     format = String.to_existing_atom(filter.format)
-    Enum.map(timeline, &(&1 |> PDU.to_event(room_version, :strings, format) |> Filter.take_fields(filter.fields)))
+    Enum.map(timeline, &(&1 |> PDU.to_event(room_version, :atoms, format) |> Filter.take_fields(filter.fields)))
+  end
+
+  def all_sender_ids(%{timeline: %Timeline{} = tl}, opts), do: all_sender_ids(tl, opts)
+
+  def all_sender_ids(%Timeline{} = timeline, opts) do
+    except = Keyword.get(opts, :except, [])
+    timeline.events |> Stream.map(& &1.sender) |> Stream.reject(&(&1 in except)) |> Stream.uniq() |> Enum.to_list()
   end
 
   def handle_room_message(msg, config_map, user_id) do
@@ -87,15 +94,14 @@ defmodule RadioBeam.Room.Timeline.Core do
         # see TODO in Timeline.sync_one
         :keep_waiting
 
-      {:room_invite, room_id, pdu} ->
-        tl_config = Map.fetch!(config_map, room_id)
-        event = PDU.to_event(pdu, tl_config.room.version, :strings)
-        room = Room.Core.update_room_state(tl_config.room, event)
+      {:room_invite, room, pdu} ->
+        event = PDU.to_event(pdu, room.version, :strings)
+        room = Room.Core.update_room_state(room, event)
         {%{invite: %{room.id => %{invite_state: %{events: Room.stripped_state(room)}}}}, [pdu.event_id]}
     end
   end
 
-  def build_state_delta(config, oldest_event, get_senders) do
+  def build_state_delta(config, oldest_event, get_senders, known_memberships) do
     if allowed_room?(config.room.id, config.filter.state.rooms) do
       state_at_last_sync =
         unless config.last_sync_pdus == :none or config.full_state? do
@@ -111,19 +117,20 @@ defmodule RadioBeam.Room.Timeline.Core do
           end)
         end
 
-      state_delta(state_at_last_sync, oldest_event, config.filter.state, get_senders)
+      senders = if config.filter.state.memberships == :all, do: [], else: get_senders.()
+      state_delta(state_at_last_sync, oldest_event, config.filter.state, senders, known_memberships)
     else
       []
     end
   end
 
-  defp state_delta(nil, tl_start_event, filter, get_senders) do
+  defp state_delta(nil, tl_start_event, filter, senders, known_memberships) do
     tl_start_event.prev_state
     |> Stream.map(fn {_, event} -> event end)
-    |> Enum.filter(&passes_filter?(&1, filter, get_senders))
+    |> Enum.filter(&include_state_event?(&1, filter, senders, known_memberships))
   end
 
-  defp state_delta(state_at_last_sync, tl_start_event, filter, get_senders) do
+  defp state_delta(state_at_last_sync, tl_start_event, filter, senders, known_memberships) do
     for {k, %{"event_id" => cur_event_id} = cur_event} <- tl_start_event.prev_state, reduce: [] do
       acc ->
         case get_in(state_at_last_sync, [k, "event_id"]) do
@@ -131,7 +138,7 @@ defmodule RadioBeam.Room.Timeline.Core do
             acc
 
           _cur_event_id_or_nil ->
-            if passes_filter?(cur_event, filter, get_senders) do
+            if include_state_event?(cur_event, filter, senders, known_memberships) do
               [cur_event | acc]
             else
               acc
@@ -140,9 +147,17 @@ defmodule RadioBeam.Room.Timeline.Core do
     end
   end
 
-  defp passes_filter?(event, filter, get_senders) do
-    (filter.memberships not in [:lazy, :lazy_redundant] or event["sender"] in get_senders.()) and
+  defp include_state_event?(event, filter, senders, known_memberships) do
+    (event["type"] != "m.room.member" or include_membership_event?(event, filter, senders, known_memberships)) and
       :radio_beam_room_queries.passes_filter(filter, event["type"], event["sender"], event["content"])
+  end
+
+  defp include_membership_event?(event, filter, senders, known_memberships) do
+    case filter.memberships do
+      :lazy -> event["state_key"] not in known_memberships and event["state_key"] in senders
+      :lazy_redundant -> event["state_key"] in senders
+      :all -> true
+    end
   end
 
   defp get_tl_senders(events, user_id) do

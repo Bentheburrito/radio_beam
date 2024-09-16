@@ -1,21 +1,7 @@
 defmodule RadioBeam.Room.Timeline.Filter do
   @moduledoc """
-  notes reading "6.1. Lazy-loading room members":
-  - lazy_load_members should be pretty straight forward, although annoying to
-    have to do extra processing on pdu.prev_state...
-  - the whole "the server MAY assume that clients will remember membership 
-    events they have already been sent" makes sense, though still sounds messy
-    and will be impl'd alongside `include_redundant_members` much later. 
-    However, an idea of an impl might be:
-    - bring in Cachex, add a `RoomMemberCache` to sup tree, which maps access
-      tokens to {room_id, user_id} pairs, such that an entry implies the 
-      syncing user/device has already been sent the membership event for that 
-      user. A shortish TLL for each entry
-    - /sync and other endpoints put entries in the cache as they reply with 
-      membership events.
-    - we'll need some other process to listen to a PubSub topic of membership
-      updates, and remove cache entries as appropriate
-  - 
+  A client-defined filter describing what kinds of events to include in an
+  event timeline.
   """
   @types [id: :string, user_id: :string, definition: :map]
   @attrs Keyword.keys(@types)
