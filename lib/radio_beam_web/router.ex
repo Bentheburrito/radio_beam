@@ -5,6 +5,7 @@ defmodule RadioBeamWeb.Router do
     AccountController,
     AuthController,
     ClientController,
+    ContentRepoController,
     FilterController,
     HomeserverInfoController,
     LoginController,
@@ -29,8 +30,17 @@ defmodule RadioBeamWeb.Router do
   scope "/_matrix" do
     pipe_through :spec
 
+    # these will be deprecated in the future
+    scope "/media/v3" do
+      post "/upload", ContentRepoController, :upload
+    end
+
     scope "/client" do
       get "/versions", HomeserverInfoController, :versions
+
+      scope "/v1" do
+        get "/media/config", ContentRepoController, :config
+      end
 
       scope "/v3" do
         get "/capabilities", HomeserverInfoController, :capabilities

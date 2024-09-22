@@ -30,4 +30,5 @@ radio_beam-*.tar
 .DS_Store
 .env
 .mnesia
+priv/static/media
 
