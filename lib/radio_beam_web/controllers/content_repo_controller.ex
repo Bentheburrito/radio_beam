@@ -66,16 +66,15 @@ defmodule RadioBeamWeb.ContentRepoController do
 
   defp parse_body(conn, limit), do: parse_body(conn, limit, "")
 
-  defp parse_body(conn, limit, _body_io_list) when limit < 0 do
-    conn
-    |> put_status(413)
-    |> json(Errors.forbidden("Cannot upload files larger than #{ContentRepo.friendly_bytes(limit)}"))
-  end
-
   defp parse_body(conn, limit, body_io_list) do
     # TODO: should stream this to a temp file like Plug.Upload does - keeping large
     #       uploads in memory is bad
     case read_body(conn) do
+      {_, body, conn} when byte_size(body) > limit ->
+        conn
+        |> put_status(413)
+        |> json(Errors.forbidden("Cannot upload files larger than #{ContentRepo.friendly_bytes(limit)}"))
+
       {:ok, body, conn} ->
         {:ok, [body_io_list | [body]], conn}
 

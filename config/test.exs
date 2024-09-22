@@ -16,10 +16,11 @@ import Config
 config :radio_beam,
   server_name: "test-server.dev",
   content_repo: %{
-    allowed_mimes: ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv|,
+    allowed_mimes:
+      ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
     dir: :default,
-    single_file_max_bytes: 1_000_000,
-    remote_media: %{max_bytes: 2_000_000},
+    single_file_max_bytes: 1_000,
+    remote_media: %{max_bytes: 2_000},
     users: %{max_bytes: 4_000, max_files: 5}
   }
 

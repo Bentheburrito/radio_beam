@@ -5,14 +5,10 @@ defmodule RadioBeam.ContentRepoTest do
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload
 
-  defp random_string(num_bytes) do
-    for _i <- 1..num_bytes, into: "", do: <<:rand.uniform(26) + ?A - 1>>
-  end
-
   describe "save_upload/3" do
     setup do
       user = Fixtures.user()
-      iodata = random_string(20)
+      iodata = Fixtures.random_string(20)
       {:ok, mxc} = MatrixContentURI.new()
       %Upload{} = upload = Upload.new(mxc, "image/jpg", user, iodata)
       %{upload: upload, iodata: iodata, user: user}
@@ -35,13 +31,13 @@ defmodule RadioBeam.ContentRepoTest do
       num_init_files = 4
 
       for _i <- 1..num_init_files do
-        iodata = random_string(div(max_bytes, num_init_files))
+        iodata = Fixtures.random_string(div(max_bytes, num_init_files))
         {:ok, mxc} = MatrixContentURI.new()
         %Upload{} = upload = Upload.new(mxc, "image/jpg", user, iodata)
         ContentRepo.save_upload(upload, iodata, tmp_dir)
       end
 
-      iodata = random_string(div(max_bytes, num_init_files))
+      iodata = Fixtures.random_string(div(max_bytes, num_init_files))
       {:ok, mxc} = MatrixContentURI.new()
       %Upload{} = upload = Upload.new(mxc, "image/jpg", user, iodata)
       assert {:error, {:quota_reached, :max_bytes}} = ContentRepo.save_upload(upload, iodata, tmp_dir)
@@ -57,7 +53,7 @@ defmodule RadioBeam.ContentRepoTest do
       max_files = ContentRepo.user_upload_limits().max_files
 
       for _i <- 1..max_files do
-        iodata = random_string(20)
+        iodata = Fixtures.random_string(20)
         {:ok, mxc} = MatrixContentURI.new()
         %Upload{} = upload = Upload.new(mxc, "image/jpg", user, iodata)
         ContentRepo.save_upload(upload, iodata, tmp_dir)

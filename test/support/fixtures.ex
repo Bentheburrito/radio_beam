@@ -21,4 +21,8 @@ defmodule Fixtures do
 
   def write!(%Device{} = device), do: Memento.transaction!(fn -> Device.persist(device) end)
   def write!(struct), do: Memento.transaction!(fn -> Memento.Query.write(struct) end)
+
+  def random_string(num_bytes) do
+    for _i <- 1..num_bytes, into: "", do: <<:rand.uniform(26) + ?A - 1>>
+  end
 end

@@ -23,7 +23,8 @@ config :radio_beam,
     "m.3pid_changes": %{enabled: false}
   },
   content_repo: %{
-    allowed_mimes: ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv|,
+    allowed_mimes:
+      ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
     dir: :default,
     # By default, a single file may not exceed 8MB
     single_file_max_bytes: 8_000_000,
