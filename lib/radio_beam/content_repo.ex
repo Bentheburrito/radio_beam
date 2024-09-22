@@ -6,6 +6,16 @@ defmodule RadioBeam.ContentRepo do
   def user_upload_limits, do: Application.fetch_env!(:radio_beam, :content_repo)[:users]
   def path(), do: Application.fetch_env!(:radio_beam, :content_repo)[:dir]
 
+  @doc """
+  Prints a user-friendly representation of bytes
+
+    iex> RadioBeam.ContentRepo.friendly_bytes(500)
+    "500 bytes"
+    iex> RadioBeam.ContentRepo.friendly_bytes(5_000_000)
+    "5MB"
+    iex> RadioBeam.ContentRepo.friendly_bytes(5_000_000_000)
+    "5GB"
+  """
   def friendly_bytes(bytes) when bytes < 1_000, do: "#{bytes} bytes"
   def friendly_bytes(bytes) when bytes < 1_000_000, do: "#{div(bytes, 1_000)}KB"
   def friendly_bytes(bytes) when bytes < 1_000_000_000, do: "#{div(bytes, 1_000_000)}MB"

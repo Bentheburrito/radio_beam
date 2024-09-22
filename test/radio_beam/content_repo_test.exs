@@ -1,5 +1,6 @@
 defmodule RadioBeam.ContentRepoTest do
   use ExUnit.Case, async: true
+  doctest RadioBeam.ContentRepo
 
   alias RadioBeam.ContentRepo
   alias RadioBeam.ContentRepo.MatrixContentURI
