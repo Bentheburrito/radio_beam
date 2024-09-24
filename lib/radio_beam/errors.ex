@@ -24,8 +24,16 @@ defmodule RadioBeam.Errors do
 
   def not_found(message \\ "Resource not found"), do: std_error_res("M_NOT_FOUND", message)
 
-  def limit_exceeded(message \\ "You have been making too many requests. Please wait before trying again"),
+  def limit_exceeded(
+        retry_after_ms \\ nil,
+        message \\ "You have been making too many requests. Please wait before trying again"
+      )
+
+  def limit_exceeded(nil, message),
     do: std_error_res("M_LIMIT_EXCEEDED", message)
+
+  def limit_exceeded(retry_after_ms, message) when is_integer(retry_after_ms) and retry_after_ms > 0,
+    do: "M_LIMIT_EXCEEDED" |> std_error_res(message) |> Map.put(:retry_after_ms, retry_after_ms)
 
   def unrecognized(message \\ "This homeserver does not implement that endpoint for the given HTTP method"),
     do: std_error_res("M_UNRECOGNIZED", message)

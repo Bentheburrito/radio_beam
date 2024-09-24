@@ -10,6 +10,13 @@ defmodule RadioBeam.ContentRepo.MatrixContentURI do
     end
   end
 
+  def new!(server_name \\ RadioBeam.server_name(), id \\ Ecto.UUID.generate()) do
+    case new(server_name, id) do
+      {:ok, mxc} -> mxc
+      {:error, error} -> raise error
+    end
+  end
+
   def parse("mxc://" <> _ = uri_string) do
     with %URI{scheme: "mxc", host: server_name, path: "/" <> id} <- URI.parse(uri_string) do
       new(server_name, id)

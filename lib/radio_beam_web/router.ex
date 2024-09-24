@@ -31,8 +31,9 @@ defmodule RadioBeamWeb.Router do
     pipe_through :spec
 
     # these will be deprecated in the future
-    scope "/media/v3" do
-      post "/upload", ContentRepoController, :upload
+    scope "/media" do
+      post "/v1/create", ContentRepoController, :create
+      post "/v3/upload", ContentRepoController, :upload
     end
 
     scope "/client" do

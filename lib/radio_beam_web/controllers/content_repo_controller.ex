@@ -30,10 +30,10 @@ defmodule RadioBeamWeb.ContentRepoController do
       end
 
     filename = Map.get(params, "filename", "Uploaded File")
-    server_name = RadioBeam.server_name()
 
     with {:ok, body_io_list, conn} <- parse_body(conn, ContentRepo.max_upload_size_bytes()) do
-      {:ok, mxc} = MatrixContentURI.new(server_name)
+      mxc = Map.get_lazy(conn.assigns, :mxc, fn -> MatrixContentURI.new!() end)
+
       %Upload{} = upload = Upload.new(mxc, content_type, user, body_io_list, filename)
 
       case ContentRepo.save_upload(upload, body_io_list) do
@@ -61,6 +61,30 @@ defmodule RadioBeamWeb.ContentRepoController do
           |> put_status(500)
           |> json(Errors.unknown(@unknown_error_msg))
       end
+    end
+  end
+
+  def create(conn, _params) do
+    # check if user already has <config value max num> pending uploads
+    %User{} = user = conn.assigns.user
+    mxc = MatrixContentURI.new!()
+
+    case ContentRepo.reserve(mxc, user) do
+      {:ok, upload} ->
+        json(conn, %{
+          content_uri: mxc,
+          expires_in: DateTime.to_unix(upload.inserted_at, :millisecond) + ContentRepo.unused_mxc_uris_expire_in_ms()
+        })
+
+      {:error, {:quota_reached, :max_pending}} ->
+        conn
+        |> put_status(429)
+        |> json(
+          Errors.limit_exceeded(
+            ContentRepo.unused_mxc_uris_expire_in_ms(),
+            "You have too many pending uploads. Ensure all previous uploads succeed before trying again"
+          )
+        )
     end
   end
 

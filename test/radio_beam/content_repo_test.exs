@@ -6,6 +6,29 @@ defmodule RadioBeam.ContentRepoTest do
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload
 
+  describe "reserve/2" do
+    setup do
+      user = Fixtures.user()
+      {:ok, mxc} = MatrixContentURI.new()
+      %{user: user, mxc: mxc}
+    end
+
+    test "succeeds with an :ok tuple of a pending upload", %{user: %{id: user_id} = user, mxc: mxc} do
+      assert {:ok, %Upload{id: ^mxc, sha256: :pending, uploaded_by_id: ^user_id}} = ContentRepo.reserve(mxc, user)
+    end
+
+    test "errors when the mxc has already been reserved", %{user: user, mxc: mxc} do
+      {:ok, _} = ContentRepo.reserve(mxc, user)
+      assert {:error, :already_reserved} = ContentRepo.reserve(mxc, user)
+    end
+
+    test "errors when max pending uploads quota is reached", %{user: user, mxc: mxc} do
+      %{max_pending: max_pending} = ContentRepo.user_upload_limits()
+      for _i <- 1..max_pending, do: ContentRepo.reserve(MatrixContentURI.new!(), user)
+      assert {:error, {:quota_reached, :max_pending}} = ContentRepo.reserve(mxc, user)
+    end
+  end
+
   describe "save_upload/3" do
     setup do
       user = Fixtures.user()

@@ -1,10 +1,13 @@
 defmodule RadioBeam.ContentRepo do
+  alias RadioBeam.User
+  alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload
 
-  def allowed_mimes, do: Application.fetch_env!(:radio_beam, :content_repo)[:allowed_mimes]
-  def max_upload_size_bytes, do: Application.fetch_env!(:radio_beam, :content_repo)[:single_file_max_bytes]
-  def user_upload_limits, do: Application.fetch_env!(:radio_beam, :content_repo)[:users]
-  def path(), do: Application.fetch_env!(:radio_beam, :content_repo)[:dir]
+  def allowed_mimes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:allowed_mimes]
+  def max_upload_size_bytes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:single_file_max_bytes]
+  def unused_mxc_uris_expire_in_ms, do: Application.fetch_env!(:radio_beam, __MODULE__)[:unused_mxc_uris_expire_in_ms]
+  def user_upload_limits, do: Application.fetch_env!(:radio_beam, __MODULE__)[:users]
+  def path(), do: Application.fetch_env!(:radio_beam, __MODULE__)[:dir]
 
   @doc """
   Prints a user-friendly representation of bytes
@@ -20,6 +23,25 @@ defmodule RadioBeam.ContentRepo do
   def friendly_bytes(bytes) when bytes < 1_000_000, do: "#{div(bytes, 1_000)}KB"
   def friendly_bytes(bytes) when bytes < 1_000_000_000, do: "#{div(bytes, 1_000_000)}MB"
   def friendly_bytes(bytes), do: "#{div(bytes, 1_000_000_000)}GB"
+
+  # TODO: a periodic job should clean up expired reserved URIs
+  def reserve(%MatrixContentURI{} = mxc, %User{} = reserver) do
+    %{max_pending: max_pending} = user_upload_limits()
+
+    fn ->
+      cond do
+        Upload.get_num_pending_uploadsT(reserver.id) >= max_pending -> {:quota_reached, :max_pending}
+        not is_nil(Upload.getT(mxc)) -> :already_reserved
+        :else -> mxc |> Upload.new_pending(reserver) |> Memento.Query.write()
+      end
+    end
+    |> Memento.transaction()
+    |> case do
+      {:ok, %Upload{} = upload} -> {:ok, upload}
+      {:ok, error} -> {:error, error}
+      result -> result
+    end
+  end
 
   def save_upload(%Upload{} = upload, iodata, path \\ path()) do
     fn ->

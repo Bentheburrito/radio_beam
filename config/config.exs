@@ -22,24 +22,28 @@ config :radio_beam,
     "m.set_avatar_url": %{enabled: false},
     "m.3pid_changes": %{enabled: false}
   },
-  content_repo: %{
-    allowed_mimes:
-      ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
-    dir: :default,
-    # By default, a single file may not exceed 8MB
-    single_file_max_bytes: 8_000_000,
-    # By default, only cache 200MB of remote media
-    remote_media: %{max_bytes: 200_000_000},
-    # By default, each user can only upload a total of 50MB or 50 files 
-    # (whichever limit is reached first)
-    users: %{max_bytes: 50_000_000, max_files: 50}
-  },
   generators: [timestamp_type: :utc_datetime, binary_id: true],
   # TOIMPL: m.login.token
   login_types: %{flows: [%{type: "m.login.password"}]},
   max_events: [timeline: 200, state: 100],
   registration_enabled: true,
   versions: %{unstable_features: %{}, versions: ["v1.8", "v1.9", "v1.10", "v1.11"]}
+
+config :radio_beam, RadioBeam.ContentRepo,
+  allowed_mimes:
+    ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
+  dir: :default,
+  # By default, a single file may not exceed 8MB
+  single_file_max_bytes: 8_000_000,
+  # By default, only cache 200MB of remote media
+  remote_media: %{max_bytes: 200_000_000},
+  # "The recommended default expiration is 24 hours which should be enough time
+  # to accommodate users on poor connection who find a better connection to
+  # complete the upload"
+  unused_mxc_uris_expire_in_ms: :timer.hours(24),
+  # By default, each user can only upload a total of 50MB or 50 files 
+  # (whichever limit is reached first)
+  users: %{max_bytes: 50_000_000, max_files: 50, max_pending: 5}
 
 # Configures the endpoint
 config :radio_beam, RadioBeamWeb.Endpoint,

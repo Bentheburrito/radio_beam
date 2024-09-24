@@ -90,4 +90,23 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       assert error =~ "uploaded too many files"
     end
   end
+
+  describe "create/2" do
+    test "creates and reserves a new MXC (200)", %{conn: conn} do
+      conn = post(conn, ~p"/_matrix/media/v1/create", %{})
+
+      server_name = RadioBeam.server_name()
+      assert %{"content_uri" => "mxc://" <> ^server_name <> "/" <> _} = json_response(conn, 200)
+    end
+
+    test "returns M_LIMIT_EXCEEDED (429) when the user has too many pending uploads", %{conn: conn, user: user} do
+      %{max_pending: max_pending} = ContentRepo.user_upload_limits()
+      for _i <- 1..max_pending, do: ContentRepo.reserve(MatrixContentURI.new!(), user)
+
+      conn = post(conn, ~p"/_matrix/media/v1/create", %{})
+
+      assert %{"errcode" => "M_LIMIT_EXCEEDED", "error" => error} = json_response(conn, 429)
+      assert error =~ "too many pending uploads"
+    end
+  end
 end
