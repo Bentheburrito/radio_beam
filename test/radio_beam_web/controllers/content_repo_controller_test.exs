@@ -23,7 +23,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     end
   end
 
-  describe "upload/2" do
+  describe "upload/2 (POST, no reservation)" do
     test "accepts (200) an appropriately sized upload of an accepted type", %{conn: conn} do
       conn =
         conn
@@ -36,7 +36,6 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
     test "accepts (200) an appropriately sized upload with a default content type", %{conn: conn} do
       conn = post(conn, ~p"/_matrix/media/v3/upload", nil)
-      # dispatch(nil, nil, nil, nil)
       server_name = RadioBeam.server_name()
       assert %{"content_uri" => "mxc://" <> ^server_name <> "/" <> _} = json_response(conn, 200)
     end
@@ -88,6 +87,45 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "uploaded too many files"
+    end
+  end
+
+  describe "upload/2 (PUT, MXC URI reserved previously)" do
+    setup %{user: user} do
+      mxc = MatrixContentURI.new!()
+      {:ok, _upload} = ContentRepo.reserve(mxc, user)
+      %{mxc: mxc}
+    end
+
+    test "accepts (200) an appropriately sized upload with a previously reserved MXC URI", %{conn: conn, mxc: mxc} do
+      conn =
+        conn
+        |> put_req_header("content-type", "text/csv")
+        |> put(~p"/_matrix/media/v3/upload/#{mxc.server_name}/#{mxc.id}", "A,B,C\nval1,val2,val3")
+
+      mxc_str = to_string(mxc)
+      assert %{"content_uri" => ^mxc_str} = json_response(conn, 200)
+    end
+
+    test "will not use a supplied mxc that was reserved by someone else", %{conn: conn} do
+      user = Fixtures.user()
+      mxc = MatrixContentURI.new!()
+      {:ok, _upload} = ContentRepo.reserve(mxc, user)
+
+      conn = put(conn, ~p"/_matrix/media/v3/upload/#{mxc.server_name}/#{mxc.id}", nil)
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "must reserve a content URI"
+    end
+
+    test "will not use a supplied mxc that was not reserved", %{conn: conn} do
+      conn = put(conn, ~p"/_matrix/media/v3/upload/localhost/abcdef3452", nil)
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "must reserve a content URI"
+    end
+
+    test "rejects (400) improperly formatted MXCs", %{conn: conn} do
+      conn = put(conn, ~p"/_matrix/media/v3/upload/localhost/wait+why-all%the*math_symbols", nil)
+      assert %{"errcode" => "M_BAD_PARAM", "error" => "Invalid content URI"} = json_response(conn, 400)
     end
   end
 

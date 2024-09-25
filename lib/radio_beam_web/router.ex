@@ -34,6 +34,7 @@ defmodule RadioBeamWeb.Router do
     scope "/media" do
       post "/v1/create", ContentRepoController, :create
       post "/v3/upload", ContentRepoController, :upload
+      put "/v3/upload/:server_name/:media_id", ContentRepoController, :upload
     end
 
     scope "/client" do

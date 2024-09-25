@@ -18,6 +18,19 @@ defmodule RadioBeamWeb.ContentRepoController do
     json(conn, %{"m.upload.size" => ContentRepo.max_upload_size_bytes()})
   end
 
+  def upload(conn, %{"server_name" => server_name, "media_id" => media_id}) do
+    %User{id: uploader_id} = conn.assigns.user
+
+    with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
+         {:ok, %Upload{id: ^mxc, sha256: :pending, uploaded_by_id: ^uploader_id}} <- Upload.get(mxc) do
+      conn |> assign(:mxc, mxc) |> upload(%{})
+    else
+      {:error, :not_found} -> conn |> put_status(403) |> json(Errors.forbidden("You must reserve a content URI first"))
+      {:error, _error} -> conn |> put_status(400) |> json(Errors.endpoint_error(:bad_param, "Invalid content URI"))
+      {:ok, %Upload{}} -> conn |> put_status(403) |> json(Errors.forbidden("You must reserve a content URI first"))
+    end
+  end
+
   @unknown_error_msg "An unknown error has occurred while uploading your file - please try again"
   @too_many_uploads_msg "You have uploaded too many files. Contact the server admin if you believe this is a mistake."
   def upload(conn, params) do

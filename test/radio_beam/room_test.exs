@@ -1,5 +1,6 @@
 defmodule RadioBeam.RoomTest do
   use ExUnit.Case, async: true
+  doctest RadioBeam.Room.InstantMessaging
 
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.PDU

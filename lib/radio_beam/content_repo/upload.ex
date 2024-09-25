@@ -48,8 +48,8 @@ defmodule RadioBeam.ContentRepo.Upload do
   end
 
   def all_user_upload_sizes_ms("@" <> _ = uploaded_by_id) do
-    match_head = {__MODULE__, :"$2", :"$1", :_, :_, :_, :_, uploaded_by_id}
-    [{match_head, [{:"=/=", :"$2", :pending}], [:"$1"]}]
+    match_head = {__MODULE__, :_, :"$1", :_, :_, :_, :_, uploaded_by_id}
+    [{match_head, [{:"=/=", :"$1", :pending}], [:"$1"]}]
   end
 
   def get_num_pending_uploadsT("@" <> _ = uploaded_by_id) do
