@@ -25,9 +25,10 @@ defmodule RadioBeamWeb.ContentRepoController do
          {:ok, %Upload{id: ^mxc, sha256: :pending, uploaded_by_id: ^uploader_id}} <- Upload.get(mxc) do
       conn |> assign(:mxc, mxc) |> upload(%{})
     else
-      {:error, :not_found} -> conn |> put_status(403) |> json(Errors.forbidden("You must reserve a content URI first"))
+      {:error, :not_found} -> must_reserve(conn)
       {:error, _error} -> conn |> put_status(400) |> json(Errors.endpoint_error(:bad_param, "Invalid content URI"))
-      {:ok, %Upload{}} -> conn |> put_status(403) |> json(Errors.forbidden("You must reserve a content URI first"))
+      {:ok, %Upload{sha256: :pending}} -> must_reserve(conn)
+      {:ok, %Upload{}} -> cannot_overwrite_media(conn)
     end
   end
 
@@ -58,10 +59,11 @@ defmodule RadioBeamWeb.ContentRepoController do
           |> put_status(403)
           |> json(Errors.forbidden("This homeserver does not allow files of that kind"))
 
+        {:error, :already_uploaded} ->
+          cannot_overwrite_media(conn)
+
         {:error, {:quota_reached, quota_kind}} ->
-          Logger.info(
-            "MEDIA QUOTA REACHED #{quota_kind}: #{user} tried to upload a file after reaching their upload limit"
-          )
+          Logger.info("MEDIA QUOTA REACHED #{quota_kind}: #{user} tried to upload a file after reaching a limit")
 
           conn
           |> put_status(403)
@@ -126,4 +128,12 @@ defmodule RadioBeamWeb.ContentRepoController do
         |> json(Errors.unknown(@unknown_error_msg))
     end
   end
+
+  defp cannot_overwrite_media(conn) do
+    conn
+    |> put_status(409)
+    |> json(Errors.endpoint_error(:cannot_overwrite_media, "A file already exists under this URI"))
+  end
+
+  defp must_reserve(conn), do: conn |> put_status(403) |> json(Errors.forbidden("You must reserve a content URI first"))
 end

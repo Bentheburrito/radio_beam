@@ -93,8 +93,8 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
   describe "upload/2 (PUT, MXC URI reserved previously)" do
     setup %{user: user} do
       mxc = MatrixContentURI.new!()
-      {:ok, _upload} = ContentRepo.reserve(mxc, user)
-      %{mxc: mxc}
+      {:ok, upload} = ContentRepo.reserve(mxc, user)
+      %{mxc: mxc, upload: upload}
     end
 
     test "accepts (200) an appropriately sized upload with a previously reserved MXC URI", %{conn: conn, mxc: mxc} do
@@ -121,6 +121,19 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       conn = put(conn, ~p"/_matrix/media/v3/upload/localhost/abcdef3452", nil)
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "must reserve a content URI"
+    end
+
+    test "rejects (409) when an upload has already used the given MXC URI", %{
+      conn: conn,
+      upload: upload,
+      mxc: mxc,
+      user: user
+    } do
+      upload = Upload.new(upload.id, "text/csv", user, "abcd")
+      {:ok, _} = ContentRepo.save_upload(upload, "abcd")
+      conn = put(conn, ~p"/_matrix/media/v3/upload/#{mxc.server_name}/#{mxc.id}", nil)
+      assert %{"errcode" => "M_CANNOT_OVERWRITE_MEDIA", "error" => error} = json_response(conn, 409)
+      assert error =~ "file already exists under this URI"
     end
 
     test "rejects (400) improperly formatted MXCs", %{conn: conn} do

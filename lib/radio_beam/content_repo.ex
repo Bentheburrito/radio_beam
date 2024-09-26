@@ -45,7 +45,8 @@ defmodule RadioBeam.ContentRepo do
 
   def save_upload(%Upload{} = upload, iodata, path \\ path()) do
     fn ->
-      with :ok <- validate_perms(upload.uploaded_by_id, upload.byte_size),
+      with :ok <- validate_available(upload.id),
+           :ok <- validate_perms(upload.uploaded_by_id, upload.byte_size),
            :ok <- validate_mime(upload.mime_type),
            upload_path = path_for_upload(upload, path),
            :ok <- upload_path |> Path.dirname() |> File.mkdir_p(),
@@ -72,6 +73,14 @@ defmodule RadioBeam.ContentRepo do
         Memento.Query.write(upload)
         path
       end)
+    end
+  end
+
+  defp validate_available(upload_id) do
+    case Upload.getT(upload_id) do
+      nil -> :ok
+      %Upload{byte_size: :pending} -> :ok
+      %Upload{} -> {:error, :already_uploaded}
     end
   end
 
