@@ -33,6 +33,14 @@ config :radio_beam, RadioBeam.ContentRepo,
   allowed_mimes:
     ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
   dir: :default,
+  max_wait_for_download_ms: :timer.minutes(1),
+  # Whether or not to create new thumbnails of uploaded images. The ability to
+  # disable thumbnailing is useful if a known issue/vulnerability would
+  # otherwise require the entire homeserver to be shutdown.
+  # from the spec (10.9.3): "Clients or remote homeservers may try to upload
+  # malicious files targeting vulnerabilities in either the homeserver
+  # thumbnailing or the client decoders."
+  thumbnail?: true,
   # By default, a single file may not exceed 8MB
   single_file_max_bytes: 8_000_000,
   # By default, only cache 200MB of remote media

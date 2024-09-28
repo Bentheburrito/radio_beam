@@ -6,6 +6,33 @@ defmodule RadioBeam.ContentRepoTest do
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload
 
+  describe "get/2" do
+    setup do
+      user = Fixtures.user()
+      mxc = MatrixContentURI.new!()
+      content = "A,B,C\nval1,val2,val3"
+      upload = Upload.new(mxc, "text/csv", user, content)
+      {:ok, _} = ContentRepo.save_upload(upload, content)
+
+      %{user: user, mxc: mxc, upload: upload, content: content}
+    end
+
+    test "returns its upload and file content", %{mxc: mxc, content: content} do
+      assert {:ok, %Upload{id: ^mxc, mime_type: "text/csv"}, upload_path} = ContentRepo.get(mxc)
+      assert ^content = File.read!(upload_path)
+    end
+
+    test "returns :not_yet_uploaded for a pending upload", %{user: user} do
+      mxc = MatrixContentURI.new!()
+      ContentRepo.reserve(mxc, user)
+      assert {:error, :not_yet_uploaded} = ContentRepo.get(mxc)
+    end
+
+    test "returns :not_found when an upload doesn't exist under the MXC" do
+      assert {:error, :not_found} = ContentRepo.get(MatrixContentURI.new!())
+    end
+  end
+
   describe "reserve/2" do
     setup do
       user = Fixtures.user()
@@ -91,6 +118,15 @@ defmodule RadioBeam.ContentRepoTest do
       {:ok, mxc} = MatrixContentURI.new()
       %Upload{} = upload = Upload.new(mxc, "application/json", user, iodata)
       assert {:error, :invalid_mime_type} = ContentRepo.save_upload(upload, iodata, tmp_dir)
+    end
+
+    @tag :tmp_dir
+    test "errors when a file exceeds the max single file upload limit", %{tmp_dir: tmp_dir, user: user} do
+      mxc = MatrixContentURI.new!()
+      iodata = "A,B,C\nval1,val2,#{Fixtures.random_string(ContentRepo.max_upload_size_bytes())}"
+
+      %Upload{} = upload = Upload.new(mxc, "text/csv", user, iodata)
+      assert {:error, :too_large} = ContentRepo.save_upload(upload, iodata, tmp_dir)
     end
   end
 end

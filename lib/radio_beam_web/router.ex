@@ -42,6 +42,8 @@ defmodule RadioBeamWeb.Router do
 
       scope "/v1" do
         get "/media/config", ContentRepoController, :config
+        get "/media/download/:server_name/:media_id/:filename", ContentRepoController, :download
+        get "/media/download/:server_name/:media_id", ContentRepoController, :download
       end
 
       scope "/v3" do

@@ -20,6 +20,7 @@ config :radio_beam, RadioBeam.ContentRepo,
   allowed_mimes:
     ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
   dir: :default,
+  max_wait_for_download_ms: :timer.seconds(1),
   single_file_max_bytes: 1_000,
   remote_media: %{max_bytes: 2_000},
   unused_mxc_uris_expire_in_ms: :timer.seconds(5),

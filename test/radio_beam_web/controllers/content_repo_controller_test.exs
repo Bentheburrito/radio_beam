@@ -16,6 +16,89 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     }
   end
 
+  describe "get/2" do
+    setup do
+      user = Fixtures.user()
+      mxc = MatrixContentURI.new!()
+      content = "A,B,C\nval1,val2,val2"
+      upload = Upload.new(mxc, "text/csv", user, content, "a file to share")
+      ContentRepo.save_upload(upload, content)
+      %{mxc: mxc, user: user, upload: upload, content: content}
+    end
+
+    test "returns an upload (200)", %{conn: conn, mxc: mxc, content: content} do
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}", %{})
+      assert ^content = response(conn, 200)
+      assert ["text/csv"] = get_resp_header(conn, "content-type")
+      assert ["a file to share"] = get_resp_header(conn, "content-disposition")
+    end
+
+    test "returns an upload (200) but with a custom filename", %{conn: conn, mxc: mxc, content: content} do
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}/funny_file", %{})
+      assert ^content = response(conn, 200)
+      assert ["text/csv"] = get_resp_header(conn, "content-type")
+      assert ["funny_file"] = get_resp_header(conn, "content-disposition")
+    end
+
+    test "returns M_NOT_FOUND (404) when no upload exists for the URI", %{conn: conn} do
+      mxc = MatrixContentURI.new!()
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+
+    test "returns M_BAD_PARAM (400) when the URI is malformed", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/UH+OH/abcd", %{})
+      assert %{"errcode" => "M_BAD_PARAM"} = json_response(conn, 400)
+    end
+
+    test "returns M_NOT_YET_UPLOADED (504) when content is missing after waiting a bit", %{conn: conn, user: user} do
+      mxc = MatrixContentURI.new!()
+      ContentRepo.reserve(mxc, user)
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout=200", %{})
+      assert %{"errcode" => "M_NOT_YET_UPLOADED"} = json_response(conn, 504)
+    end
+
+    test "returns an upload (200), waiting a brief period for it to be uploaded", %{
+      conn: conn,
+      user: user,
+      content: content
+    } do
+      mxc = MatrixContentURI.new!()
+      ContentRepo.reserve(mxc, user)
+
+      timeout = :timer.seconds(2)
+
+      download_task =
+        Task.async(fn ->
+          get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout=#{timeout}", %{})
+        end)
+
+      Process.sleep(div(timeout, 8))
+
+      upload = Upload.new(mxc, "text/csv", user, content, "a file to share")
+      ContentRepo.save_upload(upload, content)
+
+      conn = Task.await(download_task)
+
+      assert ^content = response(conn, 200)
+      assert ["text/csv"] = get_resp_header(conn, "content-type")
+      assert ["a file to share"] = get_resp_header(conn, "content-disposition")
+    end
+
+    test "returns M_TOO_LARGE (502) when content too large to serve", %{conn: conn, user: user} do
+      mxc = MatrixContentURI.new!()
+      max_upload_size = ContentRepo.max_upload_size_bytes()
+      content = Fixtures.random_string(max_upload_size)
+      upload = Upload.new(mxc, "text/csv", user, content, "a file to share")
+
+      ContentRepo.save_upload(upload, content)
+      Memento.transaction!(fn -> Memento.Query.write(%Upload{upload | byte_size: upload.byte_size + 1}) end)
+
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout=200", %{})
+      assert %{"errcode" => "M_TOO_LARGE"} = json_response(conn, 502)
+    end
+  end
+
   describe "config/2" do
     test "returns an object (200) with the m.upload.size key", %{conn: conn} do
       conn = get(conn, ~p"/_matrix/client/v1/media/config", %{})
@@ -68,22 +151,26 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
           "A,B,C\nval1,val2,#{Fixtures.random_string(ContentRepo.max_upload_size_bytes())}"
         )
 
-      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 413)
+      assert %{"errcode" => "M_TOO_LARGE", "error" => error} = json_response(conn, 413)
       assert error =~ "Cannot upload files larger than"
     end
 
     test "rejects (403) an upload when a user has reached a quota", %{conn: conn, user: user} do
       max_bytes = ContentRepo.user_upload_limits().max_bytes
+      max_upload_bytes = ContentRepo.max_upload_size_bytes()
+      num_to_upload = div(max_bytes, max_upload_bytes)
 
-      iodata = Fixtures.random_string(max_bytes - 1)
-      {:ok, mxc} = MatrixContentURI.new()
-      %Upload{} = upload = Upload.new(mxc, "image/jpg", user, iodata)
-      ContentRepo.save_upload(upload, iodata)
+      iodata = Fixtures.random_string(max_upload_bytes)
+
+      for _i <- 1..num_to_upload do
+        %Upload{} = upload = Upload.new(MatrixContentURI.new!(), "image/jpg", user, iodata)
+        ContentRepo.save_upload(upload, iodata)
+      end
 
       conn =
         conn
         |> put_req_header("content-type", "random/csv")
-        |> post(~p"/_matrix/media/v3/upload", "A,B,C\nval1,val2,val3")
+        |> post(~p"/_matrix/media/v3/upload", Fixtures.random_string(max_upload_bytes))
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "uploaded too many files"

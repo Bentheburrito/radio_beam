@@ -1,4 +1,8 @@
 defmodule RadioBeam.ContentRepo.Upload do
+  @moduledoc """
+  An `%Upload{}` represents a user-uploaded file on disk, including metadata
+  such as its size and who it was uploaded by.
+  """
   use Memento.Table,
     attributes: ~w|id byte_size filename inserted_at mime_type sha256 uploaded_by_id|a,
     index: [:uploaded_by_id],
@@ -6,6 +10,16 @@ defmodule RadioBeam.ContentRepo.Upload do
 
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
+
+  @type t() :: %__MODULE__{
+          id: MatrixContentURI.t(),
+          byte_size: :pending | non_neg_integer(),
+          filename: :pending | String.t(),
+          inserted_at: DateTime.t(),
+          mime_type: :pending | String.t(),
+          sha256: :pending | String.t(),
+          uploaded_by_id: User.id()
+        }
 
   def new(%MatrixContentURI{} = mxc, mime_type, %User{} = uploaded_by, content, filename \\ "Uploaded File") do
     %__MODULE__{

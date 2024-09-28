@@ -1,10 +1,13 @@
 defmodule RadioBeam.ContentRepo do
+  alias Phoenix.PubSub
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload
+  alias RadioBeam.PubSub, as: PS
 
   def allowed_mimes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:allowed_mimes]
   def max_upload_size_bytes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:single_file_max_bytes]
+  def max_wait_for_download_ms, do: Application.fetch_env!(:radio_beam, __MODULE__)[:max_wait_for_download_ms]
   def unused_mxc_uris_expire_in_ms, do: Application.fetch_env!(:radio_beam, __MODULE__)[:unused_mxc_uris_expire_in_ms]
   def user_upload_limits, do: Application.fetch_env!(:radio_beam, __MODULE__)[:users]
   def path(), do: Application.fetch_env!(:radio_beam, __MODULE__)[:dir]
@@ -23,6 +26,33 @@ defmodule RadioBeam.ContentRepo do
   def friendly_bytes(bytes) when bytes < 1_000_000, do: "#{div(bytes, 1_000)}KB"
   def friendly_bytes(bytes) when bytes < 1_000_000_000, do: "#{div(bytes, 1_000_000)}MB"
   def friendly_bytes(bytes), do: "#{div(bytes, 1_000_000_000)}GB"
+
+  # TODO: check if the server_name is this server, GET from origin server if remote media and within max size
+  # @spec get(MatrixContentURI.t(), Path.t()) :: {:ok, Upload.t(), Path.t()} | {:error, :not_yet_uploaded | any()}
+  def get(%MatrixContentURI{} = mxc, timeout \\ max_wait_for_download_ms(), repo_path \\ path()) do
+    PubSub.subscribe(PS, PS.file_available(mxc))
+    max_upload_size_bytes = max_upload_size_bytes()
+
+    case Upload.get(mxc) do
+      {:ok, %Upload{byte_size: :pending}} -> await_upload(timeout, repo_path)
+      {:ok, %Upload{byte_size: byte_size}} when byte_size > max_upload_size_bytes -> {:error, :too_large}
+      {:ok, %Upload{} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp await_upload(timeout, repo_path) do
+    receive do
+      {:file_available, mxc} ->
+        case Upload.get(mxc) do
+          {:ok, %Upload{byte_size: :pending}} -> {:error, :not_yet_uploaded}
+          {:ok, %Upload{} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
+          {:error, _} = error -> error
+        end
+    after
+      timeout -> {:error, :not_yet_uploaded}
+    end
+  end
 
   # TODO: a periodic job should clean up expired reserved URIs
   def reserve(%MatrixContentURI{} = mxc, %User{} = reserver) do
@@ -43,12 +73,13 @@ defmodule RadioBeam.ContentRepo do
     end
   end
 
-  def save_upload(%Upload{} = upload, iodata, path \\ path()) do
+  def save_upload(%Upload{} = upload, iodata, repo_path \\ path()) do
     fn ->
       with :ok <- validate_available(upload.id),
+           :ok <- validate_size(upload.byte_size),
            :ok <- validate_perms(upload.uploaded_by_id, upload.byte_size),
            :ok <- validate_mime(upload.mime_type),
-           upload_path = path_for_upload(upload, path),
+           upload_path = path_for_upload(upload, repo_path),
            :ok <- upload_path |> Path.dirname() |> File.mkdir_p(),
            {:ok, ^upload_path} <- write_upload(upload, upload_path, iodata) do
         upload_path
@@ -66,11 +97,13 @@ defmodule RadioBeam.ContentRepo do
     # was uploaded before - let's just point to that and save some space
     if File.exists?(path) do
       Memento.Query.write(upload)
+      PubSub.broadcast(PS, PS.file_available(upload.id), {:file_available, upload.id})
       path
     else
       File.open(path, [:binary, :raw, :write], fn file ->
         IO.binwrite(file, iodata)
         Memento.Query.write(upload)
+        PubSub.broadcast(PS, PS.file_available(upload.id), {:file_available, upload.id})
         path
       end)
     end
@@ -81,6 +114,14 @@ defmodule RadioBeam.ContentRepo do
       nil -> :ok
       %Upload{byte_size: :pending} -> :ok
       %Upload{} -> {:error, :already_uploaded}
+    end
+  end
+
+  defp validate_size(pending_upload_size) do
+    if pending_upload_size > max_upload_size_bytes() do
+      {:error, :too_large}
+    else
+      :ok
     end
   end
 
@@ -105,8 +146,8 @@ defmodule RadioBeam.ContentRepo do
     if mime_type in allowed_mimes(), do: :ok, else: {:error, :invalid_mime_type}
   end
 
-  defp path_for_upload(%Upload{} = upload, path) do
-    case path do
+  defp path_for_upload(%Upload{} = upload, repo_path) do
+    case repo_path do
       :default ->
         Path.join([Application.app_dir(:radio_beam), "priv/static/media", Upload.path_for(upload)])
 

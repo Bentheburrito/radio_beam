@@ -18,6 +18,37 @@ defmodule RadioBeamWeb.ContentRepoController do
     json(conn, %{"m.upload.size" => ContentRepo.max_upload_size_bytes()})
   end
 
+  def download(conn, %{"server_name" => server_name, "media_id" => media_id} = params) do
+    # TODO: create a Schema for this
+    timeout =
+      with %{"timeout" => timeout_str} <- params,
+           {:ok, timeout} <- RadioBeamWeb.Schemas.as_integer(timeout_str) do
+        timeout
+      else
+        _ -> ContentRepo.max_wait_for_download_ms()
+      end
+
+    with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
+         {:ok, %Upload{id: ^mxc} = upload, upload_path} <- ContentRepo.get(mxc, timeout) do
+      conn
+      |> put_resp_header("content-type", upload.mime_type)
+      |> put_resp_header("content-disposition", Map.get(params, "filename", upload.filename))
+      |> send_file(200, upload_path)
+    else
+      {:error, :not_found} ->
+        conn |> put_status(404) |> json(Errors.not_found("File not found"))
+
+      {:error, :not_yet_uploaded} ->
+        conn |> put_status(504) |> json(Errors.endpoint_error(:not_yet_uploaded, "File has not yet been uploaded"))
+
+      {:error, :too_large} ->
+        conn |> put_status(502) |> json(Errors.endpoint_error(:too_large, "File too large"))
+
+      {:error, invalid_mxc_reason} ->
+        conn |> put_status(400) |> json(Errors.endpoint_error(:bad_param, "Malformed MXC URI: #{invalid_mxc_reason}"))
+    end
+  end
+
   def upload(conn, %{"server_name" => server_name, "media_id" => media_id}) do
     %User{id: uploader_id} = conn.assigns.user
 
@@ -112,7 +143,9 @@ defmodule RadioBeamWeb.ContentRepoController do
       {_, body, conn} when byte_size(body) > limit ->
         conn
         |> put_status(413)
-        |> json(Errors.forbidden("Cannot upload files larger than #{ContentRepo.friendly_bytes(limit)}"))
+        |> json(
+          Errors.endpoint_error(:too_large, "Cannot upload files larger than #{ContentRepo.friendly_bytes(limit)}")
+        )
 
       {:ok, body, conn} ->
         {:ok, [body_io_list | [body]], conn}
