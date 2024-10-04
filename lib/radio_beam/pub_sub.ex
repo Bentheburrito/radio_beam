@@ -8,5 +8,5 @@ defmodule RadioBeam.PubSub do
   def stripped_state_events(room_id), do: "stripped_state:#{room_id}"
   def invite_events(user_id), do: "invite:#{user_id}"
 
-  def file_available(%MatrixContentURI{} = mxc), do: "file_available:#{mxc}"
+  def file_uploaded(%MatrixContentURI{} = mxc), do: "file_uploaded:#{mxc}"
 end

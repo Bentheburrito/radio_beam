@@ -20,4 +20,20 @@ defmodule RadioBeamWeb.Utils do
     |> put_status(status)
     |> json(error_body)
   end
+
+  def json_error(conn, status, errors_fxn_name, arg_or_args \\ [])
+
+  def json_error(conn, status, errors_fxn_name, args) when is_list(args) do
+    conn
+    |> put_status(status)
+    |> json(apply(Errors, errors_fxn_name, args))
+  end
+
+  def json_error(conn, status, errors_fxn_name, arg), do: json_error(conn, status, errors_fxn_name, [arg])
+
+  def halting_json_error(conn, status, errors_fxn_name, arg_or_args \\ []) do
+    conn
+    |> json_error(status, errors_fxn_name, arg_or_args)
+    |> halt()
+  end
 end

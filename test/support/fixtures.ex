@@ -3,6 +3,7 @@ defmodule Fixtures do
   Test fixtures
   """
 
+  alias RadioBeam.ContentRepo.Upload.FileInfo
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.Device
   alias RadioBeam.User
@@ -21,6 +22,10 @@ defmodule Fixtures do
 
   def write!(%Device{} = device), do: Memento.transaction!(fn -> Device.persist(device) end)
   def write!(struct), do: Memento.transaction!(fn -> Memento.Query.write(struct) end)
+
+  def file_info(content, type \\ "txt", filename \\ "TestUpload") do
+    FileInfo.new(type, byte_size(content), :sha256 |> :crypto.hash(content) |> Base.encode16(case: :lower), filename)
+  end
 
   def random_string(num_bytes) do
     for _i <- 1..num_bytes, into: "", do: <<:rand.uniform(26) + ?A - 1>>

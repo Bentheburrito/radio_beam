@@ -51,7 +51,7 @@ config :radio_beam, RadioBeam.ContentRepo,
   unused_mxc_uris_expire_in_ms: :timer.hours(24),
   # By default, each user can only upload a total of 50MB or 50 files 
   # (whichever limit is reached first)
-  users: %{max_bytes: 50_000_000, max_files: 50, max_pending: 5}
+  users: %{max_bytes: 50_000_000, max_files: 50, max_reserved: 5}
 
 # Configures the endpoint
 config :radio_beam, RadioBeamWeb.Endpoint,

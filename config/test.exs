@@ -24,7 +24,7 @@ config :radio_beam, RadioBeam.ContentRepo,
   single_file_max_bytes: 1_000,
   remote_media: %{max_bytes: 2_000},
   unused_mxc_uris_expire_in_ms: :timer.seconds(5),
-  users: %{max_bytes: 4_000, max_files: 5, max_pending: 5}
+  users: %{max_bytes: 4_000, max_files: 5, max_reserved: 5}
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

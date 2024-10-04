@@ -4,15 +4,24 @@ defmodule RadioBeamWeb.ContentRepoController do
   """
   use RadioBeamWeb, :controller
 
+  import RadioBeamWeb.Utils, only: [json_error: 4, halting_json_error: 4]
+
+  alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.ContentRepo.MatrixContentURI
-  alias RadioBeam.Errors
   alias RadioBeam.ContentRepo
   alias RadioBeam.User
 
   require Logger
 
   plug RadioBeamWeb.Plugs.Authenticate
+  plug :get_or_reserve_upload when action == :upload
+  plug :parse_mime when action == :upload
+  plug :parse_body when action == :upload
+
+  @must_reserve_error_msg "You must reserve a content URI first"
+  @unknown_error_msg "An unknown error occurred while uploading your file - please try again"
+  @overwrite_error_msg "A file already exists under this URI"
 
   def config(conn, _params) do
     json(conn, %{"m.upload.size" => ContentRepo.max_upload_size_bytes()})
@@ -29,144 +38,164 @@ defmodule RadioBeamWeb.ContentRepoController do
       end
 
     with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
-         {:ok, %Upload{id: ^mxc} = upload, upload_path} <- ContentRepo.get(mxc, timeout) do
+         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload, upload_path} <- ContentRepo.get(mxc, timeout: timeout) do
       conn
-      |> put_resp_header("content-type", upload.mime_type)
-      |> put_resp_header("content-disposition", Map.get(params, "filename", upload.filename))
+      |> put_resp_header("content-type", MIME.type(upload.file.type))
+      |> put_resp_header("content-disposition", Map.get(params, "filename", upload.file.filename))
       |> send_file(200, upload_path)
     else
       {:error, :not_found} ->
-        conn |> put_status(404) |> json(Errors.not_found("File not found"))
+        json_error(conn, 404, :not_found, "File not found")
 
       {:error, :not_yet_uploaded} ->
-        conn |> put_status(504) |> json(Errors.endpoint_error(:not_yet_uploaded, "File has not yet been uploaded"))
+        json_error(conn, 504, :endpoint_error, [:not_yet_uploaded, "File has not yet been uploaded"])
 
       {:error, :too_large} ->
-        conn |> put_status(502) |> json(Errors.endpoint_error(:too_large, "File too large"))
+        json_error(conn, 502, :endpoint_error, [:too_large, "File too large"])
 
       {:error, invalid_mxc_reason} ->
-        conn |> put_status(400) |> json(Errors.endpoint_error(:bad_param, "Malformed MXC URI: #{invalid_mxc_reason}"))
+        json_error(conn, 400, :endpoint_error, [:bad_param, "Malformed MXC URI: #{invalid_mxc_reason}"])
     end
   end
 
-  def upload(conn, %{"server_name" => server_name, "media_id" => media_id}) do
+  def upload(conn, _params) do
+    %User{} = user = conn.assigns.user
+    %Upload{} = upload = conn.assigns.upload
+    %FileInfo{} = file_info = conn.assigns.file_info
+    tmp_path = conn.assigns.tmp_upload_path
+
+    case ContentRepo.upload(upload, file_info, tmp_path) do
+      {:ok, _path} ->
+        json(conn, %{content_uri: upload.id})
+
+      {:error, :already_uploaded} ->
+        json_error(conn, 409, :endpoint_error, [:cannot_overwrite_media, @overwrite_error_msg])
+
+      {:error, {:quota_reached, quota_kind}} ->
+        quota_reached_error(conn, quota_kind, user)
+
+      {:error, posix} ->
+        Logger.error("Error saving upload to file: #{inspect(posix)}")
+
+        json_error(conn, 500, :unknown, @unknown_error_msg)
+    end
+  end
+
+  def create(conn, _params) do
+    %User{} = user = conn.assigns.user
+
+    case ContentRepo.create(user) do
+      {:ok, upload} ->
+        json(conn, %{
+          content_uri: upload.id,
+          expires_in: DateTime.to_unix(upload.inserted_at, :millisecond) + ContentRepo.unused_mxc_uris_expire_in_ms()
+        })
+
+      {:error, {:quota_reached, :max_reserved}} ->
+        Logger.info("MEDIA QUOTA REACHED max_reserved: #{user} tried to upload a file after reaching a limit")
+
+        json_error(conn, 429, :limit_exceeded, [
+          ContentRepo.unused_mxc_uris_expire_in_ms(),
+          "You have too many pending uploads. Ensure all previous uploads succeed before trying again"
+        ])
+
+      {:error, {:quota_reached, quota_kind}} ->
+        quota_reached_error(conn, quota_kind, user)
+    end
+  end
+
+  defp get_or_reserve_upload(%{params: %{"server_name" => server_name, "media_id" => media_id}} = conn, _) do
     %User{id: uploader_id} = conn.assigns.user
 
     with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
-         {:ok, %Upload{id: ^mxc, sha256: :pending, uploaded_by_id: ^uploader_id}} <- Upload.get(mxc) do
-      conn |> assign(:mxc, mxc) |> upload(%{})
+         {:ok, %Upload{id: ^mxc, file: :reserved, uploaded_by_id: ^uploader_id} = upload} <- Upload.get(mxc) do
+      assign(conn, :upload, upload)
     else
-      {:error, :not_found} -> must_reserve(conn)
-      {:error, _error} -> conn |> put_status(400) |> json(Errors.endpoint_error(:bad_param, "Invalid content URI"))
-      {:ok, %Upload{sha256: :pending}} -> must_reserve(conn)
-      {:ok, %Upload{}} -> cannot_overwrite_media(conn)
+      {:error, :not_found} ->
+        halting_json_error(conn, 403, :forbidden, @must_reserve_error_msg)
+
+      {:error, :too_large} ->
+        halting_json_error(conn, 502, :endpoint_error, [:too_large, "File too large to download"])
+
+      {:error, error} when error in [:invalid_server_name, :invalid_media_id] ->
+        halting_json_error(conn, 400, :endpoint_error, [:bad_param, "Invalid content URI"])
+
+      {:ok, %Upload{file: :reserved}} ->
+        halting_json_error(conn, 403, :forbidden, @must_reserve_error_msg)
+
+      {:ok, %Upload{}} ->
+        halting_json_error(conn, 409, :endpoint_error, [:cannot_overwrite_media, @overwrite_error_msg])
     end
   end
 
-  @unknown_error_msg "An unknown error has occurred while uploading your file - please try again"
-  @too_many_uploads_msg "You have uploaded too many files. Contact the server admin if you believe this is a mistake."
-  def upload(conn, params) do
+  defp get_or_reserve_upload(conn, _opts) do
     %User{} = user = conn.assigns.user
 
-    content_type =
+    case ContentRepo.create(user) do
+      {:ok, upload} -> assign(conn, :upload, upload)
+      {:error, {:quota_reached, quota_kind}} -> conn |> quota_reached_error(quota_kind, user) |> halt()
+    end
+  end
+
+  defp parse_body(conn, _opts) do
+    limit = ContentRepo.max_upload_size_bytes()
+    tmp_path = Plug.Upload.random_file!("user_upload")
+
+    File.open!(tmp_path, [:binary, :raw, :write], fn file ->
+      conn
+      |> assign(:tmp_upload_path, tmp_path)
+      |> parse_body(file, limit, {0, :crypto.hash_init(:sha256)})
+    end)
+  end
+
+  defp parse_body(conn, file, limit, {size, sha256_state}) do
+    case read_body(conn) do
+      {_, body, conn} when byte_size(body) + size > limit ->
+        halting_json_error(conn, 413, :endpoint_error, [
+          :too_large,
+          "Cannot upload files larger than #{ContentRepo.friendly_bytes(limit)}"
+        ])
+
+      {:ok, body, conn} ->
+        :ok = IO.binwrite(file, body)
+        hash = sha256_state |> :crypto.hash_update(body) |> :crypto.hash_final() |> Base.encode16(case: :lower)
+        filename = Map.get(conn.params, "filename", "Uploaded File")
+        file_info = FileInfo.new(conn.assigns.file_type, size + byte_size(body), hash, filename)
+
+        assign(conn, :file_info, file_info)
+
+      {:more, body, conn} ->
+        :ok = IO.binwrite(file, body)
+        parse_body(conn, file, limit, {size + byte_size(body), :crypto.hash_update(sha256_state, body)})
+
+      {:error, reason} ->
+        Logger.error("Error parsing body of uploaded file: #{inspect(reason)}")
+
+        halting_json_error(conn, 500, :unknown, @unknown_error_msg)
+    end
+  end
+
+  defp parse_mime(conn, _params) do
+    mime_type =
       case get_req_header(conn, "content-type") do
         [] -> "application/octet-stream"
         [content_type] -> content_type
       end
 
-    filename = Map.get(params, "filename", "Uploaded File")
-
-    with {:ok, body_io_list, conn} <- parse_body(conn, ContentRepo.max_upload_size_bytes()) do
-      mxc = Map.get_lazy(conn.assigns, :mxc, fn -> MatrixContentURI.new!() end)
-
-      %Upload{} = upload = Upload.new(mxc, content_type, user, body_io_list, filename)
-
-      case ContentRepo.save_upload(upload, body_io_list) do
-        {:ok, _path} ->
-          json(conn, %{content_uri: mxc})
-
-        {:error, :invalid_mime_type} ->
-          conn
-          |> put_status(403)
-          |> json(Errors.forbidden("This homeserver does not allow files of that kind"))
-
-        {:error, :already_uploaded} ->
-          cannot_overwrite_media(conn)
-
-        {:error, {:quota_reached, quota_kind}} ->
-          Logger.info("MEDIA QUOTA REACHED #{quota_kind}: #{user} tried to upload a file after reaching a limit")
-
-          conn
-          |> put_status(403)
-          |> json(Errors.forbidden(@too_many_uploads_msg))
-
-        {:error, posix} ->
-          Logger.error("Error saving upload to file: #{inspect(posix)}")
-
-          conn
-          |> put_status(500)
-          |> json(Errors.unknown(@unknown_error_msg))
+    if mime_type in ContentRepo.allowed_mimes() do
+      case MIME.extensions(mime_type) do
+        [] -> halting_json_error(conn, 403, :forbidden, ["unknown file type"])
+        [_ext | _] = extensions -> assign(conn, :file_type, extensions |> Enum.sort() |> hd())
       end
+    else
+      halting_json_error(conn, 403, :forbidden, ["#{mime_type} files are not allowed"])
     end
   end
 
-  def create(conn, _params) do
-    # check if user already has <config value max num> pending uploads
-    %User{} = user = conn.assigns.user
-    mxc = MatrixContentURI.new!()
+  @quota_reached_error_msg "You have uploaded too many files. Contact the server admin if you believe this is a mistake."
+  defp quota_reached_error(conn, quota_kind, user) do
+    Logger.info("MEDIA QUOTA REACHED #{quota_kind}: #{user} tried to upload a file after reaching a limit")
 
-    case ContentRepo.reserve(mxc, user) do
-      {:ok, upload} ->
-        json(conn, %{
-          content_uri: mxc,
-          expires_in: DateTime.to_unix(upload.inserted_at, :millisecond) + ContentRepo.unused_mxc_uris_expire_in_ms()
-        })
-
-      {:error, {:quota_reached, :max_pending}} ->
-        conn
-        |> put_status(429)
-        |> json(
-          Errors.limit_exceeded(
-            ContentRepo.unused_mxc_uris_expire_in_ms(),
-            "You have too many pending uploads. Ensure all previous uploads succeed before trying again"
-          )
-        )
-    end
+    json_error(conn, 403, :forbidden, @quota_reached_error_msg)
   end
-
-  defp parse_body(conn, limit), do: parse_body(conn, limit, "")
-
-  defp parse_body(conn, limit, body_io_list) do
-    # TODO: should stream this to a temp file like Plug.Upload does - keeping large
-    #       uploads in memory is bad
-    case read_body(conn) do
-      {_, body, conn} when byte_size(body) > limit ->
-        conn
-        |> put_status(413)
-        |> json(
-          Errors.endpoint_error(:too_large, "Cannot upload files larger than #{ContentRepo.friendly_bytes(limit)}")
-        )
-
-      {:ok, body, conn} ->
-        {:ok, [body_io_list | [body]], conn}
-
-      {:more, body, conn} ->
-        parse_body(conn, limit - byte_size(body), [body_io_list | [body]])
-
-      {:error, reason} ->
-        Logger.error("Error parsing body of uploaded file: #{inspect(reason)}")
-
-        conn
-        |> put_status(500)
-        |> json(Errors.unknown(@unknown_error_msg))
-    end
-  end
-
-  defp cannot_overwrite_media(conn) do
-    conn
-    |> put_status(409)
-    |> json(Errors.endpoint_error(:cannot_overwrite_media, "A file already exists under this URI"))
-  end
-
-  defp must_reserve(conn), do: conn |> put_status(403) |> json(Errors.forbidden("You must reserve a content URI first"))
 end

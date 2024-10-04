@@ -1,9 +1,17 @@
 defmodule RadioBeam.ContentRepo do
+  import Memento.Transaction, only: [abort: 1]
+
   alias Phoenix.PubSub
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload
+  alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.PubSub, as: PS
+
+  @type quota_kind() :: :max_reserved | :max_files | :max_bytes
+
+  @type get_opt() :: {:timeout, non_neg_integer()} | {:repo_path, Path.t()}
+  @type get_opts() :: [get_opt()]
 
   def allowed_mimes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:allowed_mimes]
   def max_upload_size_bytes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:single_file_max_bytes]
@@ -27,132 +35,117 @@ defmodule RadioBeam.ContentRepo do
   def friendly_bytes(bytes) when bytes < 1_000_000_000, do: "#{div(bytes, 1_000_000)}MB"
   def friendly_bytes(bytes), do: "#{div(bytes, 1_000_000_000)}GB"
 
-  # TODO: check if the server_name is this server, GET from origin server if remote media and within max size
-  # @spec get(MatrixContentURI.t(), Path.t()) :: {:ok, Upload.t(), Path.t()} | {:error, :not_yet_uploaded | any()}
-  def get(%MatrixContentURI{} = mxc, timeout \\ max_wait_for_download_ms(), repo_path \\ path()) do
-    PubSub.subscribe(PS, PS.file_available(mxc))
-    max_upload_size_bytes = max_upload_size_bytes()
+  @doc """
+  Gets an `%Upload{}` from the content repository by its `mxc://`. This
+  function will double-check if the file is larger than
+  `max_upload_size_bytes`, returning `{:error, :too_large}` if so.
+
+  TODO: check if the server_name is this server, GET from origin server if
+  remote media and within max size
+  """
+  @spec get(MatrixContentURI.t(), get_opts()) ::
+          {:ok, Upload.t(), Path.t()} | {:error, :too_large | :not_yet_uploaded | any()}
+  def get(%MatrixContentURI{} = mxc, opts) do
+    max_size_bytes = max_upload_size_bytes()
+    repo_path = Keyword.get_lazy(opts, :repo_path, &path/0)
+    timeout = Keyword.get_lazy(opts, :timeout, &max_wait_for_download_ms/0)
+    PubSub.subscribe(PS, PS.file_uploaded(mxc))
 
     case Upload.get(mxc) do
-      {:ok, %Upload{byte_size: :pending}} -> await_upload(timeout, repo_path)
-      {:ok, %Upload{byte_size: byte_size}} when byte_size > max_upload_size_bytes -> {:error, :too_large}
-      {:ok, %Upload{} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
+      {:ok, %Upload{file: %FileInfo{byte_size: byte_size}}} when byte_size > max_size_bytes -> {:error, :too_large}
+      {:ok, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
+      {:ok, %Upload{file: :reserved}} -> await_upload(timeout, repo_path)
       {:error, _} = error -> error
     end
   end
 
   defp await_upload(timeout, repo_path) do
     receive do
-      {:file_available, mxc} ->
-        case Upload.get(mxc) do
-          {:ok, %Upload{byte_size: :pending}} -> {:error, :not_yet_uploaded}
-          {:ok, %Upload{} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
-          {:error, _} = error -> error
-        end
+      {:file_uploaded, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
     after
       timeout -> {:error, :not_yet_uploaded}
     end
   end
 
-  # TODO: a periodic job should clean up expired reserved URIs
-  def reserve(%MatrixContentURI{} = mxc, %User{} = reserver) do
-    %{max_pending: max_pending} = user_upload_limits()
+  @doc """
+  Creates an `%Upload{}` entry in the content repository, as long as the user
+  hasn't met an upload quota.
+
+  TODO: a periodic job should clean up expired reserved URIs
+  """
+  @spec create(User.t()) :: {:ok, Upload.t()} | {:error, {:quota_reached, :max_reserved | :max_files} | any()}
+  def create(%User{} = reserver) do
+    %{max_reserved: max_reserved, max_files: max_files} = user_upload_limits()
 
     fn ->
+      user_upload_counts = Upload.user_upload_countsT(reserver.id)
+      reserved_count = Map.get(user_upload_counts, :reserved, 0)
+      total_count = Map.get(user_upload_counts, :uploaded, 0) + reserved_count
+
       cond do
-        Upload.get_num_pending_uploadsT(reserver.id) >= max_pending -> {:quota_reached, :max_pending}
-        not is_nil(Upload.getT(mxc)) -> :already_reserved
-        :else -> mxc |> Upload.new_pending(reserver) |> Memento.Query.write()
+        reserved_count >= max_reserved -> abort({:quota_reached, :max_reserved})
+        total_count >= max_files -> abort({:quota_reached, :max_files})
+        :else -> reserver |> Upload.new() |> Upload.putT()
       end
     end
     |> Memento.transaction()
     |> case do
       {:ok, %Upload{} = upload} -> {:ok, upload}
-      {:ok, error} -> {:error, error}
+      {:error, {:transaction_aborted, reason}} -> {:error, reason}
       result -> result
     end
   end
 
-  def save_upload(%Upload{} = upload, iodata, repo_path \\ path()) do
+  @doc """
+  Updates an `%Upload{}` previously reserved with `create/1` with the uploaded
+  file.
+  """
+  @spec upload(Upload.t(), FileInfo.t(), Path.t()) ::
+          {:ok, Upload.t()} | {:error, :too_large | {:quota_reached, :max_bytes} | File.posix()}
+  def upload(%Upload{file: :reserved} = upload, %FileInfo{} = file_info, tmp_upload_path, repo_path \\ path()) do
     fn ->
-      with :ok <- validate_available(upload.id),
-           :ok <- validate_size(upload.byte_size),
-           :ok <- validate_perms(upload.uploaded_by_id, upload.byte_size),
-           :ok <- validate_mime(upload.mime_type),
-           upload_path = path_for_upload(upload, repo_path),
-           :ok <- upload_path |> Path.dirname() |> File.mkdir_p(),
-           {:ok, ^upload_path} <- write_upload(upload, upload_path, iodata) do
-        upload_path
+      with :ok <- validate_upload_size(upload.uploaded_by_id, file_info.byte_size),
+           %Upload{} = upload <- upload |> Upload.put_file(file_info) |> Upload.putT(),
+           :ok <- copy_upload_if_no_exists(tmp_upload_path, path_for_upload(upload, repo_path)) do
+        PubSub.broadcast(PS, PS.file_uploaded(upload.id), {:file_uploaded, upload})
+        upload
+      else
+        error -> abort(error)
       end
     end
     |> Memento.transaction()
     |> case do
-      {:ok, {:error, _} = error} -> error
+      {:error, {:transaction_aborted, error}} -> error
       result -> result
     end
   end
 
-  defp write_upload(upload, path, iodata) do
-    # the same file (assuming we're using the sha256 of its content in its path) 
-    # was uploaded before - let's just point to that and save some space
-    if File.exists?(path) do
-      Memento.Query.write(upload)
-      PubSub.broadcast(PS, PS.file_available(upload.id), {:file_available, upload.id})
-      path
-    else
-      File.open(path, [:binary, :raw, :write], fn file ->
-        IO.binwrite(file, iodata)
-        Memento.Query.write(upload)
-        PubSub.broadcast(PS, PS.file_available(upload.id), {:file_available, upload.id})
-        path
-      end)
-    end
-  end
-
-  defp validate_available(upload_id) do
-    case Upload.getT(upload_id) do
-      nil -> :ok
-      %Upload{byte_size: :pending} -> :ok
-      %Upload{} -> {:error, :already_uploaded}
-    end
-  end
-
-  defp validate_size(pending_upload_size) do
-    if pending_upload_size > max_upload_size_bytes() do
-      {:error, :too_large}
-    else
+  # copies the uploaded file from a temp path to the content repo's directory,
+  # as long as the upload doesn't already exist
+  defp copy_upload_if_no_exists(tmp_upload_path, upload_path) do
+    with :ok <- upload_path |> Path.dirname() |> File.mkdir_p(),
+         :ok <- File.cp(tmp_upload_path, upload_path, on_conflict: fn _, _ -> false end) do
       :ok
     end
   end
 
-  defp validate_perms(user_id, pending_upload_size) do
-    {num_uploads, total_uploaded_bytes} =
-      Upload
-      |> Memento.Query.select_raw(Upload.all_user_upload_sizes_ms(user_id), coerce: false)
-      |> Enum.reduce({0, pending_upload_size}, fn upload_bytes, {num_uploads, total_uploaded_bytes} ->
-        {num_uploads + 1, total_uploaded_bytes + upload_bytes}
-      end)
-
-    %{max_files: max_files, max_bytes: max_bytes} = user_upload_limits()
-
+  defp validate_upload_size(uploader_id, upload_size) do
     cond do
-      num_uploads >= max_files -> {:error, {:quota_reached, :max_files}}
-      total_uploaded_bytes >= max_bytes -> {:error, {:quota_reached, :max_bytes}}
-      :else -> :ok
-    end
-  end
+      upload_size > max_upload_size_bytes() ->
+        {:error, :too_large}
 
-  defp validate_mime(mime_type) do
-    if mime_type in allowed_mimes(), do: :ok, else: {:error, :invalid_mime_type}
+      Upload.user_total_uploaded_bytesT(uploader_id) + upload_size > user_upload_limits().max_bytes ->
+        {:error, {:quota_reached, :max_bytes}}
+
+      :else ->
+        :ok
+    end
   end
 
   defp path_for_upload(%Upload{} = upload, repo_path) do
     case repo_path do
-      :default ->
-        Path.join([Application.app_dir(:radio_beam), "priv/static/media", Upload.path_for(upload)])
-
-      path when is_binary(path) ->
-        Path.join([path, Upload.path_for(upload)])
+      :default -> Path.join([Application.app_dir(:radio_beam), "priv/static/media", Upload.path_for(upload)])
+      path when is_binary(path) -> Path.join([path, Upload.path_for(upload)])
     end
   end
 end
