@@ -2,6 +2,9 @@ defmodule RadioBeam.ContentRepoTest do
   use ExUnit.Case, async: true
   doctest RadioBeam.ContentRepo
 
+  alias RadioBeam.ContentRepo.Thumbnail
+  alias Vix.Vips.Operation
+  alias Vix.Vips.Image
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo
   alias RadioBeam.ContentRepo.MatrixContentURI
@@ -22,10 +25,10 @@ defmodule RadioBeam.ContentRepoTest do
     end
 
     test "returns its upload and file content", %{upload_id: upload_id, content: content, tmp_dir: tmp_dir} do
-      assert {:ok, %Upload{id: ^upload_id, file: %FileInfo{type: "txt"}}, upload_path} =
+      assert {:ok, %Upload{id: ^upload_id, file: %FileInfo{type: "txt"}} = upload} =
                ContentRepo.get(upload_id, repo_path: tmp_dir)
 
-      assert ^content = File.read!(upload_path)
+      assert ^content = upload |> ContentRepo.upload_file_path(tmp_dir) |> File.read!()
     end
 
     test "returns :not_yet_uploaded for a reserved upload", %{user: user, tmp_dir: tmp_dir} do
@@ -35,6 +38,78 @@ defmodule RadioBeam.ContentRepoTest do
 
     test "returns :not_found when an upload doesn't exist under the MXC", %{tmp_dir: tmp_dir} do
       assert {:error, :not_found} = ContentRepo.get(MatrixContentURI.new!(), repo_path: tmp_dir)
+    end
+  end
+
+  describe "get_thumbnail/2,3" do
+    @describetag :tmp_dir
+
+    setup do
+      %{user: Fixtures.user()}
+    end
+
+    @width 1000
+    @height 1000
+    test "successfully thumbnails an upload for all allowed specs", %{tmp_dir: repo_path, user: user} do
+      upload = prep_img_upload(repo_path, user, @width, @height)
+
+      for {w, h, method} = spec <- Thumbnail.allowed_specs() do
+        assert {:ok, thumbnail_path} = ContentRepo.get_thumbnail(upload, spec, repo_path: repo_path)
+        assert File.exists?(thumbnail_path)
+
+        {image, _} = Operation.jpegload!(thumbnail_path)
+
+        case method do
+          :scale ->
+            # > “scale” tries to return an image where either the width or the height is
+            # > smaller than the requested size."
+            assert (Image.width(image) <= w and Image.height(image) == h) or
+                     (Image.width(image) == w and Image.height(image) <= h)
+
+          :crop ->
+            # > “crop” tries to return an image where the width and height are close to
+            # > the requested size and the aspect matches the requested size
+            assert ^w = Image.width(image)
+            assert ^h = Image.height(image)
+        end
+      end
+    end
+
+    @width 500
+    @height 500
+    test "returns the original image when one or both dimensions are smaller than the og media dimensions", %{
+      tmp_dir: repo_path,
+      user: user
+    } do
+      upload = prep_img_upload(repo_path, user, @width, @height)
+
+      for {w, h, _method} = spec <- Thumbnail.allowed_specs(), @width < w or @height < h do
+        assert {:ok, thumbnail_path} = ContentRepo.get_thumbnail(upload, spec, repo_path: repo_path)
+        assert File.exists?(thumbnail_path)
+        assert File.read!(ContentRepo.upload_file_path(upload, repo_path)) == File.read!(thumbnail_path)
+      end
+    end
+
+    defp prep_img_upload(repo_dir, user, width, height) do
+      {:ok, upload} = ContentRepo.create(user)
+
+      tmp_upload_path = Path.join([repo_dir, "tmp_jpg_upload_#{width}_#{height}"])
+
+      {text, _} =
+        Operation.text!(
+          ~s(<span foreground="blue">This is a <b>thumbnail</b> with </span> <span foreground="red">rendered text</span>),
+          dpi: 300,
+          rgba: true
+        )
+
+      width
+      |> Operation.black!(height)
+      |> Operation.composite2!(text, :VIPS_BLEND_MODE_OVER, x: 20, y: div(height, 4))
+      |> Operation.jpegsave!(tmp_upload_path)
+
+      file_info = Fixtures.file_info(File.read!(tmp_upload_path), "jpg", "cool_picture")
+      {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, repo_dir)
+      upload
     end
   end
 
@@ -91,7 +166,7 @@ defmodule RadioBeam.ContentRepoTest do
       iodata: iodata
     } do
       assert {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, tmp_dir)
-      assert IO.iodata_to_binary(iodata) == File.read!(Path.join([tmp_dir, Upload.path_for(upload)]))
+      assert IO.iodata_to_binary(iodata) == File.read!(ContentRepo.upload_file_path(upload, tmp_dir))
       assert {:ok, ^upload} = Upload.get(upload.id)
     end
 

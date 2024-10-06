@@ -1,6 +1,7 @@
 defmodule RadioBeam.ContentRepo do
   import Memento.Transaction, only: [abort: 1]
 
+  alias RadioBeam.ContentRepo.Thumbnail
   alias Phoenix.PubSub
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
@@ -43,28 +44,63 @@ defmodule RadioBeam.ContentRepo do
   TODO: check if the server_name is this server, GET from origin server if
   remote media and within max size
   """
-  @spec get(MatrixContentURI.t(), get_opts()) ::
-          {:ok, Upload.t(), Path.t()} | {:error, :too_large | :not_yet_uploaded | any()}
+  @spec get(MatrixContentURI.t(), get_opts()) :: {:ok, Upload.t()} | {:error, :too_large | :not_yet_uploaded | any()}
   def get(%MatrixContentURI{} = mxc, opts) do
     max_size_bytes = max_upload_size_bytes()
-    repo_path = Keyword.get_lazy(opts, :repo_path, &path/0)
     timeout = Keyword.get_lazy(opts, :timeout, &max_wait_for_download_ms/0)
     PubSub.subscribe(PS, PS.file_uploaded(mxc))
 
     case Upload.get(mxc) do
       {:ok, %Upload{file: %FileInfo{byte_size: byte_size}}} when byte_size > max_size_bytes -> {:error, :too_large}
-      {:ok, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
-      {:ok, %Upload{file: :reserved}} -> await_upload(timeout, repo_path)
+      {:ok, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload}
+      {:ok, %Upload{file: :reserved}} -> await_upload(timeout)
       {:error, _} = error -> error
     end
   end
 
-  defp await_upload(timeout, repo_path) do
+  defp await_upload(timeout) do
     receive do
-      {:file_uploaded, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload, path_for_upload(upload, repo_path)}
+      {:file_uploaded, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload}
     after
       timeout -> {:error, :not_yet_uploaded}
     end
+  end
+
+  @thumbnailable_types Thumbnail.allowed_file_types()
+  defguardp is_thumbnailable(type) when type in @thumbnailable_types
+
+  @allowed_specs Thumbnail.allowed_specs()
+  defguardp is_allowed_spec(spec) when spec in @allowed_specs
+
+  def get_thumbnail(upload, spec, opts \\ [])
+
+  def get_thumbnail(%Upload{file: %FileInfo{type: type}} = upload, spec, opts)
+      when is_thumbnailable(type) and is_allowed_spec(spec) do
+    repo_path = Keyword.get_lazy(opts, :repo_path, &path/0)
+
+    thumbnail_path = thumbnail_file_path(upload, spec, repo_path)
+
+    if not File.exists?(thumbnail_path) do
+      animated? = Keyword.get(opts, :animated?, true)
+      generate_thumbnail(upload, spec, animated?, thumbnail_path, repo_path)
+    end
+
+    {:ok, thumbnail_path}
+  rescue
+    error -> error
+  end
+
+  def get_thumbnail(%Upload{file: :reserved}, _spec, _opts), do: {:error, :not_yet_uploaded}
+  def get_thumbnail(%Upload{file: nil}, _spec, _opts), do: {:error, :not_yet_uploaded}
+  def get_thumbnail(%Upload{}, spec, _opts) when not is_allowed_spec(spec), do: {:error, :invalid_spec}
+  def get_thumbnail(%Upload{file: %{type: type}}, _spec, _opts), do: {:error, {:cannot_thumbnail, type}}
+
+  defp generate_thumbnail(%Upload{} = upload, spec, animated?, thumbnail_path, repo_path) do
+    upload.file.type
+    |> Thumbnail.new!()
+    |> Thumbnail.load_source_from_path!(upload_file_path(upload, repo_path))
+    |> Thumbnail.generate!(spec, animated?)
+    |> Thumbnail.save_to_path!(thumbnail_path)
   end
 
   @doc """
@@ -106,7 +142,7 @@ defmodule RadioBeam.ContentRepo do
     fn ->
       with :ok <- validate_upload_size(upload.uploaded_by_id, file_info.byte_size),
            %Upload{} = upload <- upload |> Upload.put_file(file_info) |> Upload.putT(),
-           :ok <- copy_upload_if_no_exists(tmp_upload_path, path_for_upload(upload, repo_path)) do
+           :ok <- copy_upload_if_no_exists(tmp_upload_path, upload_file_path(upload, repo_path)) do
         PubSub.broadcast(PS, PS.file_uploaded(upload.id), {:file_uploaded, upload})
         upload
       else
@@ -142,10 +178,18 @@ defmodule RadioBeam.ContentRepo do
     end
   end
 
-  defp path_for_upload(%Upload{} = upload, repo_path) do
-    case repo_path do
-      :default -> Path.join([Application.app_dir(:radio_beam), "priv/static/media", Upload.path_for(upload)])
-      path when is_binary(path) -> Path.join([path, Upload.path_for(upload)])
-    end
+  defp thumbnail_file_path(%Upload{} = upload, {width, height, method}, repo_path) do
+    Path.join([
+      parse_repo_path(repo_path),
+      upload.id.server_name,
+      "#{upload.file.sha256}_#{width}x#{height}_#{method}.#{upload.file.type}"
+    ])
   end
+
+  def upload_file_path(%Upload{} = upload, repo_path \\ path()) do
+    Path.join([parse_repo_path(repo_path), upload.id.server_name, "#{upload.file.sha256}.#{upload.file.type}"])
+  end
+
+  defp parse_repo_path(:default), do: Application.app_dir(:radio_beam)
+  defp parse_repo_path(repo_path) when is_binary(repo_path), do: repo_path
 end

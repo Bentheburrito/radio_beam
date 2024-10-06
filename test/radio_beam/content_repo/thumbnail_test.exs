@@ -1,0 +1,113 @@
+defmodule RadioBeam.ContentRepo.ThumbnailTest do
+  use ExUnit.Case, async: true
+
+  alias RadioBeam.ContentRepo.Thumbnail
+  alias Vix.Vips.Image
+  alias Vix.Vips.Operation
+
+  describe "new!/1" do
+    test "creates a %Thumbnail{} when given a thumbnailable file type" do
+      assert %Thumbnail{} = Thumbnail.new!("gif")
+      assert %Thumbnail{} = Thumbnail.new!("png")
+    end
+
+    test "raises when given an invalid file type" do
+      assert_raise FunctionClauseError, fn -> Thumbnail.new!("pdf") end
+    end
+  end
+
+  describe "load_source_from_path!/2" do
+    @describetag :tmp_dir
+    setup %{tmp_dir: tmp_dir} do
+      image = Operation.black!(500, 500)
+
+      valid_pairs =
+        for type <- Thumbnail.allowed_file_types() do
+          path = Path.join([tmp_dir, "image.#{type}"])
+          write!(image, path)
+          {type, path}
+        end
+
+      %{pairs: valid_pairs}
+    end
+
+    test "loads images of all allowed types", %{pairs: pairs} do
+      for {type, path} <- pairs do
+        assert %Thumbnail{} = type |> Thumbnail.new!() |> Thumbnail.load_source_from_path!(path)
+      end
+    end
+  end
+
+  describe "generate!/2" do
+    @describetag :tmp_dir
+    setup %{tmp_dir: tmp_dir} do
+      {width, height} = {500, 500}
+      image = Operation.black!(width, height)
+
+      thumbnails =
+        for type <- Thumbnail.allowed_file_types() do
+          path = Path.join([tmp_dir, "image.#{type}"])
+          write!(image, path)
+          type |> Thumbnail.new!() |> Thumbnail.load_source_from_path!(path)
+        end
+
+      %{thumbnails: thumbnails, dimensions: {width, height}}
+    end
+
+    test "can generate thumbnails for all allowed types and specs", %{thumbnails: thumbnails} do
+      for t <- thumbnails, spec <- Thumbnail.allowed_specs() do
+        assert %Thumbnail{} = Thumbnail.generate!(t, spec, false)
+      end
+    end
+
+    test "does not thumbnail image if its dimensions are smaller than the requested thumbnail", %{
+      thumbnails: thumbnails,
+      dimensions: {width, height}
+    } do
+      for t <- thumbnails, w <- [width + 1, width + 100], h <- [height + 1, height + 100] do
+        thumbnail = Thumbnail.generate!(t, {w, h, :scale}, false)
+        assert Thumbnail.source_image(thumbnail) == Thumbnail.image(thumbnail)
+      end
+    end
+  end
+
+  describe "save_to_path/2" do
+    @describetag :tmp_dir
+    setup %{tmp_dir: tmp_dir} do
+      {width, height} = {500, 500}
+      image = Operation.black!(width, height)
+
+      pairs =
+        for type <- Thumbnail.allowed_file_types() do
+          path = Path.join([tmp_dir, "image.#{type}"])
+          write!(image, path)
+
+          {type,
+           type
+           |> Thumbnail.new!()
+           |> Thumbnail.load_source_from_path!(path)
+           |> Thumbnail.generate!({96, 96, :crop}, false)}
+        end
+
+      %{pairs: pairs}
+    end
+
+    test "saves to the given path", %{tmp_dir: tmp_dir, pairs: pairs} do
+      for {type, t} <- pairs do
+        path = Path.join([tmp_dir, "image-saved.#{type}"])
+        refute File.exists?(path)
+        assert ^t = Thumbnail.save_to_path!(t, path)
+        assert File.exists?(path)
+      end
+    end
+  end
+
+  defp write!(image, path) do
+    # it seems the pre-compiled libvips doesn't play nicely with `Image.write_to_file` and `.heif`
+    if String.ends_with?(path, ".heif") do
+      Operation.heifsave!(image, path, compression: :VIPS_FOREIGN_HEIF_COMPRESSION_AV1)
+    else
+      Image.write_to_file(image, path)
+    end
+  end
+end

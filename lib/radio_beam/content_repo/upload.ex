@@ -57,10 +57,6 @@ defmodule RadioBeam.ContentRepo.Upload do
 
   def getT(%MatrixContentURI{} = mxc, opts \\ []), do: Memento.Query.read(__MODULE__, mxc, opts)
 
-  def path_for(%__MODULE__{file: %FileInfo{} = file} = upload) do
-    Path.join([upload.id.server_name, "#{file.sha256}.#{file.type}"])
-  end
-
   def user_total_uploaded_bytesT("@" <> _ = uploaded_by_id) do
     match_head = {__MODULE__, :_, :"$1", :_, uploaded_by_id}
     match_spec = [{match_head, [{:is_map, :"$1"}], [:"$1"]}]

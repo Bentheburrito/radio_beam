@@ -38,11 +38,11 @@ defmodule RadioBeamWeb.ContentRepoController do
       end
 
     with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
-         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload, upload_path} <- ContentRepo.get(mxc, timeout: timeout) do
+         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} <- ContentRepo.get(mxc, timeout: timeout) do
       conn
       |> put_resp_header("content-type", MIME.type(upload.file.type))
       |> put_resp_header("content-disposition", Map.get(params, "filename", upload.file.filename))
-      |> send_file(200, upload_path)
+      |> send_file(200, ContentRepo.upload_file_path(upload))
     else
       {:error, :not_found} ->
         json_error(conn, 404, :not_found, "File not found")
