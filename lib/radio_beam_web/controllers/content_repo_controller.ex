@@ -17,10 +17,12 @@ defmodule RadioBeamWeb.ContentRepoController do
   require Logger
 
   plug RadioBeamWeb.Plugs.Authenticate
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: ContentRepoSchema] when action in [:thumbnail, :download]
+  plug :parse_mxc_and_fetch_upload when action in [:thumbnail, :download]
+
   plug :get_or_reserve_upload when action == :upload
   plug :parse_mime when action == :upload
   plug :parse_body when action == :upload
-  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: ContentRepoSchema] when action == :thumbnail
 
   @must_reserve_error_msg "You must reserve a content URI first"
   @unknown_error_msg "An unknown error occurred while uploading your file - please try again"
@@ -30,43 +32,20 @@ defmodule RadioBeamWeb.ContentRepoController do
     json(conn, %{"m.upload.size" => ContentRepo.max_upload_size_bytes()})
   end
 
-  def download(conn, %{"server_name" => server_name, "media_id" => media_id} = params) do
-    # TODO: create a Schema for this
-    timeout =
-      with %{"timeout" => timeout_str} <- params,
-           {:ok, timeout} <- RadioBeamWeb.Schemas.as_integer(timeout_str) do
-        timeout
-      else
-        _ -> ContentRepo.max_wait_for_download_ms()
-      end
+  def download(conn, params) do
+    upload = conn.assigns.upload
 
-    with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
-         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} <- ContentRepo.get(mxc, timeout: timeout) do
-      conn
-      |> put_resp_header("content-type", MIME.type(upload.file.type))
-      |> put_resp_header("content-disposition", Map.get(params, "filename", upload.file.filename))
-      |> send_file(200, ContentRepo.upload_file_path(upload))
-    else
-      {:error, :not_found} ->
-        json_error(conn, 404, :not_found, "File not found")
-
-      {:error, :not_yet_uploaded} ->
-        json_error(conn, 504, :endpoint_error, [:not_yet_uploaded, "File has not yet been uploaded"])
-
-      {:error, :too_large} ->
-        json_error(conn, 502, :endpoint_error, [:too_large, "File too large"])
-
-      {:error, invalid_mxc_reason} ->
-        json_error(conn, 400, :endpoint_error, [:bad_param, "Malformed MXC URI: #{invalid_mxc_reason}"])
-    end
+    conn
+    |> put_resp_header("content-type", MIME.type(upload.file.type))
+    |> put_resp_header("content-disposition", Map.get(params, "filename", upload.file.filename))
+    |> send_file(200, ContentRepo.upload_file_path(upload))
   end
 
   def thumbnail(conn, _params) do
-    %{"server_name" => server_name, "media_id" => media_id} = request = conn.assigns.request
+    request = conn.assigns.request
+    upload = conn.assigns.upload
 
-    with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
-         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} <- ContentRepo.get(mxc, timeout: request["timeout_ms"]),
-         {:ok, spec} <- Thumbnail.coerce_spec(request["width"], request["height"], request["method"]),
+    with {:ok, spec} <- Thumbnail.coerce_spec(request["width"], request["height"], request["method"]),
          {:ok, thumbnail_path} <- ContentRepo.get_thumbnail(upload, spec) do
       conn
       |> put_resp_header("content-type", MIME.type(upload.file.type))
@@ -77,18 +56,6 @@ defmodule RadioBeamWeb.ContentRepoController do
 
       {:error, {:cannot_thumbnail, type}} ->
         json_error(conn, 400, :unknown, "This homeserver does not support thumbnailing #{type} files")
-
-      {:error, :not_found} ->
-        json_error(conn, 404, :not_found, "File not found")
-
-      {:error, :not_yet_uploaded} ->
-        json_error(conn, 504, :endpoint_error, [:not_yet_uploaded, "File has not yet been uploaded"])
-
-      {:error, :too_large} ->
-        json_error(conn, 502, :endpoint_error, [:too_large, "File too large"])
-
-      {:error, invalid_mxc_reason} ->
-        json_error(conn, 400, :endpoint_error, [:bad_param, "Malformed MXC URI: #{invalid_mxc_reason}"])
     end
   end
 
@@ -135,6 +102,28 @@ defmodule RadioBeamWeb.ContentRepoController do
 
       {:error, {:quota_reached, quota_kind}} ->
         quota_reached_error(conn, quota_kind, user)
+    end
+  end
+
+  ### HELPERS / PLUGS ###
+
+  defp parse_mxc_and_fetch_upload(conn, _opts) do
+    %{"server_name" => server_name, "media_id" => media_id} = request = conn.assigns.request
+
+    timeout =
+      case Map.fetch(request, "timeout_ms") do
+        {:ok, timeout} -> timeout
+        :error -> ContentRepo.max_wait_for_download_ms()
+      end
+
+    with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
+         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} <- ContentRepo.get(mxc, timeout: timeout) do
+      assign(conn, :upload, upload)
+    else
+      {:error, :not_found} -> halting_json_error(conn, 404, :not_found, "File not found")
+      {:error, :not_yet_uploaded} -> halting_not_yet_uploaded_error(conn)
+      {:error, :too_large} -> halting_json_error(conn, 502, :endpoint_error, [:too_large, "File too large"])
+      {:error, reason} -> halting_json_error(conn, 400, :endpoint_error, [:bad_param, "Malformed MXC URI: #{reason}"])
     end
   end
 
@@ -231,5 +220,9 @@ defmodule RadioBeamWeb.ContentRepoController do
     Logger.info("MEDIA QUOTA REACHED #{quota_kind}: #{user} tried to upload a file after reaching a limit")
 
     json_error(conn, 403, :forbidden, @quota_reached_error_msg)
+  end
+
+  defp halting_not_yet_uploaded_error(conn) do
+    halting_json_error(conn, 504, :endpoint_error, [:not_yet_uploaded, "File has not yet been uploaded"])
   end
 end

@@ -61,7 +61,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
     test "returns M_NOT_YET_UPLOADED (504) when content is missing after waiting a bit", %{conn: conn, user: user} do
       {:ok, %{id: mxc}} = ContentRepo.create(user)
-      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout=200", %{})
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout_ms=200", %{})
       assert %{"errcode" => "M_NOT_YET_UPLOADED"} = json_response(conn, 504)
     end
 
@@ -77,7 +77,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
       download_task =
         Task.async(fn ->
-          get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout=#{timeout}", %{})
+          get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout_ms=#{timeout}", %{})
         end)
 
       Process.sleep(div(timeout, 8))
@@ -103,7 +103,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       {:ok, upload} = ContentRepo.upload(upload, Fixtures.file_info(content, "csv"), tmp_upload_path)
       Upload.put(%Upload{upload | file: %FileInfo{upload.file | byte_size: upload.file.byte_size + 1}})
 
-      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout=200", %{})
+      conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout_ms=200", %{})
       assert %{"errcode" => "M_TOO_LARGE"} = json_response(conn, 502)
     end
   end
