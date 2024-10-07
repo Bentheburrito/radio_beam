@@ -9,8 +9,10 @@ defmodule RadioBeamWeb.ContentRepoController do
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.ContentRepo.MatrixContentURI
+  alias RadioBeam.ContentRepo.Thumbnail
   alias RadioBeam.ContentRepo
   alias RadioBeam.User
+  alias RadioBeamWeb.Schemas.ContentRepo, as: ContentRepoSchema
 
   require Logger
 
@@ -18,6 +20,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   plug :get_or_reserve_upload when action == :upload
   plug :parse_mime when action == :upload
   plug :parse_body when action == :upload
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: ContentRepoSchema] when action == :thumbnail
 
   @must_reserve_error_msg "You must reserve a content URI first"
   @unknown_error_msg "An unknown error occurred while uploading your file - please try again"
@@ -44,6 +47,37 @@ defmodule RadioBeamWeb.ContentRepoController do
       |> put_resp_header("content-disposition", Map.get(params, "filename", upload.file.filename))
       |> send_file(200, ContentRepo.upload_file_path(upload))
     else
+      {:error, :not_found} ->
+        json_error(conn, 404, :not_found, "File not found")
+
+      {:error, :not_yet_uploaded} ->
+        json_error(conn, 504, :endpoint_error, [:not_yet_uploaded, "File has not yet been uploaded"])
+
+      {:error, :too_large} ->
+        json_error(conn, 502, :endpoint_error, [:too_large, "File too large"])
+
+      {:error, invalid_mxc_reason} ->
+        json_error(conn, 400, :endpoint_error, [:bad_param, "Malformed MXC URI: #{invalid_mxc_reason}"])
+    end
+  end
+
+  def thumbnail(conn, _params) do
+    %{"server_name" => server_name, "media_id" => media_id} = request = conn.assigns.request
+
+    with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
+         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} <- ContentRepo.get(mxc, timeout: request["timeout_ms"]),
+         {:ok, spec} <- Thumbnail.coerce_spec(request["width"], request["height"], request["method"]),
+         {:ok, thumbnail_path} <- ContentRepo.get_thumbnail(upload, spec) do
+      conn
+      |> put_resp_header("content-type", MIME.type(upload.file.type))
+      |> send_file(200, thumbnail_path)
+    else
+      {:error, :invalid_spec} ->
+        json_error(conn, 400, :bad_json, "The given thumbnail width, height, or method is not supported")
+
+      {:error, {:cannot_thumbnail, type}} ->
+        json_error(conn, 400, :unknown, "This homeserver does not support thumbnailing #{type} files")
+
       {:error, :not_found} ->
         json_error(conn, 404, :not_found, "File not found")
 

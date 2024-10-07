@@ -1,6 +1,9 @@
 defmodule RadioBeamWeb.ContentRepoControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.ContentRepo.Thumbnail
+  alias Vix.Vips.Operation
+  alias Vix.Vips.Image
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo.MatrixContentURI
@@ -17,7 +20,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     }
   end
 
-  describe "get/2" do
+  describe "download/2" do
     @describetag :tmp_dir
     setup %{tmp_dir: tmp_dir} do
       user = Fixtures.user()
@@ -101,6 +104,109 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       Upload.put(%Upload{upload | file: %FileInfo{upload.file | byte_size: upload.file.byte_size + 1}})
 
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout=200", %{})
+      assert %{"errcode" => "M_TOO_LARGE"} = json_response(conn, 502)
+    end
+  end
+
+  describe "thumbnail/2" do
+    @describetag :tmp_dir
+    @width 350
+    @height 350
+    setup %{tmp_dir: tmp_dir} do
+      user = Fixtures.user()
+      upload = Fixtures.jpg_upload(user, @width, @height, tmp_dir)
+
+      %{user: user, upload: upload, dimensions: {@width, @height}}
+    end
+
+    @width 200
+    @height 200
+    @method "scale"
+    test "returns a thumbnail (200) for an uploaded image", %{conn: conn, upload: %{id: mxc}} do
+      params = %{"width" => @width, "height" => @height, "method" => @method}
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
+
+      assert image_content = response(conn, 200)
+      assert ["image/jpeg"] = get_resp_header(conn, "content-type")
+
+      {:ok, {expected_width, expected_height, _method}} =
+        Thumbnail.coerce_spec(@width, @height, String.to_existing_atom(@method))
+
+      assert {image, _flags} = Operation.jpegload_buffer!(image_content)
+      assert Image.width(image) == min(expected_width, expected_height)
+      assert Image.height(image) == min(expected_width, expected_height)
+    end
+
+    @width 250
+    @height 250
+    @method "scale"
+    test "returns the original image (200) when the requested dimensions are larger than the image's", %{
+      conn: conn,
+      upload: %{id: mxc},
+      dimensions: {expected_width, expected_height}
+    } do
+      params = %{"width" => @width, "height" => @height, "method" => @method}
+
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
+
+      assert image_content = response(conn, 200)
+      assert ["image/jpeg"] = get_resp_header(conn, "content-type")
+
+      assert {image, _flags} = Operation.jpegload_buffer!(image_content)
+      assert Image.width(image) == expected_width
+      assert Image.height(image) == expected_height
+    end
+
+    test "will disallow/not upscale for very large dimensions (400)", %{conn: conn, upload: %{id: mxc}} do
+      params = %{"width" => 2 ** 32, "height" => 2 ** 32, "method" => "crop"}
+
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+      assert error =~ "not supported"
+    end
+
+    test "will not thumbnail txt files (400)", %{conn: conn, tmp_dir: tmp_dir, user: user} do
+      iodata = "this is not a picture !!!!!!"
+      {:ok, %Upload{id: mxc} = upload} = ContentRepo.create(user)
+      tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
+      File.write!(tmp_upload_path, iodata)
+      ContentRepo.upload(upload, Fixtures.file_info(iodata, "txt"), tmp_upload_path)
+      params = %{"width" => @width, "height" => @height, "method" => @method}
+
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
+
+      assert %{"errcode" => "M_UNKNOWN", "error" => error} = json_response(conn, 400)
+      assert error =~ "does not support thumbnailing txt files"
+    end
+
+    test "returns M_NOT_FOUND (404) if no upload exists for the given mxc", %{conn: conn} do
+      params = %{"width" => @width, "height" => @height, "method" => @method}
+
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/localhost/whatareyoudoing", params)
+
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+
+    test "returns M_NOT_YET_UPLOADED (504) if the upload has only been reserved (no content yet)", %{
+      conn: conn,
+      user: user
+    } do
+      {:ok, %{id: mxc}} = ContentRepo.create(user)
+      params = %{"width" => @width, "height" => @height, "method" => @method, "timeout_ms" => 5}
+
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
+
+      assert %{"errcode" => "M_NOT_YET_UPLOADED"} = json_response(conn, 504)
+    end
+
+    test "returns M_TOO_LARGE (502) if the (local) content is too large", %{conn: conn, upload: %{id: mxc} = upload} do
+      Upload.put(%Upload{upload | file: %FileInfo{upload.file | byte_size: upload.file.byte_size ** 2}})
+
+      params = %{"width" => @width, "height" => @height, "method" => @method}
+
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
+
       assert %{"errcode" => "M_TOO_LARGE"} = json_response(conn, 502)
     end
   end

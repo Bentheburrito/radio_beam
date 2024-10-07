@@ -51,7 +51,7 @@ defmodule RadioBeam.ContentRepoTest do
     @width 1000
     @height 1000
     test "successfully thumbnails an upload for all allowed specs", %{tmp_dir: repo_path, user: user} do
-      upload = prep_img_upload(repo_path, user, @width, @height)
+      upload = Fixtures.jpg_upload(user, @width, @height, repo_path, repo_path)
 
       for {w, h, method} = spec <- Thumbnail.allowed_specs() do
         assert {:ok, thumbnail_path} = ContentRepo.get_thumbnail(upload, spec, repo_path: repo_path)
@@ -81,35 +81,13 @@ defmodule RadioBeam.ContentRepoTest do
       tmp_dir: repo_path,
       user: user
     } do
-      upload = prep_img_upload(repo_path, user, @width, @height)
+      upload = Fixtures.jpg_upload(user, @width, @height, repo_path, repo_path)
 
       for {w, h, _method} = spec <- Thumbnail.allowed_specs(), @width < w or @height < h do
         assert {:ok, thumbnail_path} = ContentRepo.get_thumbnail(upload, spec, repo_path: repo_path)
         assert File.exists?(thumbnail_path)
         assert File.read!(ContentRepo.upload_file_path(upload, repo_path)) == File.read!(thumbnail_path)
       end
-    end
-
-    defp prep_img_upload(repo_dir, user, width, height) do
-      {:ok, upload} = ContentRepo.create(user)
-
-      tmp_upload_path = Path.join([repo_dir, "tmp_jpg_upload_#{width}_#{height}"])
-
-      {text, _} =
-        Operation.text!(
-          ~s(<span foreground="blue">This is a <b>thumbnail</b> with </span> <span foreground="red">rendered text</span>),
-          dpi: 300,
-          rgba: true
-        )
-
-      width
-      |> Operation.black!(height)
-      |> Operation.composite2!(text, :VIPS_BLEND_MODE_OVER, x: 20, y: div(height, 4))
-      |> Operation.jpegsave!(tmp_upload_path)
-
-      file_info = Fixtures.file_info(File.read!(tmp_upload_path), "jpg", "cool_picture")
-      {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, repo_dir)
-      upload
     end
   end
 

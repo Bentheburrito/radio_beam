@@ -13,13 +13,34 @@ defmodule RadioBeam.ContentRepo.Thumbnail do
   @allowed_specs [{32, 32, :crop}, {96, 96, :crop}, {320, 240, :scale}, {640, 480, :scale}, {800, 600, :scale}]
   def allowed_specs, do: @allowed_specs
 
+  defguardp is_non_neg_int(param) when is_integer(param) and param >= 0
+
   @opaque t() :: %__MODULE__{
             image: nil | :use_source | Image.t(),
             source: nil | {Image.t(), Path.t()},
             type: String.t()
           }
 
-  @type spec() :: {width :: non_neg_integer(), height :: non_neg_integer(), :crop | :scale}
+  @type method() :: :crop | :scale
+  @type spec() :: {width :: non_neg_integer(), height :: non_neg_integer(), method()}
+
+  @doc """
+  Given a width, height, and thumbnailing method, tries to map those params to
+  a valid thumbnail spec.
+
+  > The dimensions given to the thumbnail API are the minimum size the client
+  > would prefer.
+  """
+  @spec coerce_spec(non_neg_integer(), non_neg_integer(), method()) :: {:ok, spec()} | {:error, :invalid_spec}
+  def coerce_spec(width, height, method)
+      when is_non_neg_int(width) and is_non_neg_int(height) and method in ~w|scale crop|a do
+    Enum.find_value(@allowed_specs, {:error, :invalid_spec}, fn
+      {w, h, ^method} = spec -> w >= width and h >= height && {:ok, spec}
+      _ -> false
+    end)
+  end
+
+  def coerce_spec(_width, _height, _method), do: {:error, :invalid_spec}
 
   @spec new!(String.t()) :: t() | no_return()
   def new!(type) when type in @allowed_file_types, do: %__MODULE__{image: nil, source: nil, type: type}

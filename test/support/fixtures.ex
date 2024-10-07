@@ -3,10 +3,12 @@ defmodule Fixtures do
   Test fixtures
   """
 
-  alias RadioBeam.ContentRepo.Upload.FileInfo
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
+  alias RadioBeam.ContentRepo.Upload.FileInfo
+  alias RadioBeam.ContentRepo
   alias RadioBeam.Device
   alias RadioBeam.User
+  alias Vix.Vips.Operation
 
   def strong_password, do: "Asdf123$"
 
@@ -29,5 +31,27 @@ defmodule Fixtures do
 
   def random_string(num_bytes) do
     for _i <- 1..num_bytes, into: "", do: <<:rand.uniform(26) + ?A - 1>>
+  end
+
+  def jpg_upload(user, width, height, tmp_dir, repo_dir \\ ContentRepo.path()) do
+    {:ok, upload} = ContentRepo.create(user)
+
+    tmp_upload_path = Path.join([tmp_dir, "tmp_jpg_upload_#{width}_#{height}"])
+
+    {text, _} =
+      Operation.text!(
+        ~s(<span foreground="blue">This is a <b>thumbnail</b> with </span> <span foreground="red">rendered text</span>),
+        dpi: 300,
+        rgba: true
+      )
+
+    width
+    |> Operation.black!(height)
+    |> Operation.composite2!(text, :VIPS_BLEND_MODE_OVER, x: 20, y: div(height, 4))
+    |> Operation.jpegsave!(tmp_upload_path)
+
+    file_info = file_info(File.read!(tmp_upload_path), "jpg", "cool_picture")
+    {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, repo_dir)
+    upload
   end
 end

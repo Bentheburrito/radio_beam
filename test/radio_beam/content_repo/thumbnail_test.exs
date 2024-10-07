@@ -5,6 +5,24 @@ defmodule RadioBeam.ContentRepo.ThumbnailTest do
   alias Vix.Vips.Image
   alias Vix.Vips.Operation
 
+  describe "coerce_spec/3" do
+    test "returns the min-sized spec with the same method that's GTOET the given dimensions" do
+      for {w, h, method} = expected_spec <- Thumbnail.allowed_specs(),
+          width <- [0, w - 1, w],
+          height <- [0, h - 1, h],
+          not (width == 0 and height == 0) do
+        assert {:ok, ^expected_spec} = Thumbnail.coerce_spec(width, height, method)
+      end
+    end
+
+    test "returns {:error, :invalid_spec} for bad input" do
+      assert {:error, :invalid_spec} = Thumbnail.coerce_spec(-1, 32, :scale)
+      assert {:error, :invalid_spec} = Thumbnail.coerce_spec(32, -1, :crop)
+      assert {:error, :invalid_spec} = Thumbnail.coerce_spec(32, 32, :upscale_if_needed)
+      assert {:error, :invalid_spec} = Thumbnail.coerce_spec(2 ** 32, 2 ** 32, :crop)
+    end
+  end
+
   describe "new!/1" do
     test "creates a %Thumbnail{} when given a thumbnailable file type" do
       assert %Thumbnail{} = Thumbnail.new!("gif")
