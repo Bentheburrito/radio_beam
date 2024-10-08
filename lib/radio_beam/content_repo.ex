@@ -14,6 +14,9 @@ defmodule RadioBeam.ContentRepo do
   @type get_opt() :: {:timeout, non_neg_integer()} | {:repo_path, Path.t()}
   @type get_opts() :: [get_opt()]
 
+  @type get_thumbnail_opt() :: {:animated?, boolean()} | {:repo_path, Path.t()}
+  @type get_thumbnail_opts() :: [get_opt()]
+
   def allowed_mimes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:allowed_mimes]
   def max_upload_size_bytes, do: Application.fetch_env!(:radio_beam, __MODULE__)[:single_file_max_bytes]
   def max_wait_for_download_ms, do: Application.fetch_env!(:radio_beam, __MODULE__)[:max_wait_for_download_ms]
@@ -72,6 +75,14 @@ defmodule RadioBeam.ContentRepo do
   @allowed_specs Thumbnail.allowed_specs()
   defguardp is_allowed_spec(spec) when spec in @allowed_specs
 
+  @doc """
+  Gets an `%Upload{}`'s thumbnail of the given spec, generating it if
+  necessary.
+  """
+  @spec get_thumbnail(Upload.t(), Thumbnail.spec(), get_thumbnail_opts()) ::
+          {:ok, Path.t()}
+          | {:error, :not_yet_uploaded | :invalid_spec | {:cannot_thumbnail, String.t()}}
+          | (error :: Exception.t())
   def get_thumbnail(upload, spec, opts \\ [])
 
   def get_thumbnail(%Upload{file: %FileInfo{type: type}} = upload, spec, opts)
