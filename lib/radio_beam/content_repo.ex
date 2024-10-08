@@ -181,13 +181,17 @@ defmodule RadioBeam.ContentRepo do
   defp thumbnail_file_path(%Upload{} = upload, {width, height, method}, repo_path) do
     Path.join([
       parse_repo_path(repo_path),
-      upload.id.server_name,
+      Base.encode64(upload.id.server_name),
       "#{upload.file.sha256}_#{width}x#{height}_#{method}.#{upload.file.type}"
     ])
   end
 
   def upload_file_path(%Upload{} = upload, repo_path \\ path()) do
-    Path.join([parse_repo_path(repo_path), upload.id.server_name, "#{upload.file.sha256}.#{upload.file.type}"])
+    Path.join([
+      parse_repo_path(repo_path),
+      Base.encode64(upload.id.server_name),
+      "#{upload.file.sha256}.#{upload.file.type}"
+    ])
   end
 
   defp parse_repo_path(:default), do: Application.app_dir(:radio_beam)

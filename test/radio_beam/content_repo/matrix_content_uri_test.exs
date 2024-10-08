@@ -7,10 +7,20 @@ defmodule RadioBeam.ContentRepo.MatrixContentURITest do
     test "creates a mxc struct from valid input" do
       assert {:ok, %MatrixContentURI{id: "abcd_-123", server_name: "local-host"}} =
                MatrixContentURI.new("local-host", "abcd_-123")
+
+      assert {:ok,
+              %MatrixContentURI{
+                id: "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM",
+                server_name: "some-mx-homeserver.dev"
+              }} =
+               MatrixContentURI.new(
+                 "some-mx-homeserver.dev",
+                 "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"
+               )
     end
 
     test "errors when given an invalid server_name" do
-      assert {:error, :invalid_server_name} = MatrixContentURI.new("local.host", "abcde")
+      assert {:error, :invalid_server_name} = MatrixContentURI.new("local.host/.././yo", "abcde")
       assert {:error, :invalid_server_name} = MatrixContentURI.new(".././localhost", "whoa_there")
       assert {:error, :invalid_server_name} = MatrixContentURI.new("~/localhost", "sus")
     end
@@ -30,7 +40,7 @@ defmodule RadioBeam.ContentRepo.MatrixContentURITest do
 
     test "errors when given an invalid MXC URI" do
       assert {:error, :invalid_scheme} = MatrixContentURI.parse("mxc:/localhost/abcd")
-      assert {:error, :invalid_server_name} = MatrixContentURI.parse("mxc://local.host/abcd")
+      assert {:error, :invalid_server_name} = MatrixContentURI.parse("mxc://local+host/abcd")
       assert {:error, :invalid_media_id} = MatrixContentURI.parse("mxc://localhost/ab.cd")
     end
   end

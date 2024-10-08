@@ -1,4 +1,6 @@
 defmodule RadioBeam.ContentRepo.MatrixContentURI do
+  alias Polyjuice.Util.Identifiers.V1.ServerName
+
   @attrs ~w|id server_name|a
   @enforce_keys @attrs
   defstruct @attrs
@@ -6,8 +8,8 @@ defmodule RadioBeam.ContentRepo.MatrixContentURI do
   @type t() :: %__MODULE__{id: String.t(), server_name: String.t()}
 
   def new(server_name \\ RadioBeam.server_name(), id \\ Ecto.UUID.generate()) do
-    with :ok <- validate_character_set(server_name, :invalid_server_name),
-         :ok <- validate_character_set(id, :invalid_media_id) do
+    with :ok <- validate_server_name(server_name),
+         :ok <- validate_media_id(id) do
       {:ok, %__MODULE__{id: id, server_name: server_name}}
     end
   end
@@ -15,7 +17,7 @@ defmodule RadioBeam.ContentRepo.MatrixContentURI do
   def new!(server_name \\ RadioBeam.server_name(), id \\ Ecto.UUID.generate()) do
     case new(server_name, id) do
       {:ok, mxc} -> mxc
-      {:error, error} -> raise error
+      {:error, error} -> raise to_string(error)
     end
   end
 
@@ -25,13 +27,15 @@ defmodule RadioBeam.ContentRepo.MatrixContentURI do
     end
   end
 
-  def parse(_uri_string) do
-    {:error, :invalid_scheme}
+  def parse(_uri_string), do: {:error, :invalid_scheme}
+
+  @media_id_regex ~r/^[A-Za-z0-9\-_]*$/
+  defp validate_media_id(media_id) when is_binary(media_id) do
+    if Regex.match?(@media_id_regex, media_id), do: :ok, else: {:error, :invalid_media_id}
   end
 
-  @valid_regex ~r/^[A-Za-z0-9\-_]*$/
-  defp validate_character_set(string, error_reason) when is_binary(string) do
-    if Regex.match?(@valid_regex, string), do: :ok, else: {:error, error_reason}
+  defp validate_server_name(server_name) when is_binary(server_name) do
+    with {:ok, _} <- ServerName.parse(server_name), do: :ok
   end
 
   defimpl String.Chars do
