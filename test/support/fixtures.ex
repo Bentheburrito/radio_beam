@@ -3,6 +3,7 @@ defmodule Fixtures do
   Test fixtures
   """
 
+  alias RadioBeam.Room
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo
@@ -53,5 +54,10 @@ defmodule Fixtures do
     file_info = file_info(File.read!(tmp_upload_path), "jpg", "cool_picture")
     {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, repo_dir)
     upload
+  end
+
+  def send_text_msg(room_id, user_id, message, content_overrides \\ %{}) do
+    content = Map.merge(%{"msgtype" => "m.text", "body" => message}, content_overrides)
+    Room.send(room_id, user_id, "m.room.message", content)
   end
 end

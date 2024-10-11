@@ -236,7 +236,7 @@ defmodule RadioBeam.Room do
   end
 
   @doc "Sends a Message Event to the room"
-  @spec send(room_id :: String.t(), user_id :: String.t(), type :: String.t(), content :: String.t()) ::
+  @spec send(room_id :: String.t(), user_id :: String.t(), type :: String.t(), content :: map()) ::
           {:ok, event_id :: String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def send(room_id, user_id, type, content) do
     event = Events.message(room_id, user_id, type, content)

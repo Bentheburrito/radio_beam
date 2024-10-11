@@ -12,6 +12,7 @@ defmodule RadioBeam.PDU.Table do
     :auth_events,
     :content,
     :hashes,
+    :parent_id,
     :prev_events,
     :prev_state,
     :sender,
@@ -23,7 +24,7 @@ defmodule RadioBeam.PDU.Table do
 
   use Memento.Table,
     attributes: @attrs,
-    index: [:event_id],
+    index: [:event_id, :parent_id],
     type: :ordered_set
 
   @type t() :: %__MODULE__{}
@@ -33,8 +34,8 @@ defmodule RadioBeam.PDU.Table do
   """
   @spec to_pdu(tuple()) :: PDU.t()
   def to_pdu(
-        {__MODULE__, {room_id, neg_depth, os_ts}, event_id, auth_events, content, hashes, prev_events, prev_state,
-         sender, signatures, state_key, type, unsigned}
+        {__MODULE__, {room_id, neg_depth, os_ts}, event_id, auth_events, content, hashes, parent_id, prev_events,
+         prev_state, sender, signatures, state_key, type, unsigned}
       ) do
     %PDU{
       auth_events: auth_events,
@@ -43,6 +44,7 @@ defmodule RadioBeam.PDU.Table do
       event_id: event_id,
       hashes: hashes,
       origin_server_ts: os_ts,
+      parent_id: parent_id,
       prev_events: prev_events,
       prev_state: prev_state,
       room_id: room_id,
@@ -145,17 +147,34 @@ defmodule RadioBeam.PDU.Table do
     end
   end
 
+  @doc """
+  Selects all raw PDU.Table tuple records whose `parent_id` is among the given
+  `ids`.
+  """
+  def get_all_child_records(ids) do
+    match_head = __MODULE__.__info__().query_base
+    match_spec = for id <- ids, do: {put_elem(match_head, 6, id), [], [:"$_"]}
+
+    fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end
+    |> Memento.transaction()
+    |> case do
+      {:ok, records} when is_list(records) -> {:ok, records}
+      {:ok, :"$end_of_table"} -> {:ok, []}
+      {:error, error} -> {:error, error}
+    end
+  end
+
   ### MATCH SPECS ###
 
   defp depth_ms(room_id, event_ids) do
     for event_id <- event_ids do
-      match_head = {__MODULE__, {room_id, :"$1", :_}, event_id, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_}
+      match_head = {__MODULE__, {room_id, :"$1", :_}, event_id, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_}
       {match_head, [], [:"$1"]}
     end
   end
 
   defp joined_after_ms(room_id, user_id) do
-    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :_, :_, :_, :"$2", :_, :_, :_, :_, :_}
+    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :_, :_, :_, :_, :"$2", :_, :_, :_, :_, :_}
 
     is_sender_member_key_present = {:is_map_key, {{"m.room.member", user_id}}, :"$2"}
 

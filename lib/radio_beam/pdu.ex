@@ -18,6 +18,7 @@ defmodule RadioBeam.PDU do
     :event_id,
     :hashes,
     :origin_server_ts,
+    :parent_id,
     :prev_events,
     :prev_state,
     :room_id,
@@ -38,6 +39,7 @@ defmodule RadioBeam.PDU do
           event_id: event_id(),
           hashes: map(),
           origin_server_ts: non_neg_integer(),
+          parent_id: event_id(),
           prev_events: [event_id()],
           prev_state: Polyjuice.Util.RoomVersion.state(),
           room_id: room_id(),
@@ -83,9 +85,57 @@ defmodule RadioBeam.PDU do
     end
   end
 
+  def visible_to_user?(record, user_id, latest_joined_at_depth) when is_tuple(record) do
+    Queries.can_view_event(user_id, latest_joined_at_depth, record)
+  end
+
   def visible_to_user?(%__MODULE__{} = pdu, user_id, latest_joined_at_depth) do
     record = pdu |> Table.from_pdu() |> Memento.Query.Data.dump()
-    Queries.can_view_event(user_id, latest_joined_at_depth, record)
+    visible_to_user?(record, user_id, latest_joined_at_depth)
+  end
+
+  @doc """
+  Returns a list of child PDUs of the given parent PDU. An event A is
+  considered a child of event B if `A.content.["m.relates_to"].event_id == B.event_id`
+  """
+  def get_children(
+        pdu,
+        user_id,
+        latest_joined_at_depth,
+        recurse_max \\ Application.fetch_env!(:radio_beam, :max_event_recurse)
+      )
+
+  def get_children(%__MODULE__{} = pdu, user_id, latest_joined_at_depth, recurse_max),
+    do: get_children([pdu.event_id], user_id, latest_joined_at_depth, recurse_max, Stream.map([], & &1))
+
+  defp get_children(_event_ids, _user_id, _latest_joined_at_depth, recurse, child_event_stream) when recurse <= 0,
+    # TODO: topological ordering
+    do: {:ok, Enum.to_list(child_event_stream)}
+
+  defp get_children(event_ids, user_id, latest_joined_at_depth, recurse, child_event_stream) do
+    case Table.get_all_child_records(event_ids) do
+      {:ok, []} ->
+        {:ok, Enum.to_list(child_event_stream)}
+
+      {:ok, child_records} ->
+        more_child_events =
+          child_records
+          |> Enum.reverse()
+          |> Stream.filter(&visible_to_user?(&1, user_id, latest_joined_at_depth))
+          |> Stream.map(&Table.to_pdu/1)
+
+        # get the grandchildren
+        get_children(
+          Enum.map(more_child_events, & &1.event_id),
+          user_id,
+          latest_joined_at_depth,
+          recurse - 1,
+          Stream.concat(child_event_stream, more_child_events)
+        )
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -140,6 +190,7 @@ defmodule RadioBeam.PDU do
            event_id: "$#{encode_reference_hash(room_version, hash)}",
            hashes: Map.fetch!(params, "hashes"),
            origin_server_ts: now,
+           parent_id: get_in(content, ~w|m.relates_to event_id|) || :root,
            prev_events: Map.fetch!(params, "prev_events"),
            prev_state: Map.fetch!(params, "prev_state"),
            room_id: Map.fetch!(params, "room_id"),

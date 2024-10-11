@@ -25,6 +25,7 @@ config :radio_beam,
   generators: [timestamp_type: :utc_datetime, binary_id: true],
   # TOIMPL: m.login.token
   login_types: %{flows: [%{type: "m.login.password"}]},
+  max_event_recurse: 5,
   max_events: [timeline: 200, state: 100],
   registration_enabled: true,
   versions: %{unstable_features: %{}, versions: ["v1.8", "v1.9", "v1.10", "v1.11"]}
