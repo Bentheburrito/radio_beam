@@ -3,6 +3,7 @@ defmodule RadioBeam.PDU do
   A Persistent Data Unit described in room versions 3-10, representing an 
   event on the graph.
   """
+  @behaviour Access
 
   alias :radio_beam_room_queries, as: Queries
   alias Polyjuice.Util.RoomVersion
@@ -53,6 +54,11 @@ defmodule RadioBeam.PDU do
   defdelegate max_depth_of_all(room_id, event_ids), to: Table
   defdelegate get_depth_of_users_latest_join(room_id, user_id), to: Table
   defdelegate persist(pdu), to: Table
+
+  defdelegate fetch(term, key), to: Map
+  defdelegate get(term, key, default), to: Map
+  defdelegate pop(term, key), to: Map
+  defdelegate get_and_update(term, key, fun), to: Map
 
   @doc """
   Gets a PDU by its event ID.

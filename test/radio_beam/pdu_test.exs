@@ -165,21 +165,34 @@ defmodule RadioBeam.PDUTest do
       actual_ids = Enum.map(events, & &1.event_id)
       assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
     end
+
+    test "Returns an empty list when a child event is not in the same room" do
+      user = Fixtures.user()
+      {:ok, room_id} = Room.create(user)
+      {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
+
+      relation =
+        %{"m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "org.some.random.relationship"}}
+
+      {:ok, room_id2} = Room.create(user)
+      {:ok, _child_event_id} = Fixtures.send_text_msg(room_id2, user.id, "This is another msg", relation)
+
+      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      assert {:ok, []} = PDU.get_children(parent_pdu, user.id, :currently_joined)
+    end
   end
 
-  test "Returns an empty list when a child event is not in the same room" do
+  test "`Access` impl behaves like a `Map`" do
     user = Fixtures.user()
     {:ok, room_id} = Room.create(user)
-    {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
+    {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
+    {:ok, pdu} = PDU.get(event_id)
 
-    relation =
-      %{"m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "org.some.random.relationship"}}
-
-    {:ok, room_id2} = Room.create(user)
-    {:ok, _child_event_id} = Fixtures.send_text_msg(room_id2, user.id, "This is another msg", relation)
-
-    :currently_joined = Room.users_latest_join_depth(room_id, user.id)
-    {:ok, parent_pdu} = PDU.get(parent_event_id)
-    assert {:ok, []} = PDU.get_children(parent_pdu, user.id, :currently_joined)
+    assert PDU.fetch(pdu, :event_id) == Map.fetch(pdu, :event_id)
+    assert PDU.get(pdu, :event_id, :default) == Map.get(pdu, :event_id, :default)
+    assert PDU.get(pdu, :not_a_key, :default) == Map.get(pdu, :not_a_key, :default)
+    assert PDU.pop(pdu, :event_id) == Map.pop(pdu, :event_id)
+    assert PDU.get_and_update(pdu, :event_id, fn _ -> :pop end) == Map.get_and_update(pdu, :event_id, fn _ -> :pop end)
   end
 end

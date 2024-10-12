@@ -363,17 +363,6 @@ defmodule RadioBeam.Room do
   """
   def get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
 
-  @doc """
-  Gets all %Room{}s by a list of IDs
-  """
-  @spec all(Enumerable.t(room_id :: String.t())) :: {:ok, [t()]} | {:error, any()}
-  def all(ids) do
-    match_head = __MODULE__.__info__().query_base
-    match_spec = for id <- ids, do: {put_elem(match_head, 1, id), [], [:"$_"]}
-
-    Memento.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec) end)
-  end
-
   @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
   def stripped_state_types, do: @stripped_state_types
 
