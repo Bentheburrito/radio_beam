@@ -151,8 +151,8 @@ defmodule RadioBeam.PDU.Table do
   Selects all raw PDU.Table tuple records whose `parent_id` is among the given
   `ids`.
   """
-  def get_all_child_records(ids) do
-    match_head = __MODULE__.__info__().query_base
+  def get_all_child_records(ids, room_id) do
+    match_head = put_elem(__MODULE__.__info__().query_base, 1, {room_id, :_, :_})
     match_spec = for id <- ids, do: {put_elem(match_head, 6, id), [], [:"$_"]}
 
     fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end

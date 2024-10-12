@@ -27,6 +27,16 @@ defmodule RadioBeam.PDUTest do
   end
 
   describe "get_children/3,4" do
+    test "Return an empty list when an event has no relations" do
+      user = Fixtures.user()
+      {:ok, room_id} = Room.create(user)
+      {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
+
+      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      assert {:ok, []} = PDU.get_children(parent_pdu, user.id, :currently_joined)
+    end
+
     test "Return an event's single child event" do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
@@ -155,5 +165,21 @@ defmodule RadioBeam.PDUTest do
       actual_ids = Enum.map(events, & &1.event_id)
       assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
     end
+  end
+
+  test "Returns an empty list when a child event is not in the same room" do
+    user = Fixtures.user()
+    {:ok, room_id} = Room.create(user)
+    {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
+
+    relation =
+      %{"m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "org.some.random.relationship"}}
+
+    {:ok, room_id2} = Room.create(user)
+    {:ok, _child_event_id} = Fixtures.send_text_msg(room_id2, user.id, "This is another msg", relation)
+
+    :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+    {:ok, parent_pdu} = PDU.get(parent_event_id)
+    assert {:ok, []} = PDU.get_children(parent_pdu, user.id, :currently_joined)
   end
 end

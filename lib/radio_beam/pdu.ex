@@ -106,14 +106,15 @@ defmodule RadioBeam.PDU do
       )
 
   def get_children(%__MODULE__{} = pdu, user_id, latest_joined_at_depth, recurse_max),
-    do: get_children([pdu.event_id], user_id, latest_joined_at_depth, recurse_max, Stream.map([], & &1))
+    do: get_children([pdu.event_id], pdu.room_id, user_id, latest_joined_at_depth, recurse_max, Stream.map([], & &1))
 
-  defp get_children(_event_ids, _user_id, _latest_joined_at_depth, recurse, child_event_stream) when recurse <= 0,
-    # TODO: topological ordering
-    do: {:ok, Enum.to_list(child_event_stream)}
+  defp get_children(_event_ids, _room_id, _user_id, _latest_joined_at_depth, recurse, child_event_stream)
+       when recurse <= 0,
+       # TODO: topological ordering
+       do: {:ok, Enum.to_list(child_event_stream)}
 
-  defp get_children(event_ids, user_id, latest_joined_at_depth, recurse, child_event_stream) do
-    case Table.get_all_child_records(event_ids) do
+  defp get_children(event_ids, room_id, user_id, latest_joined_at_depth, recurse, child_event_stream) do
+    case Table.get_all_child_records(event_ids, room_id) do
       {:ok, []} ->
         {:ok, Enum.to_list(child_event_stream)}
 
@@ -122,11 +123,13 @@ defmodule RadioBeam.PDU do
           child_records
           |> Enum.reverse()
           |> Stream.filter(&visible_to_user?(&1, user_id, latest_joined_at_depth))
+          |> Stream.filter(&visible_to_user?(&1, user_id, latest_joined_at_depth))
           |> Stream.map(&Table.to_pdu/1)
 
         # get the grandchildren
         get_children(
           Enum.map(more_child_events, & &1.event_id),
+          room_id,
           user_id,
           latest_joined_at_depth,
           recurse - 1,
