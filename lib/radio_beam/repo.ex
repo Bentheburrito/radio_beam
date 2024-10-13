@@ -57,31 +57,4 @@ defmodule RadioBeam.Repo do
         Logger.info("create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}")
     end
   end
-
-  ### CRUD helper fxns ###
-
-  @type table_struct :: User.t() | Device.t()
-  @type table_module :: User | Device
-
-  @spec insert(table_struct()) :: {:ok, table_struct()}
-  def insert(record) do
-    Memento.transaction(fn -> Memento.Query.write(record) end)
-  end
-
-  @spec insert!(table_struct()) :: {:ok, table_struct()}
-  def insert!(record) do
-    Memento.transaction!(fn -> Memento.Query.write(record) end)
-  end
-
-  @spec get(table_module(), id :: any()) :: {:ok, table_struct() | nil}
-  def get(module, id) do
-    Memento.transaction(fn -> Memento.Query.read(module, id) end)
-  end
-
-  @spec delete(table_module(), id :: any()) :: :ok
-  def delete(module, id) do
-    Memento.transaction(fn -> Memento.Query.delete(module, id) end)
-
-    :ok
-  end
 end

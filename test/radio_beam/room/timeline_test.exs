@@ -1,12 +1,9 @@
 defmodule RadioBeam.Room.TimelineTest do
   use ExUnit.Case, async: true
 
-  alias Polyjuice.Util.Identifiers.V1.UserIdentifier
-  alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.Timeline.Filter
-  alias RadioBeam.User
 
   setup do
     creator = Fixtures.user()
@@ -217,8 +214,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       # ---
 
-      {:ok, rando} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, %{id: rando_id}} = Repo.insert(rando)
+      %{id: rando_id} = Fixtures.user()
       {:ok, _event_id} = Room.invite(room_id1, creator.id, rando_id)
       {:ok, _event_id} = Room.join(room_id1, rando_id)
 

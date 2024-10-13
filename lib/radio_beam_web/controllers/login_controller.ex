@@ -4,7 +4,7 @@ defmodule RadioBeamWeb.LoginController do
   require Logger
 
   alias Polyjuice.Util.Schema
-  alias RadioBeam.{Device, Errors, Repo, User}
+  alias RadioBeam.{Device, Errors, User}
   alias RadioBeam.User.Auth
 
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: __MODULE__, fun: :schema
@@ -42,7 +42,7 @@ defmodule RadioBeamWeb.LoginController do
         "@#{localpart_or_id}:#{server_name}"
       end
 
-    case Repo.get(User, user_id) do
+    case User.get(user_id) do
       {:ok, nil} ->
         conn
         |> put_status(403)

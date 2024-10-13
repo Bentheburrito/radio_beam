@@ -2,22 +2,17 @@ defmodule RadioBeam.RoomTest do
   use ExUnit.Case, async: true
   doctest RadioBeam.Room.InstantMessaging
 
-  alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.PDU
-  alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.RoomRegistry
-  alias RadioBeam.User
 
   @room_versions_to_test Application.compile_env!(:radio_beam, [:capabilities, :"m.room_versions", :available])
                          |> Map.keys()
 
   describe "create/4" do
     setup do
-      {:ok, user} = User.new("@thecreator:localhost", "Asdf123$")
-      {:ok, user} = Repo.insert(user)
-      {:ok, invitee} = User.new("@agoodfriend:localhost", "AAsdf123$")
-      {:ok, invitee} = Repo.insert(invitee)
+      user = Fixtures.user("@thecreator:localhost")
+      invitee = Fixtures.user("@agoodfriend:localhost")
 
       %{creator: user, to_invite: invitee}
     end
@@ -28,7 +23,7 @@ defmodule RadioBeam.RoomTest do
         assert [{pid, _}] = Registry.lookup(RoomRegistry, room_id)
         assert is_pid(pid)
 
-        assert {:ok, %Room{id: ^room_id, version: ^room_version, state: state}} = Repo.get(Room, room_id)
+        assert {:ok, %Room{id: ^room_id, version: ^room_version, state: state}} = Room.get(room_id)
         assert %{"membership" => "join"} = get_in(state, [{"m.room.member", creator.id}, "content"])
       end
     end
@@ -67,7 +62,7 @@ defmodule RadioBeam.RoomTest do
         assert [{pid, _}] = Registry.lookup(RoomRegistry, room_id)
         assert is_pid(pid)
 
-        assert {:ok, %Room{id: ^room_id, version: ^room_version, state: state}} = Repo.get(Room, room_id)
+        assert {:ok, %Room{id: ^room_id, version: ^room_version, state: state}} = Room.get(room_id)
         assert %{"membership" => "join"} = get_in(state, [{"m.room.member", creator.id}, "content"])
 
         pl_content = Map.merge(Room.Events.default_power_level_content(creator.id), power_levels_content)
@@ -81,7 +76,7 @@ defmodule RadioBeam.RoomTest do
 
         alias = "##{alias_localpart}:#{server_name}"
         assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
-        assert {:ok, %Room.Alias{alias: ^alias, room_id: ^room_id}} = Repo.get(Room.Alias, alias)
+        assert {:ok, ^room_id} = Room.Alias.get(alias)
 
         assert %{"name" => "The Computer Room"} = get_in(state, [{"m.room.name", ""}, "content"])
         assert %{"topic" => "this one's for the nerds"} = get_in(state, [{"m.room.topic", ""}, "content"])
@@ -94,10 +89,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "joined/1" do
     setup do
-      {:ok, user1} = User.new("@thehost:localhost", "Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = User.new("@friendoftheshow:localhost", "AAsdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user("@thehost:localhost")
+      user2 = Fixtures.user("@friendoftheshow:localhost")
 
       %{user1: user1, user2: user2}
     end
@@ -121,10 +114,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "invite/3" do
     setup do
-      {:ok, user1} = User.new("@theboss:localhost", "Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = User.new("@newhire:localhost", "AAsdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user("@theboss:localhost")
+      user2 = Fixtures.user("@newhire:localhost")
 
       %{user1: user1, user2: user2}
     end
@@ -132,19 +123,19 @@ defmodule RadioBeam.RoomTest do
     test "successfully invites a user", %{user1: user1, user2: user2} do
       {:ok, room_id} = Room.create(user1)
 
-      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      {:ok, %Room{state: state}} = Room.get(room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
 
       assert {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
 
-      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      {:ok, %Room{state: state}} = Room.get(room_id)
       assert "invite" = get_in(state, [{"m.room.member", user2.id}, "content", "membership"])
     end
 
     test "fails with :unauthorized when the inviter does not have a high enough PL", %{user1: user1, user2: user2} do
       {:ok, room_id} = Room.create(user1, power_levels: %{"invite" => 101})
 
-      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      {:ok, %Room{state: state}} = Room.get(room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
 
       assert {:error, :unauthorized} = Room.invite(room_id, user1.id, user2.id)
@@ -153,10 +144,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "join/2" do
     setup do
-      {:ok, user1} = User.new("@bodyguard:localhost", "Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = User.new("@iloveclubaqua:localhost", "AAsdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user("@bodyguard:localhost")
+      user2 = Fixtures.user("@iloveclubaqua:localhost")
 
       %{user1: user1, user2: user2}
     end
@@ -164,13 +153,13 @@ defmodule RadioBeam.RoomTest do
     test "successfully joins the room", %{user1: user1, user2: user2} do
       {:ok, room_id} = Room.create(user1)
 
-      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      {:ok, %Room{state: state}} = Room.get(room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
       assert {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
       reason = "requested assistance"
       assert {:ok, _event_id} = Room.join(room_id, user2.id, reason)
 
-      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      {:ok, %Room{state: state}} = Room.get(room_id)
       assert "join" = get_in(state, [{"m.room.member", user2.id}, "content", "membership"])
       assert ^reason = get_in(state, [{"m.room.member", user2.id}, "content", "reason"])
     end
@@ -178,7 +167,7 @@ defmodule RadioBeam.RoomTest do
     test "fails with :unauthorized when the joiner has not been invited", %{user1: user1, user2: user2} do
       {:ok, room_id} = Room.create(user1)
 
-      {:ok, %Room{state: state}} = Repo.get(Room, room_id)
+      {:ok, %Room{state: state}} = Room.get(room_id)
       refute is_map_key(state, {"m.room.member", user2.id})
 
       assert {:error, :unauthorized} = Room.join(room_id, user2.id)
@@ -187,10 +176,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "send/4" do
     setup do
-      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       %{user1: user1, user2: user2}
     end
@@ -200,7 +187,7 @@ defmodule RadioBeam.RoomTest do
 
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
       assert {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
-      assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
+      assert {:ok, %{latest_event_ids: [^event_id]}} = Room.get(room_id)
       assert {:ok, %{sender: ^creator_id}} = PDU.get(event_id)
     end
 
@@ -211,7 +198,7 @@ defmodule RadioBeam.RoomTest do
 
       content = %{"msgtype" => "m.text", "body" => "This is another test message"}
       assert {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", content)
-      assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
+      assert {:ok, %{latest_event_ids: [^event_id]}} = Room.get(room_id)
       assert {:ok, %{sender: ^user_id}} = PDU.get(event_id)
     end
 
@@ -220,31 +207,29 @@ defmodule RadioBeam.RoomTest do
       assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       assert {:ok, _event_id} = Room.join(room_id, user.id)
 
-      {:ok, %{latest_event_ids: [event_id]}} = Repo.get(Room, room_id)
+      {:ok, %{latest_event_ids: [event_id]}} = Room.get(room_id)
 
       content = %{"msgtype" => "m.text", "body" => "I shouldn't be able to send this rn"}
       assert {:error, :unauthorized} = Room.send(room_id, user.id, "m.room.message", content)
-      assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
+      assert {:ok, %{latest_event_ids: [^event_id]}} = Room.get(room_id)
     end
 
     test "member can't put a message in the room without first joining", %{user1: creator, user2: user} do
       {:ok, room_id} = Room.create(creator)
       assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
 
-      {:ok, %{latest_event_ids: [event_id]}} = Repo.get(Room, room_id)
+      {:ok, %{latest_event_ids: [event_id]}} = Room.get(room_id)
 
       content = %{"msgtype" => "m.text", "body" => "I shouldn't be able to send this rn"}
       assert {:error, :unauthorized} = Room.send(room_id, user.id, "m.room.message", content)
-      assert {:ok, %{latest_event_ids: [^event_id]}} = Repo.get(Room, room_id)
+      assert {:ok, %{latest_event_ids: [^event_id]}} = Room.get(room_id)
     end
   end
 
   describe "get_event/3" do
     setup do
-      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       %{user1: user1, user2: user2}
     end
@@ -344,12 +329,9 @@ defmodule RadioBeam.RoomTest do
 
   describe "get_members/4" do
     setup do
-      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user2} = Repo.insert(user2)
-      {:ok, user3} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user3} = Repo.insert(user3)
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
+      user3 = Fixtures.user()
 
       %{user1: user1, user2: user2, user3: user3}
     end
@@ -456,10 +438,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "get_state/2" do
     setup do
-      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       %{user1: user1, user2: user2}
     end
@@ -500,10 +480,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "get_state/4" do
     setup do
-      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       %{user1: user1, user2: user2}
     end
@@ -555,10 +533,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "get_nearest_event/4" do
     setup do
-      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       {:ok, room_id} = Room.create(user1)
       {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
@@ -619,10 +595,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "users_latest_join_depth/2" do
     setup do
-      {:ok, user1} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user1} = Repo.insert(user1)
-      {:ok, user2} = "localhost" |> UserIdentifier.generate() |> to_string() |> User.new("Asdf123$")
-      {:ok, user2} = Repo.insert(user2)
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       {:ok, room_id} = Room.create(user1)
       {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)

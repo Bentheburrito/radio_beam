@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.AuthControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.{Device, Repo, User}
+  alias RadioBeam.Device
 
   describe "valid user password registration requests succeed" do
     test "with an access token and the supplied username and device ID", %{conn: conn} do
@@ -57,8 +57,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
     # TOIMPL: M_EXCLUSIVE test for namespaced appservice
     test "with M_USER_IN_USE when the username has been taken", %{conn: conn} do
       username = "batman"
-      {:ok, user} = User.new("@#{username}:localhost", "B4tm2n!1")
-      Repo.insert!(user)
+      Fixtures.user("@#{username}:localhost")
 
       conn = request(conn, username)
 
