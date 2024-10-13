@@ -288,7 +288,7 @@ defmodule RadioBeam.Room.Timeline do
           order
         )
 
-      tl_event_stream = PDU.next_answers(cursor, filter.timeline.limit)
+      tl_event_stream = cursor |> PDU.next_answers(filter.timeline.limit) |> Enum.reverse()
 
       next_event =
         case Enum.to_list(PDU.next_answers(cursor, 1, :cleanup)) do
@@ -296,7 +296,16 @@ defmodule RadioBeam.Room.Timeline do
           [next_event | _] -> next_event
         end
 
-      {next_event, Enum.reverse(tl_event_stream)}
+      # yuck. yuck yuck yuck
+      {aggregated_tl_events, dedup_by_these_ids} =
+        Enum.reduce(tl_event_stream, {[], []}, fn pdu, {new_pdus, dedup_by_these_ids} ->
+          {:ok, child_pdus} = PDU.get_children(pdu, user_id, latest_joined_at_depth, _recurse = 1)
+
+          {[PDU.Relationships.get_aggregations(pdu, user_id, child_pdus) | new_pdus],
+           Enum.map(child_pdus, & &1.event_id) ++ dedup_by_these_ids}
+        end)
+
+      {next_event, aggregated_tl_events |> Stream.reject(&(&1.event_id in dedup_by_these_ids)) |> Enum.reverse()}
     end
     |> Memento.transaction()
     |> case do

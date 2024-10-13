@@ -155,11 +155,14 @@ defmodule RadioBeam.PDU.Table do
     match_head = put_elem(__MODULE__.__info__().query_base, 1, {room_id, :_, :_})
     match_spec = for id <- ids, do: {put_elem(match_head, 6, id), [], [:"$_"]}
 
-    fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end
-    |> Memento.transaction()
+    if Memento.Transaction.inside?() do
+      Memento.Query.select_raw(__MODULE__, match_spec, coerce: false)
+    else
+      Memento.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
+    end
     |> case do
+      records when is_list(records) -> {:ok, records}
       {:ok, records} when is_list(records) -> {:ok, records}
-      {:ok, :"$end_of_table"} -> {:ok, []}
       {:error, error} -> {:error, error}
     end
   end

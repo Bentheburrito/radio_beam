@@ -57,6 +57,57 @@ defmodule RadioBeam.Room.TimelineTest do
       refute is_map_key(timeline, :prev_batch)
     end
 
+    test "successfully syncs, bundling aggregate events", %{creator: creator, user: user, device: device} do
+      {:ok, room_id1} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id1, user.id)
+
+      {:ok, thread_id} = Fixtures.send_text_msg(room_id1, user.id, "I have news -> 🧵")
+
+      thread_rel = %{"m.relates_to" => %{"event_id" => thread_id, "rel_type" => "m.thread"}}
+
+      Fixtures.send_text_msg(room_id1, user.id, "it's @bob's birthday!!!!!!!!", thread_rel)
+      Process.sleep(1)
+
+      {:ok, latest_event_id} = Fixtures.send_text_msg(room_id1, creator.id, "happy bday @bob!!!!!", thread_rel)
+
+      assert %{
+               rooms: %{
+                 join: %{^room_id1 => %{state: [], timeline: timeline}}
+               }
+             } =
+               Timeline.sync([room_id1], user.id, device.id)
+
+      user_id = user.id
+
+      assert %{
+               sync: :complete,
+               events: [
+                 %{type: "m.room.create"},
+                 %{type: "m.room.member"},
+                 %{type: "m.room.power_levels"},
+                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.history_visibility"},
+                 %{type: "m.room.guest_access"},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "invite"}},
+                 %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}},
+                 %{
+                   type: "m.room.message",
+                   unsigned: %{
+                     "m.relations" => %{
+                       "m.thread" => %{
+                         latest_event: %{event_id: ^latest_event_id},
+                         count: 2,
+                         current_user_participated: true
+                       }
+                     }
+                   }
+                 }
+               ]
+             } =
+               timeline
+    end
+
     test "successfully syncs all events up to n", %{creator: creator, user: user, device: device} do
       {:ok, room_id1} = Room.create(creator)
       {:ok, room_id2} = Room.create(creator)
