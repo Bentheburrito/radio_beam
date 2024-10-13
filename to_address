@@ -1,0 +1,48 @@
+1. Need wrapper around mnesia/Memento transactions
+  Requirements:
+  - data structure (similar to `Multi`) that we "build up" with composable
+    functions, execute all at once.
+  - *must* have a consistent API, no matter what table we're working with -
+    always returns 2-arity :ok/:error tuples, all functions given to the data
+    structure have a specific contract, etc.
+  Nice to haves/long term goals
+  - would be nice to create some analogous to `Repo`/`Multi` - easier interop
+    if postgres support in the future (possibly with some compile-time 
+    trickery. 
+  - some DSL that makes writing match specs easier/more resiliant to data model
+    changes
+    - it would be nice to use Ecto's, but considering it's intended for 
+      relational/SQL-based DBMS, it might be more trouble than it's worth
+      - lots of work here has already been done in `ecto3_mnesia`
+
+2. Need a consistent, reliable, easy-to-use, relatively fast way to 
+   query/append/redact events on a room's event graph
+  Requirements:
+  - #1 above
+  - if we continue with the `Table` (e.g. `PDU.Table`) pattern, need to rework
+    it to hide more details (callers should *never* have to think about event
+    depths - just event_ids)
+  - consistent: returns the same result for a given query*
+    *err idk how "late events" work over federation - are those just appended
+    to the DAG from the local HS's perspective, or potentially inserted as a
+    sibling somewhere "up the graph"?
+  - support single-event queries
+  - support "windowed" event queries
+    - this includes limited windows, spanning both directions for given event
+    ID(s)
+      - ?? btw how does this work if we're supposedly only able to traverse
+        the graph in one dir?..unless I'm misunderstanding how some of the
+        endpoints work
+  - support aggregations/bundling
+  - support filtering (history visibility, user-specified filters, ignored
+    users, etc.)
+  - support mapping/transformations
+  - support ordering (topological vs. "stream")
+  - support sorting (topological vs. "stream")
+  - generic over edges??
+    - i.e. the same mechanisms used to traverse the event graph normally 
+      (prev_events) can also be used to follow other edges (m.relates_to)
+    - perhaps we say fuck performance for a while - unless we have a ton of
+      columns with indices for each kind of edge, this will be a "one read per
+      hop" kind of thing - tho probably not necessarily a "one transaction per
+      hop".
