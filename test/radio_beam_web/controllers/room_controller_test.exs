@@ -423,6 +423,18 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{"errcode" => "M_MISSING_PARAM"} = json_response(conn, 400)
     end
+
+    test "rejects a message event if the provided msgtype is not known", %{conn: conn} do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator)
+
+      content = %{"msgtype" => "m.glorp", "body" => "This has a bad `msgtype`"}
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.room.message/32345", content)
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+      assert error =~ "msgtype needs to be one of"
+    end
   end
 
   describe "get_event/2" do

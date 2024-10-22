@@ -1114,4 +1114,18 @@ defmodule RadioBeam.Room.TimelineTest do
       refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^creator_id}, &1))
     end
   end
+
+  describe "Jason.Encoder impl" do
+    test "encodes a complete timeline" do
+      timeline = Timeline.complete([%{event_id: "whateva"}])
+      assert {:ok, ~s|{"events":[{"event_id":"whateva"}],"limited":false}|} = Jason.encode(timeline)
+    end
+
+    test "encodes a partial timeline" do
+      timeline = Timeline.partial([%{event_id: "whateva"}], "the_token")
+
+      assert {:ok, ~s|{"events":[{"event_id":"whateva"}],"limited":true,"prev_batch":"the_token"}|} =
+               Jason.encode(timeline)
+    end
+  end
 end

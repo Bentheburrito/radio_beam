@@ -70,7 +70,9 @@ defmodule RadioBeamWeb.SyncControllerTest do
       message = Device.Message.new(%{"hello2" => "world"}, "@hello:world", "com.spectrum.corncobtv.notification")
       Device.Message.put(user.id, device.id, message)
 
-      conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}", %{})
+      {:ok, filter} = Jason.encode(%{"room" => %{"timeline" => %{"limit" => 2}}})
+
+      conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}&filter=#{filter}", %{})
 
       assert %{
                "account_data" => account_data,

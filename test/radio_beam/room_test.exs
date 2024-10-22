@@ -1,6 +1,5 @@
 defmodule RadioBeam.RoomTest do
   use ExUnit.Case, async: true
-  doctest RadioBeam.Room.InstantMessaging
 
   alias RadioBeam.PDU
   alias RadioBeam.Room
