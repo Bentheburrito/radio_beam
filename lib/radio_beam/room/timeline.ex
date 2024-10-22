@@ -6,6 +6,7 @@ defmodule RadioBeam.Room.Timeline do
 
   require Logger
 
+  alias RadioBeam.Repo
   alias Phoenix.PubSub
   alias RadioBeam.Room.Timeline.Core
   alias RadioBeam.Room.Timeline.Filter
@@ -50,7 +51,7 @@ defmodule RadioBeam.Room.Timeline do
     # TODO...there's possibly a :limit opt passed too, but the filter 
     # also has limiting capabilities???
 
-    latest_joined_at_depth = Room.users_latest_join_depth(room.id, user_id)
+    {:ok, latest_joined_at_depth} = Room.users_latest_join_depth(room.id, user_id)
 
     ignore_memberships_from =
       if filter.state.memberships == :lazy do
@@ -77,7 +78,7 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   def get_messages(room_id, user_id, device_id, direction, from, to, opts) do
-    case Memento.transaction(fn -> Memento.Query.read(Room, room_id) end) do
+    case Room.get(room_id) do
       {:ok, %Room{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "join"}}}} = room} ->
         {:ok, get_messages(room, user_id, device_id, direction, from, to, opts)}
 
@@ -305,9 +306,9 @@ defmodule RadioBeam.Room.Timeline do
            Enum.map(child_pdus, & &1.event_id) ++ dedup_by_these_ids}
         end)
 
-      {next_event, aggregated_tl_events |> Stream.reject(&(&1.event_id in dedup_by_these_ids)) |> Enum.reverse()}
+      {:ok, {next_event, aggregated_tl_events |> Stream.reject(&(&1.event_id in dedup_by_these_ids)) |> Enum.reverse()}}
     end
-    |> Memento.transaction()
+    |> Repo.one_shot()
     |> case do
       {:ok, {:none, timeline}} ->
         complete(timeline)

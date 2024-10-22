@@ -15,16 +15,15 @@ defmodule Fixtures do
 
   def user(user_id \\ "localhost" |> UserIdentifier.generate() |> to_string()) do
     {:ok, user} = User.new(user_id, strong_password())
-    Memento.transaction!(fn -> Memento.Query.write(user) end)
+    :ok = User.put_new(user)
+    user
   end
 
   def device(user_id, display_name \\ Device.default_device_name()) do
-    device = Device.new(user_id, display_name: display_name)
-    Memento.transaction!(fn -> Device.persist(device) end)
+    {:ok, %{access_token: at}} = User.Auth.login(user_id, Device.generate_token(), display_name)
+    {:ok, device} = Device.get_by_access_token(at)
+    device
   end
-
-  def write!(%Device{} = device), do: Memento.transaction!(fn -> Device.persist(device) end)
-  def write!(struct), do: Memento.transaction!(fn -> Memento.Query.write(struct) end)
 
   def file_info(content, type \\ "txt", filename \\ "TestUpload") do
     FileInfo.new(type, byte_size(content), :sha256 |> :crypto.hash(content) |> Base.encode16(case: :lower), filename)

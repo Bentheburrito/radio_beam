@@ -69,7 +69,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       alias = "#aqua:#{server_name}"
       assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
-      assert {:ok, ^room_id} = Room.Alias.get(alias)
+      assert {:ok, ^room_id} = Room.Alias.get_room_id(alias)
 
       assert %{"membership" => "invite"} =
                get_in(state, [{"m.room.member", "@bwyatt:#{server_name}"}, "content"])

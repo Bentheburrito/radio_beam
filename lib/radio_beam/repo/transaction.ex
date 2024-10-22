@@ -39,29 +39,33 @@ defmodule RadioBeam.Repo.Transaction do
 
   @typedoc """
   Every function in a `Transaction` is given the previous function's result (if
-  its arity is 1). The first function will receive `:txn_begin`.
+  its arity is 1). If an initial param is not provided, the first function will
+  receive `:txn_begin`.
   """
   @type fxn_param() :: :txn_begin | any()
   @type fxn_result() :: {:ok, any()} | {:error, any()}
+  @type fxn() :: (fxn_param() -> any()) | (-> any())
 
   @type result() :: {:ok, any()} | {:error, fxn_name(), :not_found | any()}
 
-  @opaque t() :: %__MODULE__{fxn_chain: [{fxn_name(), (fxn_param() -> any())}]}
+  @opaque t() :: %__MODULE__{fxn_chain: [{fxn_name(), fxn()}]}
   defstruct fxn_chain: []
 
   def new, do: %__MODULE__{}
+
   def new(fxn_chain) when is_list(fxn_chain), do: Enum.reduce(fxn_chain, new(), &add_fxn(&2, elem(&1, 0), elem(&1, 1)))
 
   def add_fxn(%__MODULE__{} = txn, fxn_name, fxn) when is_function(fxn, 1) or is_function(fxn, 0) do
-    Ecto.Multi
     %__MODULE__{txn | fxn_chain: [{fxn_name, fxn} | txn.fxn_chain]}
   end
 
-  def execute(%__MODULE__{} = txn) do
+  def execute(%__MODULE__{} = txn), do: execute(txn, :txn_begin)
+
+  def execute(%__MODULE__{} = txn, init_acc) do
     if Memento.Transaction.inside?() do
-      execute(txn.fxn_chain)
+      execute(txn.fxn_chain, init_acc)
     else
-      case Memento.transaction(fn -> execute(txn.fxn_chain) end) do
+      case Memento.transaction(fn -> execute(txn.fxn_chain, init_acc) end) do
         {:ok, _} = result -> result
         {:error, {:transaction_aborted, {:fxn_error, fxn_name, error}}} -> {:error, fxn_name, error}
         {:error, error} -> report_fatal_error(txn, error)
@@ -69,10 +73,10 @@ defmodule RadioBeam.Repo.Transaction do
     end
   end
 
-  def execute(fxn_chain) when is_list(fxn_chain) do
+  def execute(fxn_chain, init_acc) when is_list(fxn_chain) do
     fxn_chain
     |> Enum.reverse()
-    |> Enum.reduce(:txn_begin, fn {name, fxn}, prev_result ->
+    |> Enum.reduce(init_acc, fn {name, fxn}, prev_result ->
       fxn = if is_function(fxn, 1), do: fn -> fxn.(prev_result) end, else: fxn
 
       try do
@@ -86,13 +90,6 @@ defmodule RadioBeam.Repo.Transaction do
     end)
   end
 
-  # def map_memento_result(result) do
-  #   case result do
-  #     {:ok, nil} -> {:error, :not_found}
-  #     {:ok, result} -> :put_a_pin_in_this_for_now
-  #   end
-  # end
-
   defp report_fatal_error(txn, error) do
     Logger.error("""
     A fatal/unknown error occurred running the following `RadioBeam.Repo.Transaction`:
@@ -105,6 +102,18 @@ defmodule RadioBeam.Repo.Transaction do
   defimpl Inspect do
     def inspect(txn, opts) do
       Inspect.Algebra.concat(["RadioBeam.Repo.Transaction.new(", Inspect.List.inspect(txn.fxn_chain, opts), ")"])
+    end
+  end
+
+  defimpl Collectable do
+    def into(txn) do
+      collector_fun = fn
+        txn, {:cont, {name, fxn}} -> RadioBeam.Repo.Transaction.add_fxn(txn, name, fxn)
+        txn, :done -> txn
+        _txn, :halt -> :ok
+      end
+
+      {txn, collector_fun}
     end
   end
 end

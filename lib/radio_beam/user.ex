@@ -13,6 +13,7 @@ defmodule RadioBeam.User do
 
   import Ecto.Changeset
 
+  alias RadioBeam.Repo
   alias RadioBeam.Credentials
 
   @type t() :: %__MODULE__{}
@@ -35,26 +36,31 @@ defmodule RadioBeam.User do
   end
 
   @doc "Gets a user by their user ID"
-  @spec get(id()) :: {:ok, t() | nil} | {:error, any()}
-  def get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
+  @spec get(id()) :: {:ok, t()} | {:error, :not_found}
+  def get(id, opts \\ []) do
+    Repo.one_shot(fn ->
+      case Memento.Query.read(__MODULE__, id, opts) do
+        nil -> {:error, :not_found}
+        user -> {:ok, user}
+      end
+    end)
+  end
 
   @doc """
   Persists a User to the DB, unless a record with the same ID already exists.
   """
   @spec put_new(t()) :: :ok | {:error, :already_exists | any()}
   def put_new(%__MODULE__{} = user) do
-    fn ->
-      case Memento.Query.read(__MODULE__, user.id) do
-        %__MODULE__{} -> :already_exists
-        nil -> Memento.Query.write(user)
+    Repo.one_shot(fn ->
+      case get(user.id, lock: :write) do
+        {:ok, %__MODULE__{}} ->
+          {:error, :already_exists}
+
+        {:error, :not_found} ->
+          Memento.Query.write(user)
+          :ok
       end
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, :already_exists} -> {:error, :already_exists}
-      {:ok, %__MODULE__{}} -> :ok
-      error -> error
-    end
+    end)
   end
 
   @doc """
@@ -74,33 +80,21 @@ defmodule RadioBeam.User do
 
       "!" <> _rest = room_id ->
         # TODO - weird to cross boundary from User -> Room here, alternative?
-        case Memento.Query.read(RadioBeam.Room, room_id) do
-          %RadioBeam.Room{} -> {:ok, room_id}
-          _else -> {:error, :invalid_room_id}
+        case RadioBeam.Room.get(room_id) do
+          {:ok, %RadioBeam.Room{}} -> {:ok, room_id}
+          {:error, _} -> {:error, :invalid_room_id}
         end
     end
 
-    fn ->
-      with %__MODULE__{} = user <- Memento.Query.read(__MODULE__, user_id),
+    Repo.one_shot(fn ->
+      with {:ok, %__MODULE__{} = user} <- get(user_id, lock: :write),
            {:ok, scope} <- parse_scope.(scope) do
         account_data = RadioBeam.put_nested(user.account_data, [scope, type], content)
         user = %__MODULE__{user | account_data: account_data}
         Memento.Query.write(user)
-      else
-        nil ->
-          :user_does_not_exist
-
-        {:error, :invalid_room_id} ->
-          :invalid_room_id
+        :ok
       end
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, :user_does_not_exist} -> {:error, :user_does_not_exist}
-      {:ok, :invalid_room_id} -> {:error, :invalid_room_id}
-      {:ok, %__MODULE__{}} -> :ok
-      error -> error
-    end
+    end)
   end
 
   def validate_user_id(id) when is_binary(id) do

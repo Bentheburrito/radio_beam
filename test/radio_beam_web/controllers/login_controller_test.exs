@@ -87,15 +87,15 @@ defmodule RadioBeamWeb.LoginControllerTest do
       conn = request(conn, user_id, password, %{"type" => "m.wtf.are.you.high", "device_id" => device_id})
 
       assert %{"errcode" => "M_BAD_JSON", "error" => _} = json_response(conn, 400)
-      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
+      assert {:error, :not_found} = Device.get(user_id, device_id)
     end
 
-    test "with M_FORBIDDEN when the username is incorrect", %{conn: conn, password: password} do
+    test "with M_FORBIDDEN when the username is incorrect", %{conn: conn, user_id: user_id, password: password} do
       device_id = "dont insert me duh"
       conn = request(conn, "@prisonmike:localhost", password, %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
+      assert {:error, :not_found} = Device.get(user_id, device_id)
     end
 
     test "with M_FORBIDDEN when the password is incorrect", %{conn: conn, user_id: user_id} do
@@ -103,7 +103,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
       conn = request(conn, user_id, "justguessinghere", %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
+      assert {:error, :not_found} = Device.get(user_id, device_id)
     end
 
     test "with M_BAD_JSON when an unknown identifier is provided", %{conn: conn, user_id: user_id, password: password} do
@@ -118,7 +118,7 @@ defmodule RadioBeamWeb.LoginControllerTest do
       assert %{"errcode" => "M_BAD_JSON", "error" => "Unrecognized or missing 'identifier'" <> _rest} =
                json_response(conn, 400)
 
-      assert {:ok, nil} = Memento.transaction(fn -> Memento.Query.read(Device, device_id) end)
+      assert {:error, :not_found} = Device.get(user_id, device_id)
     end
   end
 

@@ -34,7 +34,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, Device, PDU.Table, Room, Room.Alias, Filter, Upload]
+  @tables [User, Device.Table, PDU.Table, Room, Room.Alias, Filter, Upload]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =
@@ -55,6 +55,24 @@ defmodule RadioBeam.Repo do
 
       {:error, reason} ->
         Logger.info("create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}")
+    end
+  end
+
+  @doc """
+  Execute the given function inside a `Memento`/`:mnesia` transaction if one
+  has not been started already.
+  """
+  @spec one_shot(function()) :: any()
+  def one_shot(fxn) do
+    if Memento.Transaction.inside?() do
+      fxn.()
+    else
+      case Memento.transaction(fxn) do
+        :ok -> :ok
+        {:ok, result} -> result
+        {:error, {:transaction_aborted, error}} -> {:error, error}
+        {:error, error} -> raise "Repo.one_shot error: #{error}"
+      end
     end
   end
 end

@@ -8,6 +8,7 @@ defmodule RadioBeam.ContentRepo.Upload do
     index: [:uploaded_by_id],
     type: :set
 
+  alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload.FileInfo
@@ -43,21 +44,21 @@ defmodule RadioBeam.ContentRepo.Upload do
     %__MODULE__{upload | file: file_info}
   end
 
-  def put(%__MODULE__{} = upload), do: Memento.transaction(fn -> putT(upload) end)
+  def put(%__MODULE__{file: nil} = upload),
+    do: Repo.one_shot(fn -> {:ok, Memento.Query.write(%__MODULE__{upload | file: :reserved})} end)
 
-  def putT(%__MODULE__{file: nil} = upload), do: Memento.Query.write(%__MODULE__{upload | file: :reserved})
-  def putT(%__MODULE__{} = upload), do: Memento.Query.write(upload)
+  def put(%__MODULE__{} = upload), do: Repo.one_shot(fn -> {:ok, Memento.Query.write(upload)} end)
 
-  def get(%MatrixContentURI{} = mxc) do
-    case Memento.transaction(fn -> getT(mxc) end) do
-      {:ok, nil} -> {:error, :not_found}
-      result -> result
-    end
+  def get(%MatrixContentURI{} = mxc, opts \\ []) do
+    Repo.one_shot(fn ->
+      case Memento.Query.read(__MODULE__, mxc, opts) do
+        nil -> {:error, :not_found}
+        upload -> {:ok, upload}
+      end
+    end)
   end
 
-  def getT(%MatrixContentURI{} = mxc, opts \\ []), do: Memento.Query.read(__MODULE__, mxc, opts)
-
-  def user_total_uploaded_bytesT("@" <> _ = uploaded_by_id) do
+  def user_total_uploaded_bytes("@" <> _ = uploaded_by_id) do
     match_head = {__MODULE__, :_, :"$1", :_, uploaded_by_id}
     match_spec = [{match_head, [{:is_map, :"$1"}], [:"$1"]}]
 
@@ -67,7 +68,7 @@ defmodule RadioBeam.ContentRepo.Upload do
     |> Enum.sum()
   end
 
-  def user_upload_countsT("@" <> _ = uploaded_by_id) do
+  def user_upload_counts("@" <> _ = uploaded_by_id) do
     match_head = {__MODULE__, :_, :"$1", :_, uploaded_by_id}
     match_spec = [{match_head, [], [:"$1"]}]
 

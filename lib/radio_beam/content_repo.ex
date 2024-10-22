@@ -1,13 +1,16 @@
 defmodule RadioBeam.ContentRepo do
-  import Memento.Transaction, only: [abort: 1]
-
-  alias RadioBeam.ContentRepo.Thumbnail
+  @moduledoc """
+  The content/media repository. Manages user-uploaded files, authorizing based
+  on configured limits.
+  """
   alias Phoenix.PubSub
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
+  alias RadioBeam.ContentRepo.Thumbnail
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.PubSub, as: PS
+  alias RadioBeam.Repo
 
   @type quota_kind() :: :max_reserved | :max_files | :max_bytes
 
@@ -124,23 +127,17 @@ defmodule RadioBeam.ContentRepo do
   def create(%User{} = reserver) do
     %{max_reserved: max_reserved, max_files: max_files} = user_upload_limits()
 
-    fn ->
-      user_upload_counts = Upload.user_upload_countsT(reserver.id)
+    Repo.one_shot(fn ->
+      user_upload_counts = Upload.user_upload_counts(reserver.id)
       reserved_count = Map.get(user_upload_counts, :reserved, 0)
       total_count = Map.get(user_upload_counts, :uploaded, 0) + reserved_count
 
       cond do
-        reserved_count >= max_reserved -> abort({:quota_reached, :max_reserved})
-        total_count >= max_files -> abort({:quota_reached, :max_files})
-        :else -> reserver |> Upload.new() |> Upload.putT()
+        reserved_count >= max_reserved -> {:error, {:quota_reached, :max_reserved}}
+        total_count >= max_files -> {:error, {:quota_reached, :max_files}}
+        :else -> reserver |> Upload.new() |> Upload.put()
       end
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, %Upload{} = upload} -> {:ok, upload}
-      {:error, {:transaction_aborted, reason}} -> {:error, reason}
-      result -> result
-    end
+    end)
   end
 
   @doc """
@@ -150,21 +147,14 @@ defmodule RadioBeam.ContentRepo do
   @spec upload(Upload.t(), FileInfo.t(), Path.t()) ::
           {:ok, Upload.t()} | {:error, :too_large | {:quota_reached, :max_bytes} | File.posix()}
   def upload(%Upload{file: :reserved} = upload, %FileInfo{} = file_info, tmp_upload_path, repo_path \\ path()) do
-    fn ->
+    Repo.one_shot(fn ->
       with :ok <- validate_upload_size(upload.uploaded_by_id, file_info.byte_size),
-           %Upload{} = upload <- upload |> Upload.put_file(file_info) |> Upload.putT(),
+           {:ok, %Upload{} = upload} <- upload |> Upload.put_file(file_info) |> Upload.put(),
            :ok <- copy_upload_if_no_exists(tmp_upload_path, upload_file_path(upload, repo_path)) do
         PubSub.broadcast(PS, PS.file_uploaded(upload.id), {:file_uploaded, upload})
-        upload
-      else
-        error -> abort(error)
+        {:ok, upload}
       end
-    end
-    |> Memento.transaction()
-    |> case do
-      {:error, {:transaction_aborted, error}} -> error
-      result -> result
-    end
+    end)
   end
 
   # copies the uploaded file from a temp path to the content repo's directory,
@@ -181,7 +171,7 @@ defmodule RadioBeam.ContentRepo do
       upload_size > max_upload_size_bytes() ->
         {:error, :too_large}
 
-      Upload.user_total_uploaded_bytesT(uploader_id) + upload_size > user_upload_limits().max_bytes ->
+      Upload.user_total_uploaded_bytes(uploader_id) + upload_size > user_upload_limits().max_bytes ->
         {:error, {:quota_reached, :max_bytes}}
 
       :else ->

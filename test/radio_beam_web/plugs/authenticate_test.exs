@@ -7,7 +7,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
 
   describe "call/2" do
     setup do
-      user = Fixtures.user("@timotheec:matrix.org")
+      user = Fixtures.user()
       device = Fixtures.device(user.id)
 
       %{user: user, device: device}
@@ -43,8 +43,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
     end
 
     test "returns an unknown token (401) error when an otherwise valid token has expired", %{device: device} do
-      device = %Device{device | expires_at: DateTime.utc_now()}
-      Fixtures.write!(device)
+      {:ok, device} = Device.expire(device)
 
       conn =
         :post

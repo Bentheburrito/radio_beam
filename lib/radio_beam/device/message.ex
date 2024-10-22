@@ -4,6 +4,7 @@ defmodule RadioBeam.Device.Message do
   """
 
   alias RadioBeam.Device
+  alias RadioBeam.Repo
 
   @derive Jason.Encoder
   @enforce_keys [:content, :sender, :type]
@@ -29,19 +30,15 @@ defmodule RadioBeam.Device.Message do
   end
 
   def put_many(entries) do
-    fn ->
-      Enum.reduce_while(entries, 0, fn {user_id, device_id, %__MODULE__{} = message}, acc ->
-        case putT(user_id, device_id, message) do
-          %Device{} -> {:cont, acc + 1}
-          :not_found -> {:halt, :not_found}
-        end
-      end)
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, :not_found} -> {:error, :not_found}
-      {:ok, count} -> {:ok, count}
-    end
+    txn =
+      for {user_id, device_id, message} <- entries, into: Repo.Transaction.new() do
+        {
+          {:put_device_message, user_id, device_id},
+          &with({:ok, %Device{}} <- persist(user_id, device_id, message), do: {:ok, &1 + 1})
+        }
+      end
+
+    Repo.Transaction.execute(txn, 0)
   end
 
   @doc """
@@ -51,8 +48,8 @@ defmodule RadioBeam.Device.Message do
   messages that are assumed to be delivered successfully at this point.
   """
   def take_unsent(user_id, device_id, since_token, mark_as_read \\ nil) do
-    fn ->
-      %Device{messages: messages} = device = Device.getT(user_id, device_id, lock: :write)
+    Repo.one_shot(fn ->
+      {:ok, %Device{messages: messages} = device} = Device.get(user_id, device_id, lock: :write)
 
       # TOIMPL: only take first 100 msgs
       case Map.pop(messages, :unsent, :none) do
@@ -61,16 +58,10 @@ defmodule RadioBeam.Device.Message do
 
         {unsent, messages} ->
           messages = messages |> Map.put(since_token, unsent) |> mark_as_read(mark_as_read)
-          Device.persist(%Device{device | messages: messages})
-          unsent
+          Device.Table.persist(%Device{device | messages: messages})
+          {:ok, Enum.reverse(unsent)}
       end
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, :none} -> :none
-      {:ok, unsent} -> {:ok, Enum.reverse(unsent)}
-      error -> error
-    end
+    end)
   end
 
   def expand_device_id(user_id, "*") do
@@ -82,14 +73,14 @@ defmodule RadioBeam.Device.Message do
 
   def expand_device_id(_user_id, device_id), do: [device_id]
 
-  defp putT(user_id, device_id, %__MODULE__{} = message) do
-    case Device.getT(user_id, device_id, lock: :write) do
-      %Device{} = device ->
+  defp persist(user_id, device_id, %__MODULE__{} = message) do
+    case Device.get(user_id, device_id, lock: :write) do
+      {:ok, %Device{} = device} ->
         messages = Map.update(device.messages, :unsent, [message], &[message | &1])
-        Device.persist(%Device{device | messages: messages})
+        Device.Table.persist(%Device{device | messages: messages})
 
-      nil ->
-        :not_found
+      {:error, :not_found} ->
+        {:error, :not_found}
     end
   end
 

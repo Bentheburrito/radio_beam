@@ -32,7 +32,7 @@ defmodule RadioBeam.PDUTest do
       {:ok, room_id} = Room.create(user)
       {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
 
-      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user.id)
       {:ok, parent_pdu} = PDU.get(parent_event_id)
       assert {:ok, []} = PDU.get_children(parent_pdu, user.id, :currently_joined)
     end
@@ -47,7 +47,7 @@ defmodule RadioBeam.PDUTest do
 
       {:ok, child_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is another msg", relation)
 
-      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user.id)
       {:ok, parent_pdu} = PDU.get(parent_event_id)
       assert {:ok, [%{event_id: ^child_event_id}]} = PDU.get_children(parent_pdu, user.id, :currently_joined)
     end
@@ -63,7 +63,7 @@ defmodule RadioBeam.PDUTest do
       {:ok, child_event_id1} = Fixtures.send_text_msg(room_id, user.id, "This is another msg", relation)
       {:ok, child_event_id2} = Fixtures.send_text_msg(room_id, user.id, "And a 3rd msg", relation)
 
-      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user.id)
       {:ok, parent_pdu} = PDU.get(parent_event_id)
 
       assert {:ok, [%{event_id: ^child_event_id1}, %{event_id: ^child_event_id2}]} =
@@ -85,7 +85,7 @@ defmodule RadioBeam.PDUTest do
 
       {:ok, grandchild_event_id} = Fixtures.send_text_msg(room_id, user.id, "And a 3rd msg", relation)
 
-      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user.id)
       {:ok, parent_pdu} = PDU.get(parent_event_id)
 
       assert {:ok, [%{event_id: ^child_event_id}, %{event_id: ^grandchild_event_id}]} =
@@ -111,7 +111,7 @@ defmodule RadioBeam.PDUTest do
       recurse_max = 2
       expected_ids = ids |> Enum.reverse() |> Enum.take(recurse_max)
 
-      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user.id)
       {:ok, parent_pdu} = PDU.get(parent_event_id)
 
       {:ok, events} = PDU.get_children(parent_pdu, user.id, :currently_joined, recurse_max)
@@ -158,7 +158,7 @@ defmodule RadioBeam.PDUTest do
       recurse_max = 3
       [_would_need_to_recurse_to_4_for_this | expected_ids] = ids
 
-      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user.id)
       {:ok, parent_pdu} = PDU.get(parent_event_id)
 
       {:ok, events} = PDU.get_children(parent_pdu, user.id, :currently_joined, recurse_max)
@@ -177,7 +177,7 @@ defmodule RadioBeam.PDUTest do
       {:ok, room_id2} = Room.create(user)
       {:ok, _child_event_id} = Fixtures.send_text_msg(room_id2, user.id, "This is another msg", relation)
 
-      :currently_joined = Room.users_latest_join_depth(room_id, user.id)
+      {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user.id)
       {:ok, parent_pdu} = PDU.get(parent_event_id)
       assert {:ok, []} = PDU.get_children(parent_pdu, user.id, :currently_joined)
     end

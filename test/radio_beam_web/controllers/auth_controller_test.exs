@@ -138,7 +138,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
 
     test "errors with M_UNKNOWN_TOKEN (401) if the refresh token has expired", %{conn: conn, user: user, device: device} do
       {:ok, device} = Device.get(user.id, device.id)
-      Fixtures.write!(%Device{device | expires_at: DateTime.add(DateTime.utc_now(), -100)})
+      Device.expire(device)
 
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
 

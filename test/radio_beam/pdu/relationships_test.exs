@@ -16,9 +16,9 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       relation = %{"m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "m.thread"}}
 
       {:ok, thread_event_id1} = Fixtures.send_text_msg(room_id, user.id, "This is an event in a thread", relation)
-      Process.sleep(1)
+      Process.sleep(5)
       {:ok, thread_event_id2} = Fixtures.send_text_msg(room_id, user.id, "This another thread msg", relation)
-      Process.sleep(1)
+      Process.sleep(5)
       {:ok, thread_event_id3} = Fixtures.send_text_msg(room_id, user.id, "Yay", relation)
 
       {:ok, child_events} = PDU.get_children(parent_pdu, user.id, :currently_joined)
@@ -53,7 +53,7 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       }
 
       {:ok, _replace_event_id} = Fixtures.send_text_msg(room_id, user.id, "* This is a corrected test message", content)
-      Process.sleep(1)
+      Process.sleep(5)
       {:ok, replace_event_id} = Fixtures.send_text_msg(room_id, user.id, "* This is a corrected test message", content)
 
       {:ok, child_events} = PDU.get_children(parent_pdu, user.id, :currently_joined)

@@ -1,4 +1,7 @@
 defmodule RadioBeam.ContentRepo.MatrixContentURI do
+  @moduledoc """
+  A struct representing an `mxc://` URI as defined in the C-S spec.
+  """
   alias Polyjuice.Util.Identifiers.V1.ServerName
 
   @attrs ~w|id server_name|a

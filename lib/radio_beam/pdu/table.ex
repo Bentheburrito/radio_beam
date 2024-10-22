@@ -4,6 +4,7 @@ defmodule RadioBeam.PDU.Table do
   modules.
   """
 
+  alias RadioBeam.Repo
   alias RadioBeam.PDU
 
   @attrs [
@@ -99,20 +100,17 @@ defmodule RadioBeam.PDU.Table do
   Gets the depth of the latest event `user_id` could see in the room based on
   their membership.
   """
-  @spec get_depth_of_users_latest_join(room_id :: String.t(), user_id :: String.t()) :: non_neg_integer()
+  @spec get_depth_of_users_latest_join(room_id :: String.t(), user_id :: String.t()) :: {:ok, non_neg_integer()}
   def get_depth_of_users_latest_join(room_id, user_id) do
-    fn ->
-      Memento.Query.select_raw(__MODULE__, joined_after_ms(room_id, user_id), coerce: false, limit: 1)
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, {[], _continuation}} -> -1
-      {:ok, :"$end_of_table"} -> -1
-      # minus one, because `depth` is the first event the user *can't* see,
-      # since joined_after_ms examines prev_state
-      {:ok, {[depth], _continuation}} -> -depth - 1
-      {:error, _} -> -1
-    end
+    Repo.one_shot(fn ->
+      case Memento.Query.select_raw(__MODULE__, joined_after_ms(room_id, user_id), coerce: false, limit: 1) do
+        # `depth - 1`, because `depth` is the first event the user *can't* see,
+        # since joined_after_ms examines prev_state
+        {[depth], _continuation} -> {:ok, -depth - 1}
+        {[], _continuation} -> {:ok, -1}
+        :"$end_of_table" -> {:ok, -1}
+      end
+    end)
   end
 
   @doc """
@@ -120,14 +118,13 @@ defmodule RadioBeam.PDU.Table do
   """
   @spec get_record(String.t()) :: {:ok, tuple()} | {:error, any()}
   def get_record(id) do
-    fn -> Memento.Query.select(__MODULE__, {:==, :event_id, id}, limit: 1, coerce: false) end
-    |> Memento.transaction()
-    |> case do
-      {:ok, {[record], _cont}} -> {:ok, record}
-      {:ok, {[], _cont}} -> {:error, :not_found}
-      {:ok, :"$end_of_table"} -> {:error, :not_found}
-      {:error, error} -> {:error, error}
-    end
+    Repo.one_shot(fn ->
+      case Memento.Query.select(__MODULE__, {:==, :event_id, id}, limit: 1, coerce: false) do
+        {[record], _cont} -> {:ok, record}
+        {[], _cont} -> {:error, :not_found}
+        :"$end_of_table" -> {:error, :not_found}
+      end
+    end)
   end
 
   @doc """
@@ -138,13 +135,7 @@ defmodule RadioBeam.PDU.Table do
     match_head = __MODULE__.__info__().query_base
     match_spec = for id <- ids, do: {put_elem(match_head, 2, id), [], [:"$_"]}
 
-    fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end
-    |> Memento.transaction()
-    |> case do
-      {:ok, records} when is_list(records) -> {:ok, records}
-      {:ok, :"$end_of_table"} -> {:ok, []}
-      {:error, error} -> {:error, error}
-    end
+    Repo.one_shot(fn -> {:ok, Memento.Query.select_raw(__MODULE__, match_spec, coerce: false)} end)
   end
 
   @doc """
@@ -158,7 +149,7 @@ defmodule RadioBeam.PDU.Table do
     if Memento.Transaction.inside?() do
       Memento.Query.select_raw(__MODULE__, match_spec, coerce: false)
     else
-      Memento.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
+      Repo.one_shot(fn -> {:ok, Memento.Query.select_raw(__MODULE__, match_spec, coerce: false)} end)
     end
     |> case do
       records when is_list(records) -> {:ok, records}

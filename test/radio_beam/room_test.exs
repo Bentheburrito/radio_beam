@@ -11,8 +11,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "create/4" do
     setup do
-      user = Fixtures.user("@thecreator:localhost")
-      invitee = Fixtures.user("@agoodfriend:localhost")
+      user = Fixtures.user()
+      invitee = Fixtures.user()
 
       %{creator: user, to_invite: invitee}
     end
@@ -76,7 +76,7 @@ defmodule RadioBeam.RoomTest do
 
         alias = "##{alias_localpart}:#{server_name}"
         assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
-        assert {:ok, ^room_id} = Room.Alias.get(alias)
+        assert {:ok, ^room_id} = Room.Alias.get_room_id(alias)
 
         assert %{"name" => "The Computer Room"} = get_in(state, [{"m.room.name", ""}, "content"])
         assert %{"topic" => "this one's for the nerds"} = get_in(state, [{"m.room.topic", ""}, "content"])
@@ -114,8 +114,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "invite/3" do
     setup do
-      user1 = Fixtures.user("@theboss:localhost")
-      user2 = Fixtures.user("@newhire:localhost")
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       %{user1: user1, user2: user2}
     end
@@ -144,8 +144,8 @@ defmodule RadioBeam.RoomTest do
 
   describe "join/2" do
     setup do
-      user1 = Fixtures.user("@bodyguard:localhost")
-      user2 = Fixtures.user("@iloveclubaqua:localhost")
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
 
       %{user1: user1, user2: user2}
     end
@@ -609,11 +609,11 @@ defmodule RadioBeam.RoomTest do
       user2: user2,
       room_id: room_id
     } do
-      assert :currently_joined = Room.users_latest_join_depth(room_id, user1.id)
+      assert {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user1.id)
 
-      refute :currently_joined == Room.users_latest_join_depth(room_id, user2.id)
+      refute {:ok, :currently_joined} == Room.users_latest_join_depth(room_id, user2.id)
       {:ok, _event_id} = Room.join(room_id, user2.id)
-      assert :currently_joined = Room.users_latest_join_depth(room_id, user2.id)
+      assert {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user2.id)
     end
 
     test "returns the depth of the event just before a user's leave event", %{
@@ -633,7 +633,7 @@ defmodule RadioBeam.RoomTest do
 
       {:ok, %{depth: expected_depth}} = PDU.get(event_id)
 
-      assert ^expected_depth = Room.users_latest_join_depth(room_id, user2.id)
+      assert {:ok, ^expected_depth} = Room.users_latest_join_depth(room_id, user2.id)
 
       {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
       {:ok, _event_id} = Room.join(room_id, user2.id)
@@ -641,7 +641,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} =
         Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "lol jk I'm here"})
 
-      assert :currently_joined = Room.users_latest_join_depth(room_id, user2.id)
+      assert {:ok, :currently_joined} = Room.users_latest_join_depth(room_id, user2.id)
 
       {:ok, _event_id} = Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "NOT!"})
       {:ok, event_id} = Room.send(room_id, user1.id, "m.room.message", %{"msgtype" => "m.text", "body" => "..."})
@@ -650,11 +650,11 @@ defmodule RadioBeam.RoomTest do
 
       {:ok, %{depth: expected_depth}} = PDU.get(event_id)
 
-      assert ^expected_depth = Room.users_latest_join_depth(room_id, user2.id)
+      assert {:ok, ^expected_depth} = Room.users_latest_join_depth(room_id, user2.id)
     end
 
     test "returns -1 if the user never joined the room", %{user2: user2, room_id: room_id} do
-      assert -1 = Room.users_latest_join_depth(room_id, user2.id)
+      assert {:ok, -1} = Room.users_latest_join_depth(room_id, user2.id)
     end
   end
 

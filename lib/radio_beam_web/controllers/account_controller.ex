@@ -53,8 +53,7 @@ defmodule RadioBeamWeb.AccountController do
   defp parse_scope(room_id) do
     case Room.get(room_id) do
       {:ok, %Room{}} -> {:ok, room_id}
-      {:ok, nil} -> {:error, :invalid_room_id}
-      error -> error
+      {:error, :not_found} -> {:error, :invalid_room_id}
     end
   end
 end

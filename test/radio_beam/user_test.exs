@@ -74,12 +74,12 @@ defmodule RadioBeam.UserTest do
     end
 
     test "cannot put any account data for an unknown user", %{user: user} do
-      assert {:error, :user_does_not_exist} =
+      assert {:error, :not_found} =
                User.put_account_data("@hellooo:localhost", :global, "m.some_config", %{"key" => "value"})
 
       {:ok, room_id} = Room.create(user)
 
-      assert {:error, :user_does_not_exist} =
+      assert {:error, :not_found} =
                User.put_account_data("@hellooo:localhost", room_id, "m.some_config", %{"other" => "value"})
     end
   end

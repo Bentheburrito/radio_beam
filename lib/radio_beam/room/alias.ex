@@ -9,6 +9,9 @@ defmodule RadioBeam.Room.Alias do
     attributes: @attrs,
     type: :set
 
+  alias RadioBeam.Room
+  alias RadioBeam.Repo
+
   @type t() :: %__MODULE__{}
 
   # TOIMPL: check the room alias grammar
@@ -17,32 +20,27 @@ defmodule RadioBeam.Room.Alias do
   `{:error, error}` otherwise, where `error` is either `:room_does_not_exist` or
   `:alias_in_use`.
   """
-  def putT(room_alias, room_id) do
-    case {Memento.Query.read(__MODULE__, room_alias), Memento.Query.read(RadioBeam.Room, room_id)} do
-      {_, nil} ->
-        {:error, :room_does_not_exist}
+  def put(room_alias, room_id) do
+    Repo.one_shot(fn ->
+      case {Memento.Query.read(__MODULE__, room_alias), Room.get(room_id)} do
+        {_, {:error, :not_found}} ->
+          {:error, :room_does_not_exist}
 
-      {%__MODULE__{}, _} ->
-        {:error, :alias_in_use}
+        {%__MODULE__{}, _} ->
+          {:error, :alias_in_use}
 
-      {nil, %RadioBeam.Room{id: ^room_id}} ->
-        Memento.Query.write(%__MODULE__{alias: room_alias, room_id: room_id})
-    end
+        {nil, {:ok, %RadioBeam.Room{id: ^room_id}}} ->
+          {:ok, Memento.Query.write(%__MODULE__{alias: room_alias, room_id: room_id})}
+      end
+    end)
   end
 
-  def get(room_alias) do
-    fn -> Memento.Query.read(__MODULE__, room_alias) end
-    |> Memento.transaction()
-    |> case do
-      {:ok, %__MODULE__{room_id: room_id}} -> {:ok, room_id}
-      error -> error
-    end
-  end
-
-  def to_room_id(room_alias) do
-    case Memento.transaction(fn -> Memento.Query.read(__MODULE__, room_alias) end) do
-      {:ok, nil} -> {:error, :not_found}
-      {:ok, %__MODULE__{room_id: room_id}} -> {:ok, room_id}
-    end
+  def get_room_id(room_alias) do
+    Repo.one_shot(fn ->
+      case Memento.Query.read(__MODULE__, room_alias) do
+        nil -> {:error, :not_found}
+        %__MODULE__{room_id: room_id} -> {:ok, room_id}
+      end
+    end)
   end
 end

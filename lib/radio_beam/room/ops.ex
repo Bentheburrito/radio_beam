@@ -5,11 +5,12 @@ defmodule RadioBeam.Room.Ops do
   atomic DB actions, PubSub broadcasts, etc.
   """
 
+  alias RadioBeam.Repo
   alias RadioBeam.PDU
   alias RadioBeam.Room
 
   def persist_with_pdus(%Room{} = room, pdus) do
-    Memento.transaction(fn ->
+    Repo.one_shot(fn ->
       addl_actions =
         for %PDU{} = pdu <- pdus, do: pdu |> PDU.persist() |> get_pdu_followup_actions()
 
@@ -18,9 +19,9 @@ defmodule RadioBeam.Room.Ops do
       addl_actions
       |> List.flatten()
       |> Stream.filter(&is_function(&1))
-      |> Enum.find_value(room, fn action ->
+      |> Enum.find_value({:ok, room}, fn action ->
         case action.() do
-          {:error, error} -> Memento.Transaction.abort(error)
+          {:error, _} = error -> error
           _result -> false
         end
       end)
@@ -29,7 +30,7 @@ defmodule RadioBeam.Room.Ops do
 
   defp get_pdu_followup_actions(%PDU{type: "m.room.canonical_alias"} = pdu) do
     for room_alias <- [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])], not is_nil(room_alias) do
-      fn -> Room.Alias.putT(room_alias, pdu.room_id) end
+      fn -> Room.Alias.put(room_alias, pdu.room_id) end
     end
   end
 

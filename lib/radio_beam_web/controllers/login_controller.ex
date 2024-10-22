@@ -43,7 +43,7 @@ defmodule RadioBeamWeb.LoginController do
       end
 
     case User.get(user_id) do
-      {:ok, nil} ->
+      {:error, :not_found} ->
         conn
         |> put_status(403)
         |> json(Errors.forbidden(unknown_user_or_pwd()))

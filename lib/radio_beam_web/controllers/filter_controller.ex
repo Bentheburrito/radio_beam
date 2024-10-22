@@ -33,7 +33,10 @@ defmodule RadioBeamWeb.FilterController do
       {:ok, %{user_id: ^user_id} = filter} ->
         json(conn, filter.definition)
 
-      {:ok, _nil_or_not_own_filter} ->
+      {:ok, _not_own_filter} ->
+        conn |> put_status(404) |> json(Errors.not_found("Filter not found"))
+
+      {:error, :not_found} ->
         conn |> put_status(404) |> json(Errors.not_found("Filter not found"))
 
       {:error, error} ->

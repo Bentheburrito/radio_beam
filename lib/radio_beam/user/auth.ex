@@ -3,6 +3,7 @@ defmodule RadioBeam.User.Auth do
   Functions for authenticating users
   """
 
+  alias RadioBeam.Repo
   alias RadioBeam.Device
   alias RadioBeam.User
 
@@ -21,29 +22,22 @@ defmodule RadioBeam.User.Auth do
   """
   @spec by(token_type(), token :: String.t()) ::
           {:ok, User.t(), Device.t()} | {:error, :expired | :unknown_token | any()}
-  def by(:access, at), do: get_user_and_device(fn -> Device.select_by_access_token(at) end, true)
-  def by(:refresh, rt), do: get_user_and_device(fn -> Device.select_by_refresh_token(rt) end, false)
+  def by(:access, at), do: get_user_and_device(fn -> Device.get_by_access_token(at) end, true)
+  def by(:refresh, rt), do: get_user_and_device(fn -> Device.get_by_refresh_token(rt) end, false)
 
   defp get_user_and_device(selector, upkeep?) do
-    fn ->
-      with %Device{} = device <- selector.(),
+    Repo.one_shot(fn ->
+      with {:ok, %Device{} = device} <- selector.(),
            :lt <- DateTime.compare(DateTime.utc_now(), device.expires_at) do
         %User{} = user = Memento.Query.read(User, device.user_id)
         %Device{} = device = if upkeep?, do: Device.upkeep(device), else: device
 
-        {user, device}
+        {:ok, user, device}
       else
-        :none -> :unknown_token
-        compare_result when compare_result in [:eq, :gt] -> :expired
+        {:error, :not_found} -> {:error, :unknown_token}
+        compare_result when compare_result in [:eq, :gt] -> {:error, :expired}
       end
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, {user, device}} -> {:ok, user, device}
-      {:ok, :expired} -> {:error, :expired}
-      {:ok, :unknown_token} -> {:error, :unknown_token}
-      {:error, error} -> {:error, error}
-    end
+    end)
   end
 
   @doc """

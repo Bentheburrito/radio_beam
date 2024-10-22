@@ -23,6 +23,7 @@ defmodule RadioBeam.Room do
 
   require Logger
 
+  alias RadioBeam.Repo
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias :radio_beam_room_queries, as: Queries
   alias Phoenix.PubSub
@@ -141,20 +142,7 @@ defmodule RadioBeam.Room do
   @doc "Returns all room IDs that `user_id` is joined to"
   @spec joined(user_id :: String.t()) :: [room_id :: String.t()]
   def joined(user_id) do
-    fn ->
-      user_id
-      |> Queries.joined()
-      |> :qlc.e()
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, room_ids} ->
-        room_ids
-
-      {:error, error} ->
-        Logger.error("tried to list user #{inspect(user_id)}'s joined rooms, but got error: #{inspect(error)}")
-        []
-    end
+    Repo.one_shot(fn -> user_id |> Queries.joined() |> :qlc.e() end)
   end
 
   @doc """
@@ -162,21 +150,7 @@ defmodule RadioBeam.Room do
   """
   @spec all_where_has_membership(user_id :: String.t()) :: [room_id :: String.t()]
   def all_where_has_membership(user_id) do
-    fn ->
-      user_id
-      |> Queries.has_membership()
-      |> :qlc.e()
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, room_ids} ->
-        room_ids
-
-      {:error, error} ->
-        Logger.error("tried to list user #{inspect(user_id)}'s related rooms, but got error: #{inspect(error)}")
-
-        []
-    end
+    Repo.one_shot(fn -> user_id |> Queries.has_membership() |> :qlc.e() end)
   end
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
@@ -245,7 +219,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_event(room_id, user_id, event_id) do
-    latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
+    {:ok, latest_joined_at_depth} = users_latest_join_depth(room_id, user_id)
 
     PDU.get_if_visible_to_user(event_id, user_id, latest_joined_at_depth)
   end
@@ -257,7 +231,7 @@ defmodule RadioBeam.Room do
   """
   def users_latest_join_depth(room_id, user_id) do
     if call_if_alive(room_id, {:member?, user_id}) do
-      :currently_joined
+      {:ok, :currently_joined}
     else
       PDU.get_depth_of_users_latest_join(room_id, user_id)
     end
@@ -275,7 +249,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
+    {:ok, latest_joined_at_depth} = users_latest_join_depth(room_id, user_id)
 
     case PDU.get_if_visible_to_user(at_event_id, user_id, latest_joined_at_depth) do
       {:ok, %PDU{} = pdu} -> get_members_from_state(pdu.prev_state, membership_filter)
@@ -332,36 +306,34 @@ defmodule RadioBeam.Room do
         :backward -> :descending
       end
 
-    latest_joined_at_depth = users_latest_join_depth(room_id, user_id)
+    {:ok, latest_joined_at_depth} = users_latest_join_depth(room_id, user_id)
     filter = %{limit: 1, contains_url: :none, types: :none, senders: :none}
 
-    fn ->
-      room_id
-      |> PDU.nearest_event_cursor(user_id, filter, timestamp, cutoff_ms, latest_joined_at_depth, order)
-      |> PDU.next_answers(1, :cleanup)
-      |> Enum.to_list()
-    end
-    |> Memento.transaction()
-    |> case do
-      {:ok, []} ->
-        :none
+    result =
+      Repo.one_shot(fn ->
+        room_id
+        |> PDU.nearest_event_cursor(user_id, filter, timestamp, cutoff_ms, latest_joined_at_depth, order)
+        |> PDU.next_answers(1, :cleanup)
+        |> Enum.to_list()
+      end)
 
-      {:ok, [event]} ->
-        {:ok, event}
-
-      {:error, error} ->
-        Logger.error(
-          "tried to fetch a nearby event for #{inspect(user_id)} at timestamp #{timestamp}, but got error: #{inspect(error)}"
-        )
-
-        {:error, :internal}
+    case result do
+      [] -> :none
+      [event] -> {:ok, event}
     end
   end
 
   @doc """
   Gets the %Room{} under the given room_id
   """
-  def get(id), do: Memento.transaction(fn -> Memento.Query.read(__MODULE__, id) end)
+  def get(id) do
+    Repo.one_shot(fn ->
+      case Memento.Query.read(__MODULE__, id) do
+        nil -> {:error, :not_found}
+        room -> {:ok, room}
+      end
+    end)
+  end
 
   @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
   def stripped_state_types, do: @stripped_state_types
@@ -387,7 +359,7 @@ defmodule RadioBeam.Room do
         else
           {:error, :unauthorized} -> {:stop, :invalid_state}
           {:error, %Ecto.Changeset{} = changeset} -> {:stop, inspect(changeset.errors)}
-          {:error, {:transaction_aborted, reason}} -> {:stop, reason}
+          {:error, :alias_in_use} -> {:stop, :alias_in_use}
           {:error, error} -> {:stop, inspect(error)}
         end
 
@@ -430,9 +402,6 @@ defmodule RadioBeam.Room do
       {:error, error} ->
         Logger.error("an error occurred trying to put a(n) #{event_kind} event: #{inspect(error)}")
         {:reply, {:error, :internal}, room}
-
-      error ->
-        error
     end
   end
 
@@ -466,7 +435,7 @@ defmodule RadioBeam.Room do
           error -> error
         end
 
-      {:ok, nil} ->
+      {:error, :not_found} ->
         {:error, :room_does_not_exist}
 
       {:error, error} ->

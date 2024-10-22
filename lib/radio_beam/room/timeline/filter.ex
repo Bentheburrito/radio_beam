@@ -12,21 +12,25 @@ defmodule RadioBeam.Room.Timeline.Filter do
 
   import Kernel, except: [apply: 2]
 
+  alias RadioBeam.Repo
   alias RadioBeam.Room.Timeline
 
   def put(user_id, definition) do
     id = 8 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
 
-    fn -> Memento.Query.write(%__MODULE__{id: id, user_id: user_id, definition: definition}) end
-    |> Memento.transaction()
-    |> case do
-      {:ok, _} -> {:ok, id}
-      error -> error
-    end
+    Repo.one_shot(fn ->
+      Memento.Query.write(%__MODULE__{id: id, user_id: user_id, definition: definition})
+      {:ok, id}
+    end)
   end
 
   def get(filter_id) do
-    Memento.transaction(fn -> Memento.Query.read(__MODULE__, filter_id) end)
+    Repo.one_shot(fn ->
+      case Memento.Query.read(__MODULE__, filter_id) do
+        nil -> {:error, :not_found}
+        filter -> {:ok, filter}
+      end
+    end)
   end
 
   @doc """
