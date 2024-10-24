@@ -24,6 +24,7 @@ defmodule RadioBeam.Room do
   require Logger
 
   alias RadioBeam.Repo
+  alias RadioBeam.Repo.Transaction
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias :radio_beam_room_queries, as: Queries
   alias Phoenix.PubSub
@@ -32,7 +33,6 @@ defmodule RadioBeam.Room do
   alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
   alias RadioBeam.Room.Core
-  alias RadioBeam.Room.Ops
   alias RadioBeam.Room.Events
   alias RadioBeam.RoomSupervisor
   alias RadioBeam.User
@@ -354,12 +354,13 @@ defmodule RadioBeam.Room do
         init_room = %Room{id: room_id, depth: 0, latest_event_ids: [], state: %{}, version: version}
 
         with {:ok, %Room{} = room, pdus} <- Core.put_events(init_room, events),
-             {:ok, _} <- Ops.persist_with_pdus(room, pdus) do
+             {:ok, _} <- persist(room, pdus) do
           {:ok, room}
         else
           {:error, :unauthorized} -> {:stop, :invalid_state}
           {:error, %Ecto.Changeset{} = changeset} -> {:stop, inspect(changeset.errors)}
           {:error, :alias_in_use} -> {:stop, :alias_in_use}
+          {:error, _txn_fxn_name, error} -> {:stop, error}
           {:error, error} -> {:stop, inspect(error)}
         end
 
@@ -379,7 +380,7 @@ defmodule RadioBeam.Room do
     event_kind = if is_map_key(event, "state_key"), do: "state", else: "message"
 
     with {:ok, room, pdu} <- Core.put_event(room, event),
-         {:ok, _} <- Ops.persist_with_pdus(room, [pdu]) do
+         {:ok, _} <- persist(room, [pdu]) do
       PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_event, room.id, pdu})
 
       if pdu.type in @stripped_state_types,
@@ -416,6 +417,25 @@ defmodule RadioBeam.Room do
     membership = Map.get(room.state, {"m.room.member", user_id}, :not_found)
     {:reply, membership, room}
   end
+
+  defp persist(%Room{} = room, pdus) do
+    init_txn =
+      Transaction.add_fxn(Transaction.new(), :room, fn -> {:ok, Memento.Query.write(room)} end)
+
+    pdus
+    |> Enum.reduce(init_txn, &persist_pdu_with_side_effects/2)
+    |> Transaction.execute()
+  end
+
+  defp persist_pdu_with_side_effects(%PDU{type: "m.room.canonical_alias"} = pdu, txn) do
+    [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])]
+    |> Stream.reject(&is_nil/1)
+    |> Enum.reduce(txn, &Transaction.add_fxn(&2, "put_alias_#{&1}", fn -> Room.Alias.put(&1, pdu.room_id) end))
+    |> Transaction.add_fxn(:pdu, fn -> PDU.persist(pdu) end)
+  end
+
+  # TOIMPL: add room to published room list if visibility option was set to :public
+  defp persist_pdu_with_side_effects(%PDU{} = pdu, txn), do: Transaction.add_fxn(txn, :pdu, fn -> PDU.persist(pdu) end)
 
   defp call_if_alive(room_id, message) do
     GenServer.call(via(room_id), message)

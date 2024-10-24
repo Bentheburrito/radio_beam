@@ -69,9 +69,11 @@ defmodule RadioBeam.PDU.Table do
   def persist(%PDU{} = pdu) do
     record = from_pdu(pdu)
 
-    case Memento.Query.write(record) do
-      %__MODULE__{} -> pdu
-    end
+    Repo.one_shot(fn ->
+      case Memento.Query.write(record) do
+        %__MODULE__{} -> {:ok, pdu}
+      end
+    end)
   end
 
   ### QUERIES ###
