@@ -54,12 +54,14 @@ defmodule RadioBeam.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.2"},
-      {:memento, "~> 0.3.2"},
+      # {:memento, "~> 0.3.2"},
+      {:memento, path: "../../memento"},
       {:argon2_elixir, "~> 4.0"},
       {:dotenv_parser, "~> 1.2", only: [:dev, :test]},
       {:polyjuice_util, path: "../../polyjuice_util"},
       {:vix, "~> 0.30.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
     ]
   end
