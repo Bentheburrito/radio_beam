@@ -230,7 +230,7 @@ defmodule RadioBeam.Room do
 
   def get_event(_room_id, user_id, event_id) do
     with {:ok, pdu} <- PDU.get(event_id),
-         [^pdu] <- Timeline.filter_authz([pdu], :forward, user_id) do
+         true <- Timeline.authz_to_view?(pdu, user_id) do
       {:ok, pdu}
     else
       _ -> {:error, :unauthorized}
@@ -252,7 +252,7 @@ defmodule RadioBeam.Room do
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
     with {:ok, pdu} <- PDU.get(at_event_id),
-         [^pdu] <- Timeline.filter_authz([pdu], :forward, user_id),
+         true <- Timeline.authz_to_view?(pdu, user_id),
          {:ok, state_events} <- PDU.all(pdu.state_events) do
       {:ok, %{version: version}} = get(room_id)
 

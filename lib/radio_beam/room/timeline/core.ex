@@ -24,7 +24,6 @@ defmodule RadioBeam.Room.Timeline.Core do
 
         :else ->
           %{
-            # TODO: I think the event format needs to apply to state events here too? 
             state: state_delta,
             timeline: %Timeline{timeline | events: format(timeline.events, config.filter, config.room.version)}
           }

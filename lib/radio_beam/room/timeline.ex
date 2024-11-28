@@ -312,7 +312,7 @@ defmodule RadioBeam.Room.Timeline do
   defp bundle_aggregations(events, user_id) do
     {:ok, child_pdus} = PDU.get_children(events, _recurse = 1)
     # this will get expensive!!
-    authz_child_pdus = Enum.flat_map(child_pdus, &filter_authz([&1], user_id))
+    authz_child_pdus = Enum.filter(child_pdus, &authz_to_view?(&1, user_id))
     authz_child_event_ids = authz_child_pdus |> Stream.map(& &1.event_id) |> MapSet.new()
     authz_child_pdu_map = Enum.group_by(authz_child_pdus, & &1.parent_id)
 
