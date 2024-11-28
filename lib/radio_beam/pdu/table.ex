@@ -8,16 +8,19 @@ defmodule RadioBeam.PDU.Table do
   alias RadioBeam.PDU
 
   @attrs [
-    :pk,
+    :primary_key,
+    :arrival_key,
     :event_id,
     :auth_events,
     :content,
+    :current_visibility,
     :hashes,
+    :origin_server_ts,
     :parent_id,
     :prev_events,
-    :prev_state,
     :sender,
     :signatures,
+    :state_events,
     :state_key,
     :type,
     :unsigned
@@ -25,49 +28,22 @@ defmodule RadioBeam.PDU.Table do
 
   use Memento.Table,
     attributes: @attrs,
-    index: [:event_id, :parent_id],
+    index: [:arrival_key, :event_id, :parent_id, :origin_server_ts],
     type: :ordered_set
-
-  @type t() :: %__MODULE__{}
-
-  @doc """
-  Casts a raw PDU.Table record into a PDU struct.
-  """
-  @spec to_pdu(tuple()) :: PDU.t()
-  def to_pdu(
-        {__MODULE__, {room_id, neg_depth, os_ts}, event_id, auth_events, content, hashes, parent_id, prev_events,
-         prev_state, sender, signatures, state_key, type, unsigned}
-      ) do
-    %PDU{
-      auth_events: auth_events,
-      content: content,
-      depth: -neg_depth,
-      event_id: event_id,
-      hashes: hashes,
-      origin_server_ts: os_ts,
-      parent_id: parent_id,
-      prev_events: prev_events,
-      prev_state: prev_state,
-      room_id: room_id,
-      sender: sender,
-      signatures: signatures,
-      state_key: state_key,
-      type: type,
-      unsigned: unsigned
-    }
-  end
-
-  @spec from_pdu(PDU.t()) :: t()
-  def from_pdu(%PDU{} = pdu) do
-    struct(%__MODULE__{pk: {pdu.room_id, -pdu.depth, pdu.origin_server_ts}}, Map.from_struct(pdu))
-  end
 
   @doc """
   Persist a PDU to the Mnesia table. Must be run inside a transaction.
   """
-  @spec persist(PDU.t()) :: PDU.t() | no_return()
+  @spec persist(PDU.t()) :: :ok | {:error, any()}
   def persist(%PDU{} = pdu) do
-    record = from_pdu(pdu)
+    record =
+      struct(
+        %__MODULE__{
+          primary_key: {pdu.room_id, pdu.chunk, pdu.depth, pdu.arrival_time, pdu.arrival_order},
+          arrival_key: {pdu.arrival_time, pdu.arrival_order}
+        },
+        Map.from_struct(pdu)
+      )
 
     Repo.one_shot(fn ->
       case Memento.Query.write(record) do
@@ -76,53 +52,16 @@ defmodule RadioBeam.PDU.Table do
     end)
   end
 
-  ### QUERIES ###
-
-  # do nothing - traverse the table in desc order by default
-  def order_by(query_handle, :descending), do: query_handle
-  # note: mnesia traverses tables by erlang term order in ascending order, and
-  # we don't have much control over that. 
-  def order_by(query_handle, :ascending), do: :qlc.sort(query_handle, order: :descending)
-
   ### MISC HELPERS / GETTERS ###
-
-  @doc """
-  Gets the max depth of all the given event IDs. Returns -1 if the list is
-  empty. This function needs to be run in a transaction
-  """
-  @spec max_depth_of_all(room_id :: String.t(), [event_id :: String.t()]) :: non_neg_integer()
-  def max_depth_of_all(room_id, event_ids) do
-    __MODULE__
-    |> Memento.Query.select_raw(depth_ms(room_id, event_ids), coerce: false)
-    |> Enum.min(&<=/2, fn -> 1 end)
-    |> Kernel.-()
-  end
-
-  @doc """
-  Gets the depth of the latest event `user_id` could see in the room based on
-  their membership.
-  """
-  @spec get_depth_of_users_latest_join(room_id :: String.t(), user_id :: String.t()) :: {:ok, non_neg_integer()}
-  def get_depth_of_users_latest_join(room_id, user_id) do
-    Repo.one_shot(fn ->
-      case Memento.Query.select_raw(__MODULE__, joined_after_ms(room_id, user_id), coerce: false, limit: 1) do
-        # `depth - 1`, because `depth` is the first event the user *can't* see,
-        # since joined_after_ms examines prev_state
-        {[depth], _continuation} -> {:ok, -depth - 1}
-        {[], _continuation} -> {:ok, -1}
-        :"$end_of_table" -> {:ok, -1}
-      end
-    end)
-  end
 
   @doc """
   Selects a raw PDU.Table tuple record by its event ID
   """
-  @spec get_record(String.t()) :: {:ok, tuple()} | {:error, any()}
-  def get_record(id) do
+  @spec get(String.t()) :: {:ok, PDU.t()} | {:error, any()}
+  def get(event_id) do
     Repo.one_shot(fn ->
-      case Memento.Query.select(__MODULE__, {:==, :event_id, id}, limit: 1, coerce: false) do
-        {[record], _cont} -> {:ok, record}
+      case Memento.Query.select(__MODULE__, {:==, :event_id, event_id}, limit: 1, coerce: false) do
+        {[record], _cont} -> {:ok, to_pdu(record)}
         {[], _cont} -> {:error, :not_found}
         :"$end_of_table" -> {:error, :not_found}
       end
@@ -132,53 +71,118 @@ defmodule RadioBeam.PDU.Table do
   @doc """
   Selects all raw PDU.Table tuple records by their event IDs
   """
-  @spec get_all_records([String.t()]) :: {:ok, [tuple()]} | {:error, any()}
-  def get_all_records(ids) do
+  @spec all([String.t()]) :: {:ok, [tuple()]} | {:error, any()}
+  def all(ids) do
     match_head = __MODULE__.__info__().query_base
-    match_spec = for id <- ids, do: {put_elem(match_head, 2, id), [], [:"$_"]}
+    match_spec = for id <- ids, do: {put_elem(match_head, 3, id), [], [:"$_"]}
 
-    Repo.one_shot(fn -> {:ok, Memento.Query.select_raw(__MODULE__, match_spec, coerce: false)} end)
+    with {:ok, pdus, _cont} <- all_matching(match_spec), do: {:ok, pdus}
   end
 
   @doc """
-  Selects all raw PDU.Table tuple records whose `parent_id` is among the given
-  `ids`.
+  Similar to all, but returns all PDUs that match the given match spec or 
+  continuation. The match spec must of course return the record (`:"$_"`)
   """
-  def get_all_child_records(ids, room_id) do
-    match_head = put_elem(__MODULE__.__info__().query_base, 1, {room_id, :_, :_})
-    match_spec = for id <- ids, do: {put_elem(match_head, 6, id), [], [:"$_"]}
+  @spec all_matching(
+          match_spec :: :ets.match_spec() | :ets.continuation(),
+          :forward | :backward,
+          opts :: Memento.Query.options()
+        ) ::
+          {:ok, [PDU.t()], :ets.continuation() | :end} | {:error, any()}
+  def all_matching(match_spec, dir \\ :forward, opts \\ [])
 
-    if Memento.Transaction.inside?() do
-      Memento.Query.select_raw(__MODULE__, match_spec, coerce: false)
-    else
-      Repo.one_shot(fn -> {:ok, Memento.Query.select_raw(__MODULE__, match_spec, coerce: false)} end)
-    end
-    |> case do
-      records when is_list(records) -> {:ok, records}
-      {:ok, records} when is_list(records) -> {:ok, records}
-      {:error, error} -> {:error, error}
-    end
+  def all_matching(match_spec, :forward, opts) when is_list(match_spec) do
+    Repo.one_shot(fn ->
+      case Memento.Query.select_raw(__MODULE__, match_spec, Keyword.put(opts, :coerce, false)) do
+        :"$end_of_table" -> {:ok, [], :end}
+        {[], continuation} -> {:ok, [], continuation}
+        {[_ | _] = records, continuation} -> {:ok, Enum.map(records, &to_pdu/1), continuation}
+        records when is_list(records) -> {:ok, Enum.map(records, &to_pdu/1), :end}
+      end
+    end)
   end
 
-  ### MATCH SPECS ###
+  # ...need mnesia:select_reverse
+  def all_matching(match_spec, :backward, opts) when is_list(match_spec) do
+    limit = Keyword.get(opts, :limit, 10)
 
-  defp depth_ms(room_id, event_ids) do
-    for event_id <- event_ids do
-      match_head = {__MODULE__, {room_id, :"$1", :_}, event_id, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_, :_}
-      {match_head, [], [:"$1"]}
-    end
+    Repo.one_shot(fn ->
+      case :mnesia.ets(fn -> :ets.select_reverse(__MODULE__, match_spec, limit) end) do
+        :"$end_of_table" -> {:ok, [], :end}
+        {[], continuation} -> {:ok, [], continuation}
+        {[_ | _] = records, continuation} -> {:ok, Enum.map(records, &to_pdu/1), continuation}
+        records when is_list(records) -> {:ok, Enum.map(records, &to_pdu/1), :end}
+      end
+    end)
   end
 
-  defp joined_after_ms(room_id, user_id) do
-    match_head = {__MODULE__, {room_id, :"$1", :_}, :_, :_, :_, :_, :_, :_, :"$2", :_, :_, :_, :_, :_}
+  # temp: just need this to manage the :mnesia.ets call until mnesia supports
+  # select_reverse directly
+  def all_matching(continuation, _dir, _opts) when not is_map(continuation) do
+    Repo.one_shot(fn ->
+      case :mnesia.ets(fn -> :ets.select_reverse(continuation) end) do
+        :"$end_of_table" -> {:ok, [], :end}
+        {[], continuation} -> {:ok, [], continuation}
+        {[_ | _] = records, continuation} -> {:ok, Enum.map(records, &to_pdu/1), continuation}
+        records when is_list(records) -> {:ok, Enum.map(records, &to_pdu/1), :end}
+      end
+    end)
+  end
 
-    is_sender_member_key_present = {:is_map_key, {{"m.room.member", user_id}}, :"$2"}
+  def all_matching(continuation, _dir, _opts) do
+    Repo.one_shot(fn ->
+      case Memento.Query.select_continue(continuation) do
+        :"$end_of_table" -> {:ok, [], :end}
+        {[], continuation} -> {:ok, [], continuation}
+        {[_ | _] = records, continuation} -> {:ok, Enum.map(records, &to_pdu/1), continuation}
+        records when is_list(records) -> {:ok, Enum.map(records, &to_pdu/1), :end}
+      end
+    end)
+  end
 
-    is_sender_joined =
-      {:==, "join", {:map_get, "membership", {:map_get, "content", {:map_get, {{"m.room.member", user_id}}, :"$2"}}}}
+  @doc """
+  Selects all PDUs whose `parent_id` is among the given `ids`.
+  """
+  def all_children(ids, room_id) do
+    match_head = put_elem(__MODULE__.__info__().query_base, 1, {room_id, :_, :_, :_, :_})
+    match_spec = for id <- ids, do: {put_elem(match_head, 9, id), [], [:"$_"]}
 
-    guards = [{:andalso, is_sender_member_key_present, is_sender_joined}]
+    Repo.one_shot(fn ->
+      pdus =
+        __MODULE__
+        |> Memento.Query.select_raw(match_spec, coerce: false)
+        |> Enum.map(&to_pdu/1)
 
-    [{match_head, guards, [:"$1"]}]
+      {:ok, pdus}
+    end)
+  end
+
+  @spec to_pdu(tuple()) :: PDU.t()
+  defp to_pdu(
+         {__MODULE__, {room_id, chunk, depth, arrival_time, arrival_order}, {arrival_time, arrival_order}, event_id,
+          auth_events, content, current_visibility, hashes, os_ts, parent_id, prev_events, sender, signatures,
+          state_events, state_key, type, unsigned}
+       ) do
+    %PDU{
+      arrival_time: arrival_time,
+      arrival_order: arrival_order,
+      auth_events: auth_events,
+      chunk: chunk,
+      content: content,
+      current_visibility: current_visibility,
+      depth: depth,
+      event_id: event_id,
+      hashes: hashes,
+      origin_server_ts: os_ts,
+      parent_id: parent_id,
+      prev_events: prev_events,
+      room_id: room_id,
+      sender: sender,
+      signatures: signatures,
+      state_events: state_events,
+      state_key: state_key,
+      type: type,
+      unsigned: unsigned
+    }
   end
 end

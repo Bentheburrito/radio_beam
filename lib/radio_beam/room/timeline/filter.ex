@@ -16,7 +16,7 @@ defmodule RadioBeam.Room.Timeline.Filter do
   alias RadioBeam.Room.Timeline
 
   def put(user_id, definition) do
-    id = 8 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
+    id = Ecto.UUID.generate()
 
     Repo.one_shot(fn ->
       Memento.Query.write(%__MODULE__{id: id, user_id: user_id, definition: definition})

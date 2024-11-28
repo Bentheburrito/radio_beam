@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.Schemas.Sync do
   @moduledoc false
 
+  alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.Filter
@@ -11,7 +12,7 @@ defmodule RadioBeamWeb.Schemas.Sync do
       "filter" => optional(Schema.any_of([&filter_by_id/1, &Filter.json_filter/1, Filter.filter()])),
       "full_state" => [:boolean, default: false],
       "set_presence" => [Schema.enum(presence()), default: :online],
-      "since" => optional(:string),
+      "since" => optional(&pagination_token/1),
       "timeout" => [&Schemas.as_integer/1, default: 0]
     }
   end
@@ -20,15 +21,13 @@ defmodule RadioBeamWeb.Schemas.Sync do
     %{
       "dir" => Schema.enum(%{"f" => :forward, "b" => :backward}, &String.downcase/1),
       "filter" => optional(Schema.any_of([&filter_by_id/1, Filter.filter()])),
-      "from" => optional(&from_token/1),
+      "from" => optional(&pagination_token/1),
       "limit" => [&Filter.limit/1, default: Timeline.max_events(:timeline)],
-      "to" => optional(:string)
+      "to" => optional(&pagination_token/1)
     }
   end
 
-  defp from_token("first"), do: {:ok, :first}
-  defp from_token("last"), do: {:ok, :last}
-  defp from_token(from), do: {:ok, from}
+  defp pagination_token(token), do: PaginationToken.parse(token)
 
   defp filter_by_id("{" <> _), do: {:error, :invalid}
 

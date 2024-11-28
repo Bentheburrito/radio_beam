@@ -5,38 +5,27 @@ defmodule RadioBeam.Room.Core do
   """
 
   alias Polyjuice.Util.RoomVersion
-  alias RadioBeam.PDU
   alias RadioBeam.Room
 
-  @doc """
-  Attempts to apply the given event to a room. If it is a valid event that
-  satisfies auth checks, returns `{:ok, room, pdu}`, and `{:error, error}`
-  otherwise.
-  """
-  @spec put_event(Room.t(), map()) :: {:ok, Room.t(), PDU.t()} | {:error, any()}
-  def put_event(%Room{} = room, event) do
+  def authorize(%Room{} = room, event) do
     auth_events = select_auth_events(event, room.state)
 
     if authorized?(room, event, auth_events) do
-      update_room(room, event, auth_events)
+      {:ok, Map.put(event, "auth_events", Enum.map(auth_events, & &1["event_id"]))}
     else
       {:error, :unauthorized}
     end
   end
 
-  @doc """
-  Similar to `put_event/2`, but takes a list of events. The whole list of
-  events is rejected if one of them fails auth checks.
-  """
-  @spec put_events(Room.t(), [map()]) :: {:ok, Room.t(), [PDU.t()]} | {:error, any()}
-  def put_events(%Room{} = room, events) do
-    Enum.reduce_while(events, {:ok, room, []}, fn event, {:ok, %Room{} = room, pdus} ->
-      case put_event(room, event) do
-        {:ok, room, pdu} -> {:cont, {:ok, room, [pdu | pdus]}}
-        error -> {:halt, error}
-      end
-    end)
+  def update_state(%Room{} = room, event) do
+    if is_map_key(event, "state_key") do
+      %Room{room | state: Map.put(room.state, {event["type"], event["state_key"]}, event)}
+    else
+      room
+    end
   end
+
+  def put_tip(%Room{} = room, latest_event_ids), do: Map.replace!(room, :latest_event_ids, latest_event_ids)
 
   defp select_auth_events(event, state) do
     keys = [{"m.room.create", ""}, {"m.room.power_levels", ""}]
@@ -73,32 +62,5 @@ defmodule RadioBeam.Room.Core do
 
   defp authorized?(%Room{} = room, event, auth_events) do
     RoomVersion.authorized?(room.version, event, room.state, auth_events)
-  end
-
-  defp update_room(room, event, auth_events) do
-    pdu_attrs =
-      event
-      |> Map.put("auth_events", Enum.map(auth_events, & &1["event_id"]))
-      |> Map.put("depth", room.depth)
-      |> Map.put("prev_events", room.latest_event_ids)
-      |> Map.put("prev_state", room.state)
-
-    with {:ok, pdu} <- PDU.new(pdu_attrs, room.version) do
-      room =
-        room
-        |> Map.update!(:depth, &(&1 + 1))
-        |> Map.replace!(:latest_event_ids, [pdu.event_id])
-        |> update_room_state(PDU.to_event(pdu, room.version, :strings))
-
-      {:ok, room, pdu}
-    end
-  end
-
-  def update_room_state(%Room{} = room, event) do
-    if is_map_key(event, "state_key") do
-      %Room{room | state: Map.put(room.state, {event["type"], event["state_key"]}, event)}
-    else
-      room
-    end
   end
 end

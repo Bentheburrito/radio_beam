@@ -8,7 +8,6 @@ defmodule RadioBeam.Room do
 
   @types [
     id: :string,
-    depth: :integer,
     latest_event_ids: {:array, :string},
     state: :map,
     version: :string
@@ -23,10 +22,10 @@ defmodule RadioBeam.Room do
 
   require Logger
 
+  alias RadioBeam.Room.Timeline
   alias RadioBeam.Repo
   alias RadioBeam.Repo.Transaction
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias :radio_beam_room_queries, as: Queries
   alias Phoenix.PubSub
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
   alias RadioBeam.PDU
@@ -34,6 +33,7 @@ defmodule RadioBeam.Room do
   alias RadioBeam.Room
   alias RadioBeam.Room.Core
   alias RadioBeam.Room.Events
+  alias RadioBeam.Room.EventGraph
   alias RadioBeam.RoomSupervisor
   alias RadioBeam.User
 
@@ -139,10 +139,18 @@ defmodule RadioBeam.Room do
     GenServer.start_link(__MODULE__, init_arg, name: via(room_id))
   end
 
+  @state :"$3"
   @doc "Returns all room IDs that `user_id` is joined to"
   @spec joined(user_id :: String.t()) :: [room_id :: String.t()]
   def joined(user_id) do
-    Repo.one_shot(fn -> user_id |> Queries.joined() |> :qlc.e() end)
+    match_head = __MODULE__.__info__().query_base
+
+    joined_guard =
+      {:==, "join", {:map_get, "membership", {:map_get, "content", {:map_get, {{"m.room.member", user_id}}, @state}}}}
+
+    match_spec = [{match_head, [joined_guard], [:"$1"]}]
+
+    Repo.one_shot(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
   end
 
   @doc """
@@ -150,7 +158,11 @@ defmodule RadioBeam.Room do
   """
   @spec all_where_has_membership(user_id :: String.t()) :: [room_id :: String.t()]
   def all_where_has_membership(user_id) do
-    Repo.one_shot(fn -> user_id |> Queries.has_membership() |> :qlc.e() end)
+    match_head = __MODULE__.__info__().query_base
+    has_membership_guard = {:is_map_key, {{"m.room.member", user_id}}, @state}
+    match_spec = [{match_head, [has_membership_guard], [:"$1"]}]
+
+    Repo.one_shot(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
   end
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
@@ -190,9 +202,7 @@ defmodule RadioBeam.Room do
   end
 
   @doc """
-  Sets the room state for the given type and state key. Other functions, when
-  available, should be preferred to set the state of the room for specific 
-  event types
+  Sets the room state for the given type and state key.
   """
   @spec put_state(
           room_id :: String.t(),
@@ -218,24 +228,16 @@ defmodule RadioBeam.Room do
     call_if_alive(room_id, {:put_event, event})
   end
 
-  def get_event(room_id, user_id, event_id) do
-    {:ok, latest_joined_at_depth} = users_latest_join_depth(room_id, user_id)
-
-    PDU.get_if_visible_to_user(event_id, user_id, latest_joined_at_depth)
-  end
-
-  @doc """
-  Returns the depth of the most recent event where the given user's membership
-  is "join", or the atom `:currently_joined` if the user is currently in the
-  room. The depth will be `-1` if the user was never in the room.
-  """
-  def users_latest_join_depth(room_id, user_id) do
-    if call_if_alive(room_id, {:member?, user_id}) do
-      {:ok, :currently_joined}
+  def get_event(_room_id, user_id, event_id) do
+    with {:ok, pdu} <- PDU.get(event_id),
+         [^pdu] <- Timeline.filter_authz([pdu], :forward, user_id) do
+      {:ok, pdu}
     else
-      PDU.get_depth_of_users_latest_join(room_id, user_id)
+      _ -> {:error, :unauthorized}
     end
   end
+
+  def member?(room_id, user_id), do: call_if_alive(room_id, {:member?, user_id})
 
   def get_membership(room_id, user_id), do: call_if_alive(room_id, {:membership, user_id})
 
@@ -243,30 +245,30 @@ defmodule RadioBeam.Room do
 
   def get_members(room_id, user_id, :current, membership_filter) do
     case get_state(room_id, user_id) do
-      {:ok, state} -> get_members_from_state(state, membership_filter)
+      {:ok, state} -> state |> Stream.map(&elem(&1, 1)) |> get_members_from_state(membership_filter)
       error -> error
     end
   end
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    {:ok, latest_joined_at_depth} = users_latest_join_depth(room_id, user_id)
+    with {:ok, pdu} <- PDU.get(at_event_id),
+         [^pdu] <- Timeline.filter_authz([pdu], :forward, user_id),
+         {:ok, state_events} <- PDU.all(pdu.state_events) do
+      {:ok, %{version: version}} = get(room_id)
 
-    case PDU.get_if_visible_to_user(at_event_id, user_id, latest_joined_at_depth) do
-      {:ok, %PDU{} = pdu} -> get_members_from_state(pdu.prev_state, membership_filter)
+      state_events
+      |> Stream.map(&PDU.to_event(&1, version, :strings))
+      |> get_members_from_state(membership_filter)
+    else
       _ -> {:error, :unauthorized}
     end
   end
 
-  defp get_members_from_state(state, membership_filter) when is_map(state) do
+  defp get_members_from_state(state, membership_filter) do
     members =
-      state
-      |> Stream.map(&elem(&1, 1))
-      |> Enum.filter(fn
-        %{"type" => "m.room.member"} = event ->
-          event |> get_in(["content", "membership"]) |> membership_filter.()
-
-        _ ->
-          false
+      Enum.filter(state, fn
+        %{"type" => "m.room.member"} = event -> event |> get_in(["content", "membership"]) |> membership_filter.()
+        _ -> false
       end)
 
     {:ok, members}
@@ -281,7 +283,15 @@ defmodule RadioBeam.Room do
       %{"content" => %{"membership" => "leave"}} = membership ->
         event_id = Map.fetch!(membership, "event_id")
         {:ok, pdu} = PDU.get(event_id)
-        {:ok, pdu.prev_state}
+
+        case PDU.all(pdu.state_events) do
+          {:ok, state_events} ->
+            {:ok, %{version: version}} = get(room_id)
+            {:ok, Map.new(state_events, &{{&1.type, &1.state_key}, PDU.to_event(&1, version, :strings)})}
+
+          _ ->
+            {:error, :unauthorized}
+        end
 
       _ ->
         {:error, :unauthorized}
@@ -300,28 +310,24 @@ defmodule RadioBeam.Room do
 
   @default_cutoff :timer.hours(24)
   def get_nearest_event(room_id, user_id, dir, timestamp, cutoff_ms \\ @default_cutoff) do
-    order =
-      case dir do
-        :forward -> :ascending
-        :backward -> :descending
-      end
-
-    {:ok, latest_joined_at_depth} = users_latest_join_depth(room_id, user_id)
-    filter = %{limit: 1, contains_url: :none, types: :none, senders: :none}
-
-    result =
-      Repo.one_shot(fn ->
-        room_id
-        |> PDU.nearest_event_cursor(user_id, filter, timestamp, cutoff_ms, latest_joined_at_depth, order)
-        |> PDU.next_answers(1, :cleanup)
-        |> Enum.to_list()
-      end)
-
-    case result do
-      [] -> :none
-      [event] -> {:ok, event}
-    end
+    Repo.one_shot(fn ->
+      room_id
+      |> EventGraph.get_nearest_event(dir, timestamp, cutoff_ms)
+      |> get_nearest_event(user_id)
+    end)
   end
+
+  defp get_nearest_event({:ok, pdu}, user_id) do
+    if Timeline.authz_to_view?(pdu, user_id), do: {:ok, pdu}, else: {:error, :not_found}
+  end
+
+  defp get_nearest_event({:ok, pdu, cont}, user_id) do
+    if Timeline.authz_to_view?(pdu, user_id),
+      do: {:ok, pdu},
+      else: get_nearest_event(EventGraph.get_nearest_event(cont), user_id)
+  end
+
+  defp get_nearest_event({:error, :not_found}, _user_id), do: :none
 
   @doc """
   Gets the %Room{} under the given room_id
@@ -351,12 +357,10 @@ defmodule RadioBeam.Room do
   def init({room_id, events_or_room}) do
     case events_or_room do
       [%{"type" => "m.room.create", "content" => %{"room_version" => version}} | _] = events ->
-        init_room = %Room{id: room_id, depth: 0, latest_event_ids: [], state: %{}, version: version}
+        init_room = %Room{id: room_id, latest_event_ids: [], state: %{}, version: version}
 
-        with {:ok, %Room{} = room, pdus} <- Core.put_events(init_room, events),
-             {:ok, _} <- persist(room, pdus) do
-          {:ok, room}
-        else
+        case put_events(init_room, events) do
+          {:ok, %Room{} = room, _pdus} -> {:ok, room}
           {:error, :unauthorized} -> {:stop, :invalid_state}
           {:error, %Ecto.Changeset{} = changeset} -> {:stop, inspect(changeset.errors)}
           {:error, :alias_in_use} -> {:stop, :alias_in_use}
@@ -379,23 +383,23 @@ defmodule RadioBeam.Room do
     # TOIMPL: handle duplicate annotations - M_DUPLICATE_ANNOTATION
     event_kind = if is_map_key(event, "state_key"), do: "state", else: "message"
 
-    with {:ok, room, pdu} <- Core.put_event(room, event),
-         {:ok, _} <- persist(room, [pdu]) do
-      PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_event, room.id, pdu})
+    case put_event(room, event) do
+      {:ok, room, [pdu]} ->
+        PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_event, room.id, pdu})
 
-      if pdu.type in @stripped_state_types,
-        do: PubSub.broadcast(PS, PS.stripped_state_events(room.id), {:room_stripped_state, room.id, pdu})
+        if pdu.type in @stripped_state_types,
+          do: PubSub.broadcast(PS, PS.stripped_state_events(room.id), {:room_stripped_state, room.id, pdu})
 
-      if pdu.type == "m.room.member" do
-        if pdu.content["membership"] == "invite" do
-          PubSub.broadcast(PS, PS.invite_events(pdu.state_key), {:room_invite, room, pdu})
+        if pdu.type == "m.room.member" do
+          if pdu.content["membership"] == "invite" do
+            PubSub.broadcast(PS, PS.invite_events(pdu.state_key), {:room_invite, room, pdu})
+          end
+
+          LazyLoadMembersCache.mark_dirty(room.id, pdu.state_key)
         end
 
-        LazyLoadMembersCache.mark_dirty(room.id, pdu.state_key)
-      end
+        {:reply, {:ok, pdu.event_id}, room}
 
-      {:reply, {:ok, pdu.event_id}, room}
-    else
       {:error, :unauthorized} = e ->
         Logger.info("rejecting a(n) #{event_kind} event for being unauthorized: #{inspect(event)}")
         {:reply, e, room}
@@ -418,9 +422,34 @@ defmodule RadioBeam.Room do
     {:reply, membership, room}
   end
 
-  defp persist(%Room{} = room, pdus) do
-    init_txn =
-      Transaction.add_fxn(Transaction.new(), :room, fn -> {:ok, Memento.Query.write(room)} end)
+  defp put_event(%Room{} = room, event), do: put_events(room, [event])
+
+  defp put_events(%Room{} = room, events) do
+    latest_pdus =
+      case PDU.all(room.latest_event_ids) do
+        {:ok, pdus} -> pdus
+        {:error, _} -> []
+      end
+
+    put_result =
+      Enum.reduce_while(events, {room, [], latest_pdus}, fn event, {%Room{} = room, pdus, parents} ->
+        with {:ok, event} <- Core.authorize(room, event),
+             {:ok, pdu} <- EventGraph.append(room, parents, event) do
+          room = room |> Core.update_state(PDU.to_event(pdu, room.version, :strings)) |> Core.put_tip([pdu.event_id])
+          {:cont, {room, [pdu | pdus], [pdu]}}
+        else
+          error -> {:halt, error}
+        end
+      end)
+
+    with {%Room{} = room, [%PDU{} | _] = pdus, _parents} <- put_result,
+         {:ok, _} <- persist(room, pdus) do
+      {:ok, room, pdus}
+    end
+  end
+
+  defp persist(room, pdus) do
+    init_txn = Transaction.add_fxn(Transaction.new(), :room, fn -> {:ok, Memento.Query.write(room)} end)
 
     pdus
     |> Enum.reduce(init_txn, &persist_pdu_with_side_effects/2)
@@ -431,11 +460,12 @@ defmodule RadioBeam.Room do
     [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])]
     |> Stream.reject(&is_nil/1)
     |> Enum.reduce(txn, &Transaction.add_fxn(&2, "put_alias_#{&1}", fn -> Room.Alias.put(&1, pdu.room_id) end))
-    |> Transaction.add_fxn(:pdu, fn -> PDU.persist(pdu) end)
+    |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
   end
 
   # TOIMPL: add room to published room list if visibility option was set to :public
-  defp persist_pdu_with_side_effects(%PDU{} = pdu, txn), do: Transaction.add_fxn(txn, :pdu, fn -> PDU.persist(pdu) end)
+  defp persist_pdu_with_side_effects(%PDU{} = pdu, txn),
+    do: Transaction.add_fxn(txn, :pdu, fn -> EventGraph.persist_pdu(pdu) end)
 
   defp call_if_alive(room_id, message) do
     GenServer.call(via(room_id), message)

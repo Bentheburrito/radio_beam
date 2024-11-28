@@ -121,7 +121,9 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/messages?#{query_params}", %{})
 
-      assert %{"chunk" => chunk, "end" => next, "start" => "last", "state" => state} = json_response(conn, 200)
+      assert %{"chunk" => chunk, "end" => next, "start" => "batch:" <> _, "state" => state} =
+               json_response(conn, 200)
+
       assert 1 = length(state)
       assert [%{"content" => %{"body" => "this place is so cool"}}, %{"type" => "m.room.name"}, _] = chunk
 

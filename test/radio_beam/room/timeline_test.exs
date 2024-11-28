@@ -1,7 +1,10 @@
 defmodule RadioBeam.Room.TimelineTest do
   use ExUnit.Case, async: true
 
+  alias RadioBeam.PDU
+  alias RadioBeam.Room.EventGraph
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.Timeline.Filter
 
@@ -127,14 +130,15 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                Timeline.sync([room_id1, room_id2], user.id, device.id, filter: filter)
 
-      assert Enum.any?(state, &match?(%{"type" => "m.room.create"}, &1))
-      assert Enum.any?(state, &match?(%{"type" => "m.room.member"}, &1))
-      assert %{"event_id" => "$" <> hash64} = Enum.find(state, &(&1["type"] == "m.room.power_levels"))
+      assert Enum.any?(state, &match?(%{type: "m.room.create"}, &1))
+      assert Enum.any?(state, &match?(%{type: "m.room.member"}, &1))
+      assert Enum.any?(state, &match?(%{type: "m.room.power_levels"}, &1))
+      # assert %{event_id: "$" <> _ = event_id} = Enum.find(state, &(&1.type == "m.room.power_levels"))
 
       assert %{
-               sync: {:partial, "batch:" <> ^hash64},
+               sync: %PaginationToken{} = token,
                events: [
-                 %{type: "m.room.join_rules"},
+                 %{type: "m.room.join_rules", event_id: event_id},
                  %{type: "m.room.history_visibility"},
                  %{type: "m.room.guest_access"},
                  %{type: "m.room.member"},
@@ -142,6 +146,8 @@ defmodule RadioBeam.Room.TimelineTest do
                ]
              } =
                timeline
+
+      assert event_id in token.event_ids
 
       assert 2 = length(invite_state.events)
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.create"}, &1))
@@ -151,7 +157,8 @@ defmodule RadioBeam.Room.TimelineTest do
 
   describe "sync/4 performing a follow-up sync" do
     test "successfully syncs all new events when there aren't many", %{creator: creator, user: user, device: device} do
-      assert %{rooms: %{}, next_batch: since} = Timeline.sync([], user.id, device.id)
+      {:ok, random_room_just_for_init_sync} = Room.create(user)
+      assert %{rooms: %{}, next_batch: since} = Timeline.sync([random_room_just_for_init_sync], user.id, device.id)
 
       # ---
 
@@ -338,16 +345,18 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
 
-      assert [%{"event_id" => "$" <> hash64}] = state
+      assert [_] = state
 
       assert %{
-               sync: {:partial, "batch:" <> ^hash64},
+               sync: %PaginationToken{} = token,
                events: [
-                 %{type: "m.room.name", content: %{"name" => "First name update"}},
+                 %{type: "m.room.name", content: %{"name" => "First name update"}, event_id: event_id},
                  %{type: "m.room.name", content: %{"name" => "Second name update"}}
                ]
              } =
                timeline
+
+      assert event_id in token.event_ids
 
       # ---
 
@@ -356,13 +365,13 @@ defmodule RadioBeam.Room.TimelineTest do
       Room.send(room_id1, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
 
       assert %{
-               rooms: %{join: %{^room_id1 => %{state: [%{"type" => "m.room.name"}], timeline: timeline}}},
+               rooms: %{join: %{^room_id1 => %{state: [%{type: "m.room.name"}], timeline: timeline}}},
                next_batch: _since
              } =
                Timeline.sync([room_id1], user.id, device.id, since: since, filter: filter)
 
       assert %{
-               sync: {:partial, _},
+               sync: %PaginationToken{},
                events: [
                  %{type: "m.room.message", content: %{"body" => "Hello? Is anyone there?"}},
                  %{type: "m.room.message", content: %{"body" => "HE CAN'T HIT"}}
@@ -379,7 +388,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 8 = length(state)
 
       assert %{
-               sync: {:partial, _},
+               sync: %PaginationToken{},
                events: [
                  %{type: "m.room.message", content: %{"body" => "Hello? Is anyone there?"}},
                  %{type: "m.room.message", content: %{"body" => "HE CAN'T HIT"}}
@@ -503,11 +512,11 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                Timeline.sync([room_id1], user3.id, Fixtures.device(user3.id).id, filter: filter)
 
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
 
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user2.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user3.id))
 
       # the creator's membership event should always be present
 
@@ -519,11 +528,10 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                Timeline.sync([room_id1], creator.id, Fixtures.device(creator.id).id, filter: filter)
 
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
-
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user2.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user3.id))
     end
 
     test "applies lazy_load_members to state delta, excluding redundant membership events from state unless the filter requests it",
@@ -559,11 +567,11 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                Timeline.sync([room_id1], user3.id, device.id, filter: filter)
 
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
 
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user2.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user3.id))
 
       # initial sync again - memberships already sent last time should not be 
       # sent again (unless its the syncing user's membership)
@@ -579,11 +587,11 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                Timeline.sync([room_id1], user3.id, device.id, filter: filter)
 
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user2.id))
 
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user3.id))
 
       # adjust filter to request redundant memberships
 
@@ -603,11 +611,11 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                Timeline.sync([room_id1], user3.id, device.id, filter: redundant_filter)
 
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
 
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user2.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user3.id))
 
       # and once more without redundant members...should only be the syncing user
       assert %{
@@ -618,11 +626,11 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                Timeline.sync([room_id1], user3.id, device.id, filter: filter)
 
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == creator.id))
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user.id))
-      refute Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user2.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
+      refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user2.id))
 
-      assert Enum.find(state, &(&1["type"] == "m.room.member" and &1["state_key"] == user3.id))
+      assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user3.id))
     end
   end
 
@@ -837,7 +845,7 @@ defmodule RadioBeam.Room.TimelineTest do
         Timeline.sync([room_id], creator.id, device.id, filter: filter)
 
       %{
-        sync: {:partial, prev_batch},
+        sync: prev_batch,
         events: [
           %{type: "m.room.message"},
           %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
@@ -847,7 +855,7 @@ defmodule RadioBeam.Room.TimelineTest do
         timeline
 
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, prev_batch, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {prev_batch, :backward}, :limit, filter: filter)
 
       assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
                Enum.sort(state)
@@ -859,7 +867,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {next, :backward}, :limit, filter: filter)
 
       assert 1 = length(state)
 
@@ -872,7 +880,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 30}}})
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, next2, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {next2, :backward}, :limit, filter: filter)
 
       refute is_map_key(response, :end)
 
@@ -892,7 +900,7 @@ defmodule RadioBeam.Room.TimelineTest do
         Timeline.sync([room_id], creator.id, device.id, filter: filter)
 
       %{
-        sync: {:partial, prev_batch},
+        sync: %PaginationToken{} = prev_batch,
         events: [
           %{type: "m.room.message"},
           %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
@@ -902,7 +910,7 @@ defmodule RadioBeam.Room.TimelineTest do
         timeline
 
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch} = response} =
-               Timeline.get_messages(room_id, creator.id, device.id, :forward, prev_batch, :limit)
+               Timeline.get_messages(room_id, creator.id, device.id, {prev_batch, :forward}, :limit)
 
       assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
                Enum.sort(state)
@@ -918,7 +926,7 @@ defmodule RadioBeam.Room.TimelineTest do
       Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
 
       assert {:ok, %{chunk: chunk, state: _state, start: ^prev_batch} = response} =
-               Timeline.get_messages(room_id, creator.id, device.id, :forward, prev_batch, :limit)
+               Timeline.get_messages(room_id, creator.id, device.id, {prev_batch, :forward}, :limit)
 
       refute is_map_key(response, :end)
 
@@ -934,8 +942,11 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.device(creator.id)
 
-      assert {:ok, %{chunk: chunk, state: state, start: :first, end: next}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :forward, :first, :limit, filter: filter)
+      {:ok, root} = EventGraph.root(room_id)
+      from = PaginationToken.new(root, :forward)
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^from, end: next}} =
+               Timeline.get_messages(room_id, creator.id, device.id, :root, :limit, filter: filter)
 
       assert 2 = length(state)
 
@@ -953,7 +964,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :forward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {next, :forward}, :limit, filter: filter)
 
       assert 2 = length(state)
 
@@ -971,7 +982,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
-               Timeline.get_messages(room_id, creator.id, device.id, :forward, next2, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {next2, :forward}, :limit, filter: filter)
 
       assert 1 = length(state)
       refute is_map_key(response, :end)
@@ -982,8 +993,11 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.device(creator.id)
 
-      assert {:ok, %{chunk: chunk, state: state, start: :last, end: next}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, :last, :limit, filter: filter)
+      {:ok, tip} = EventGraph.tip(room_id)
+      from = PaginationToken.new(tip, :backward)
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^from, end: next}} =
+               Timeline.get_messages(room_id, creator.id, device.id, :tip, :limit, filter: filter)
 
       assert 2 = length(state)
 
@@ -1001,7 +1015,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {next, :backward}, :limit, filter: filter)
 
       assert 2 = length(state)
 
@@ -1019,7 +1033,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, next2, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {next2, :backward}, :limit, filter: filter)
 
       assert 1 = length(state)
       refute is_map_key(response, :end)
@@ -1030,33 +1044,36 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
       device = Fixtures.device(creator.id)
 
-      %{rooms: %{join: %{^room_id => %{timeline: %{sync: {:partial, prev_batch}}}}}} =
+      %{rooms: %{join: %{^room_id => %{timeline: %{sync: prev_batch}}}}} =
         Timeline.sync([room_id], creator.id, device.id, filter: filter)
 
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, prev_batch, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {prev_batch, :backward}, :limit, filter: filter)
 
       assert 2 = length(state)
 
       assert [
-               %{content: %{"msgtype" => "m.text", "body" => "wow"}},
+               %{content: %{"msgtype" => "m.text", "body" => "wow"}, event_id: event_id1},
                %{content: %{"msgtype" => "m.text", "body" => "yeah"}},
                %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}}
              ] = chunk
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: next2}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :backward, next, :limit, filter: filter)
+               Timeline.get_messages(room_id, creator.id, device.id, {next, :backward}, :limit, filter: filter)
 
       assert 1 = length(state)
 
       assert [
-               %{content: %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{content: %{"msgtype" => "m.text", "body" => "there we go"}, event_id: event_id2},
                %{content: %{"name" => "Get Messages Pagination"}},
                %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}}
              ] = chunk
 
-      assert {:ok, %{chunk: chunk, state: state, start: ^next2, end: ^next}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :forward, next2, :limit, filter: filter)
+      {:ok, end_page_2_pdu} = PDU.get(event_id2)
+      expected_end = PaginationToken.new(end_page_2_pdu, :forward)
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next2, end: ^expected_end}} =
+               Timeline.get_messages(room_id, creator.id, device.id, {next2, :forward}, :limit, filter: filter)
 
       assert 1 = length(state)
 
@@ -1066,8 +1083,11 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "there we go"}}
              ] = chunk
 
-      assert {:ok, %{chunk: chunk, state: state, start: ^next, end: ^prev_batch}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :forward, next, :limit, filter: filter)
+      {:ok, end_page_1_pdu} = PDU.get(event_id1)
+      expected_end = PaginationToken.new(end_page_1_pdu, :forward)
+
+      assert {:ok, %{chunk: chunk, state: state, start: ^next, end: ^expected_end}} =
+               Timeline.get_messages(room_id, creator.id, device.id, {next, :forward}, :limit, filter: filter)
 
       assert 2 = length(state)
 
@@ -1102,9 +1122,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
       assert {:ok, %{chunk: [_one, _two], state: state}} =
-               Timeline.get_messages(room_id, user2.id, Fixtures.device(user2.id).id, :backward, :last, :limit,
-                 filter: filter
-               )
+               Timeline.get_messages(room_id, user2.id, Fixtures.device(user2.id).id, :tip, :limit, filter: filter)
 
       for id <- [user.id, user2.id] do
         assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
@@ -1122,10 +1140,15 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "encodes a partial timeline" do
-      timeline = Timeline.partial([%{event_id: "whateva"}], "the_token")
+      user = Fixtures.user()
+      {:ok, room_id} = Room.create(user)
+      {:ok, root} = EventGraph.root(room_id)
+      token = PaginationToken.new(root, :backward)
+      encoded_token = PaginationToken.encode(token)
+      timeline = Timeline.partial([%{event_id: "whateva"}], token)
 
-      assert {:ok, ~s|{"events":[{"event_id":"whateva"}],"limited":true,"prev_batch":"the_token"}|} =
-               Jason.encode(timeline)
+      expected_json_string = ~s|{"events":[{"event_id":"whateva"}],"limited":true,"prev_batch":"#{encoded_token}"}|
+      assert {:ok, ^expected_json_string} = Jason.encode(timeline)
     end
   end
 end

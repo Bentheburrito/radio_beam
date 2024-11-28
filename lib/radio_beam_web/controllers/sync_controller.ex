@@ -8,6 +8,7 @@ defmodule RadioBeamWeb.SyncController do
   alias RadioBeam.Device
   alias RadioBeam.User
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.Timeline.Filter
 
@@ -45,7 +46,12 @@ defmodule RadioBeamWeb.SyncController do
 
     dir = Map.fetch!(request, "dir")
 
-    from = Map.get(request, "from", (dir == :forward && :first) || :last)
+    from_and_dir =
+      case Map.fetch(request, "from") do
+        {:ok, %PaginationToken{} = from} -> {from, dir}
+        :error -> if dir == :forward, do: :root, else: :tip
+      end
+
     to = Map.get(request, "to", :limit)
 
     opts =
@@ -56,7 +62,7 @@ defmodule RadioBeamWeb.SyncController do
         {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
       end)
 
-    case Timeline.get_messages(room_id, user.id, device.id, dir, from, to, opts) do
+    case Timeline.get_messages(room_id, user.id, device.id, from_and_dir, to, opts) do
       {:ok, response} -> json(conn, response)
       {:error, error} -> handle_common_error(conn, error)
     end
