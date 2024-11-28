@@ -245,7 +245,7 @@ defmodule RadioBeam.Room.Timeline do
           end
 
         {:ok, state_delta_pdus} = PDU.all(state_delta_event_ids)
-        timeline_config = make_config(room_id, user_id, membership, filter, full_state?, known_memberships, opts)
+        timeline_config = make_config(room_id, user_id, membership, filter, full_state?, known_memberships)
 
         case Core.sync_timeline(timeline_config, timeline, state_delta_pdus, user_id) do
           :no_update -> {:no_update, timeline_config}
@@ -272,7 +272,7 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp make_config(room_id, user_id, membership, filter, full_state?, known_memberships, opts) do
+  defp make_config(room_id, user_id, membership, filter, full_state?, known_memberships) do
     case membership do
       "join" ->
         PubSub.subscribe(PS, PS.all_room_events(room_id))
@@ -280,10 +280,8 @@ defmodule RadioBeam.Room.Timeline do
         {:ok, latest_pdus} = PDU.all(room.latest_event_ids)
 
         %{
-          event_producer: &timeline(room_id, user_id, &1, opts),
           filter: filter,
           full_state?: full_state?,
-          latest_joined_pdu: :currently_joined,
           room: room,
           room_sync_type: :join,
           known_memberships: known_memberships,
@@ -296,10 +294,8 @@ defmodule RadioBeam.Room.Timeline do
         {:ok, user_leave_pdu} = PDU.get(user_leave_event_id)
 
         %{
-          event_producer: &timeline(room_id, user_id, &1, opts),
           filter: filter,
           full_state?: full_state?,
-          latest_joined_pdu: user_leave_pdu,
           room: room,
           room_sync_type: :leave,
           known_memberships: known_memberships,
