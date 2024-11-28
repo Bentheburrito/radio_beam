@@ -29,6 +29,9 @@ defmodule RadioBeam.Room.EventGraph.PaginationToken do
     }
   end
 
+  # NOTE: the length of this token grows linearly with the number of event IDs.
+  # This may begin to become an issue for users in 100s of rooms (or more).
+  # Consider `:zlib` when the length of `event_ids` exceeds a certain size.
   def encode(%__MODULE__{arrival_key: {arrival_time, arrival_order}, direction: dir, event_ids: ids}) do
     for "$" <> hash64 <- ids, into: "batch:#{arrival_time}:#{arrival_order}:#{dir}:", do: "#{hash64}"
   end

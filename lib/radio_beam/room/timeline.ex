@@ -154,17 +154,17 @@ defmodule RadioBeam.Room.Timeline do
         known_memberships = Map.get(known_membership_map, room_id, MapSet.new())
 
         case sync_one(room_id, user_id, last_sync_pdus, known_memberships, opts) do
-          {:ok, tl_config, sync_result} ->
+          {:ok, sync_config, sync_result} ->
             LazyLoadMembersCache.put(device_id, room_id, Core.all_sender_ids(sync_result, except: [user_id]))
 
-            {put_in(sync_acc, [tl_config.room_sync_type, room_id], sync_result), Map.put(configs, room_id, tl_config),
-             tl_config.sync_pdus ++ latest_pdus}
+            {put_in(sync_acc, [sync_config.room_sync_type, room_id], sync_result),
+             Map.put(configs, room_id, sync_config), sync_config.sync_pdus ++ latest_pdus}
 
           {:ok, room_sync_type, sync_pdus, sync_result} ->
             {put_in(sync_acc, [room_sync_type, room_id], sync_result), configs, sync_pdus ++ latest_pdus}
 
-          {:no_update, tl_config} when is_map(tl_config) ->
-            {sync_acc, Map.put(configs, room_id, tl_config), tl_config.sync_pdus ++ latest_pdus}
+          {:no_update, sync_config} when is_map(sync_config) ->
+            {sync_acc, Map.put(configs, room_id, sync_config), sync_config.sync_pdus ++ latest_pdus}
 
           {:no_update, sync_pdus} ->
             {sync_acc, configs, sync_pdus ++ latest_pdus}
@@ -211,45 +211,13 @@ defmodule RadioBeam.Room.Timeline do
         full_state? = Keyword.get(opts, :full_state?, false)
 
         %__MODULE__{} = timeline = timeline(room_id, user_id, filter, opts)
+        {:ok, state_delta_pdus} = get_state_delta(last_sync_pdus, timeline.events, full_state?)
 
-        state_delta_event_ids =
-          case {List.last(last_sync_pdus || []), List.first(timeline.events), full_state?} do
-            {_, %{state_events: tl_start_state_ids}, true} ->
-              tl_start_state_ids
+        sync_config = make_config(room_id, user_id, membership, filter, full_state?, known_memberships)
 
-            {%{state_events: last_sync_state_ids} = last_sync_pdu, nil, true} ->
-              if is_nil(last_sync_pdu.state_key) do
-                last_sync_state_ids
-              else
-                [last_sync_pdu.event_id | last_sync_state_ids]
-              end
-
-            {%{state_events: last_sync_state_ids} = last_sync_pdu, %{state_events: tl_start_state_ids}, false} ->
-              last_sync_state_ids =
-                if is_nil(last_sync_pdu.state_key) do
-                  last_sync_state_ids
-                else
-                  [last_sync_pdu.event_id | last_sync_state_ids]
-                end
-
-              tl_start_state_ids
-              |> MapSet.new()
-              |> MapSet.difference(MapSet.new(last_sync_state_ids))
-              |> MapSet.to_list()
-
-            {nil, %{state_events: tl_start_state_ids}, false} ->
-              tl_start_state_ids
-
-            _ ->
-              []
-          end
-
-        {:ok, state_delta_pdus} = PDU.all(state_delta_event_ids)
-        timeline_config = make_config(room_id, user_id, membership, filter, full_state?, known_memberships)
-
-        case Core.sync_timeline(timeline_config, timeline, state_delta_pdus, user_id) do
-          :no_update -> {:no_update, timeline_config}
-          timeline -> {:ok, timeline_config, timeline}
+        case Core.sync_timeline(timeline, state_delta_pdus, user_id, sync_config) do
+          :no_update -> {:no_update, sync_config}
+          timeline -> {:ok, sync_config, timeline}
         end
 
       # TODO: should the invite reflect changes to stripped state events that
@@ -272,35 +240,42 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
+  defp get_state_delta(last_sync_pdus, timeline_events, full_state?) do
+    List.last(last_sync_pdus || [])
+    |> Core.get_state_delta_ids(List.first(timeline_events), full_state?)
+    |> PDU.all()
+  end
+
   defp make_config(room_id, user_id, membership, filter, full_state?, known_memberships) do
+    init_config =
+      %{
+        filter: filter,
+        full_state?: full_state?,
+        known_memberships: known_memberships
+      }
+
     case membership do
       "join" ->
         PubSub.subscribe(PS, PS.all_room_events(room_id))
         {:ok, room} = Room.get(room_id)
         {:ok, latest_pdus} = PDU.all(room.latest_event_ids)
 
-        %{
-          filter: filter,
-          full_state?: full_state?,
+        Map.merge(init_config, %{
           room: room,
           room_sync_type: :join,
-          known_memberships: known_memberships,
           sync_pdus: latest_pdus
-        }
+        })
 
       membership when membership in ~w|ban leave| ->
         {:ok, room} = Room.get(room_id)
         user_leave_event_id = room.state[{"m.room.member", user_id}]["event_id"]
         {:ok, user_leave_pdu} = PDU.get(user_leave_event_id)
 
-        %{
-          filter: filter,
-          full_state?: full_state?,
+        Map.merge(init_config, %{
           room: room,
           room_sync_type: :leave,
-          known_memberships: known_memberships,
           sync_pdus: [user_leave_pdu]
-        }
+        })
     end
   end
 
