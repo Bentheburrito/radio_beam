@@ -116,11 +116,9 @@ defmodule RadioBeam.PDU.Table do
     end)
   end
 
-  # temp: just need this to manage the :mnesia.ets call until mnesia supports
-  # select_reverse directly
-  def all_matching(continuation, _dir, _opts) when not is_map(continuation) do
+  def all_matching(continuation, _dir, opts) when elem(continuation, 0) == :mnesia_select do
     Repo.one_shot(fn ->
-      case :mnesia.ets(fn -> :ets.select_reverse(continuation) end) do
+      case Memento.Query.select_continue(continuation, Keyword.put(opts, :coerce, false)) do
         :"$end_of_table" -> {:ok, [], :end}
         {[], continuation} -> {:ok, [], continuation}
         {[_ | _] = records, continuation} -> {:ok, Enum.map(records, &to_pdu/1), continuation}
@@ -129,9 +127,11 @@ defmodule RadioBeam.PDU.Table do
     end)
   end
 
+  # temp: just need this to manage the :mnesia.ets call until mnesia supports
+  # select_reverse directly
   def all_matching(continuation, _dir, _opts) do
     Repo.one_shot(fn ->
-      case Memento.Query.select_continue(continuation) do
+      case :mnesia.ets(fn -> :ets.select_reverse(continuation) end) do
         :"$end_of_table" -> {:ok, [], :end}
         {[], continuation} -> {:ok, [], continuation}
         {[_ | _] = records, continuation} -> {:ok, Enum.map(records, &to_pdu/1), continuation}
