@@ -9,6 +9,7 @@ defmodule RadioBeamWeb.Router do
     FilterController,
     HomeserverInfoController,
     LoginController,
+    RelationsController,
     RoomController,
     SyncController
   }
@@ -45,6 +46,8 @@ defmodule RadioBeamWeb.Router do
         get "/media/download/:server_name/:media_id/:filename", ContentRepoController, :download
         get "/media/download/:server_name/:media_id", ContentRepoController, :download
         get "/media/thumbnail/:server_name/:media_id", ContentRepoController, :thumbnail
+
+        get "/rooms/:room_id/relations/:event_id", RelationsController, :get_children
       end
 
       scope "/v3" do

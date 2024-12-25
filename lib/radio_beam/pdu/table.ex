@@ -63,6 +63,7 @@ defmodule RadioBeam.PDU.Table do
       case Memento.Query.select(__MODULE__, {:==, :event_id, event_id}, limit: 1, coerce: false) do
         {[record], _cont} -> {:ok, to_pdu(record)}
         {[], _cont} -> {:error, :not_found}
+        [] -> {:error, :not_found}
         :"$end_of_table" -> {:error, :not_found}
       end
     end)
