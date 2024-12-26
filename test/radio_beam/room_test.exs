@@ -243,6 +243,26 @@ defmodule RadioBeam.RoomTest do
       assert {:ok, %{event_id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
     end
 
+    test "returns bundled aggregates", %{user1: creator, user2: user} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+      content = %{"msgtype" => "m.text", "body" => "yoOOOOOOOOO"}
+      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+
+      {:ok, child_id} =
+        Fixtures.send_text_msg(room_id, creator.id, "Yoooooooo (in a thread)", %{
+          "m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.thread"}
+        })
+
+      assert {:ok,
+              %{
+                event_id: ^event_id,
+                unsigned: %{"m.relations" => %{"m.thread" => %{latest_event: %{event_id: ^child_id}}}}
+              }} =
+               Room.get_event(room_id, user.id, event_id)
+    end
+
     test "cannot get an event in a room the calling user is not a member of", %{user1: creator, user2: user} do
       {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)

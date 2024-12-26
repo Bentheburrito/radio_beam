@@ -1131,6 +1131,24 @@ defmodule RadioBeam.Room.TimelineTest do
       creator_id = creator.id
       refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^creator_id}, &1))
     end
+
+    test "returned events have bundled aggregations", %{room_id: room_id, creator: creator} do
+      {:ok, parent_id} = Fixtures.send_text_msg(room_id, creator.id, "thread start")
+      rel = %{"m.relates_to" => %{"event_id" => parent_id, "rel_type" => "m.thread"}}
+      {:ok, child_id} = Fixtures.send_text_msg(room_id, creator.id, "we're talkin'", rel)
+
+      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 2}}})
+
+      {:ok, %{chunk: chunk}} =
+        Timeline.get_messages(room_id, creator.id, Fixtures.device(creator.id).id, :tip, :limit, filter: filter)
+
+      assert [
+               %{
+                 event_id: ^parent_id,
+                 unsigned: %{"m.relations" => %{"m.thread" => %{latest_event: %{event_id: ^child_id}}}}
+               }
+             ] = chunk
+    end
   end
 
   describe "Jason.Encoder impl" do

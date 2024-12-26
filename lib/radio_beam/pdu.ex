@@ -69,6 +69,24 @@ defmodule RadioBeam.PDU do
   defdelegate get(event_id), to: Table
 
   @doc """
+  Compares 2 PDUs according to their topological ordering. This function will
+  raise a FunctionClauseError if the PDUs do not belong to the same room.
+
+  Ties in topological order will be broken through stream/arrival ordering.
+  """
+  @spec compare(t(), t()) :: :gt | :lt | :eq
+  def compare(%__MODULE__{room_id: room_id} = pdu1, %__MODULE__{room_id: room_id} = pdu2) do
+    pdu1_key = {pdu1.chunk, pdu1.depth, pdu1.arrival_time, pdu1.arrival_order}
+    pdu2_key = {pdu2.chunk, pdu2.depth, pdu2.arrival_time, pdu2.arrival_order}
+
+    cond do
+      pdu1_key == pdu2_key -> :eq
+      pdu1_key > pdu2_key -> :gt
+      :else -> :lt
+    end
+  end
+
+  @doc """
   Returns a list of child PDUs of the given parent PDU. An event A is
   considered a child of event B if `A.content.["m.relates_to"].event_id == B.event_id`
   """

@@ -25,7 +25,7 @@ defmodule RadioBeamWeb.RelationsController do
     # and /sync (so a PaginationToken). PDU.get_children does not currently
     # support this (nor a `limit`), so just returning all children for now -
     # need to come back to do this properly
-    with {:ok, %PDU{} = pdu} <- Room.get_event(room_id, user.id, event_id),
+    with {:ok, %PDU{} = pdu} <- Room.get_event(room_id, user.id, event_id, _bundle_aggregates? = false),
          {:ok, children} <- PDU.get_children(pdu, recurse_level) do
       rel_type = Map.get(params, "rel_type")
       event_type = Map.get(params, "event_type")

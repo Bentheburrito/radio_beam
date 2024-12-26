@@ -49,8 +49,7 @@ defmodule RadioBeam.PDU.Relationships do
   end
 
   defp aggregate_thread(%PDU{} = pdu, %{} = acc, user_id) do
-    # TODO: topological ordering
-    latest_event = if pdu.origin_server_ts > acc.latest_event.origin_server_ts, do: pdu, else: acc.latest_event
+    latest_event = if PDU.compare(pdu, acc.latest_event) == :gt, do: pdu, else: acc.latest_event
 
     %{
       acc

@@ -228,9 +228,10 @@ defmodule RadioBeam.Room do
     call_if_alive(room_id, {:put_event, event})
   end
 
-  def get_event(_room_id, user_id, event_id) do
+  def get_event(_room_id, user_id, event_id, bundle_aggregates? \\ true) do
     with {:ok, pdu} <- PDU.get(event_id),
          true <- Timeline.authz_to_view?(pdu, user_id) do
+      pdu = if bundle_aggregates?, do: Timeline.bundle_aggregations(pdu, user_id), else: pdu
       {:ok, pdu}
     else
       _ -> {:error, :unauthorized}

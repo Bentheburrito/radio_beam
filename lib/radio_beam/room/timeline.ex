@@ -84,6 +84,7 @@ defmodule RadioBeam.Room.Timeline do
 
     response
     |> Map.update!(:chunk, &filter_authz(&1, direction, user_id))
+    |> Map.update!(:chunk, &bundle_aggregations(&1, user_id))
     # TODO update the 2 fxns below to take the `Core.format` events
     |> put_member_state(room, device_id, filter)
     |> put_start_token(from_and_direction, direction)
@@ -307,9 +308,18 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp bundle_aggregations([], _user_id), do: []
+  def bundle_aggregations([], _user_id), do: []
 
-  defp bundle_aggregations(events, user_id) do
+  def bundle_aggregations(%PDU{} = pdu, user_id) do
+    {:ok, child_pdus} = PDU.get_children(pdu, _recurse = 1)
+
+    case Enum.filter(child_pdus, &authz_to_view?(&1, user_id)) do
+      [] -> pdu
+      children -> PDU.Relationships.get_aggregations(pdu, user_id, children)
+    end
+  end
+
+  def bundle_aggregations(events, user_id) do
     {:ok, child_pdus} = PDU.get_children(events, _recurse = 1)
     # this will get expensive!!
     authz_child_pdus = Enum.filter(child_pdus, &authz_to_view?(&1, user_id))
