@@ -48,6 +48,8 @@ defmodule RadioBeamWeb.Router do
         get "/media/thumbnail/:server_name/:media_id", ContentRepoController, :thumbnail
 
         get "/rooms/:room_id/relations/:event_id", RelationsController, :get_children
+        get "/rooms/:room_id/relations/:event_id/:rel_type", RelationsController, :get_children
+        get "/rooms/:room_id/relations/:event_id/:rel_type/:event_type", RelationsController, :get_children
       end
 
       scope "/v3" do

@@ -50,6 +50,47 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       assert %{"chunk" => [%{"event_id" => ^child_id2}, %{"event_id" => ^child_id1}]} = json_response(conn, 200)
     end
 
+    test "returns all child events of the given rel_type if they are authz'd", %{
+      conn: conn,
+      room_id: room_id,
+      user: user,
+      parent_event_id: parent_event_id
+    } do
+      rel = relates_to(parent_event_id)
+      {:ok, child_id1} = Fixtures.send_text_msg(room_id, user.id, "hello starting a thread here", rel)
+      {:ok, child_id2} = Fixtures.send_text_msg(room_id, user.id, "details coming soon", rel)
+
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.thread", %{})
+      assert %{"chunk" => [%{"event_id" => ^child_id2}, %{"event_id" => ^child_id1}]} = json_response(conn, 200)
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.whatever", %{})
+      assert %{"chunk" => []} = json_response(conn, 200)
+    end
+
+    test "returns all child events of the given rel_type + event_type if they are authz'd", %{
+      conn: conn,
+      room_id: room_id,
+      user: user,
+      parent_event_id: parent_event_id
+    } do
+      rel = relates_to(parent_event_id)
+      {:ok, child_id1} = Fixtures.send_text_msg(room_id, user.id, "hello starting a thread here", rel)
+      {:ok, child_id2} = Fixtures.send_text_msg(room_id, user.id, "details coming soon", rel)
+
+      conn =
+        get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.thread/m.room.message", %{})
+
+      assert %{"chunk" => [%{"event_id" => ^child_id2}, %{"event_id" => ^child_id1}]} = json_response(conn, 200)
+
+      conn =
+        get(
+          conn,
+          ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.thread/m.room.somethingelse",
+          %{}
+        )
+
+      assert %{"chunk" => []} = json_response(conn, 200)
+    end
+
     test "returns M_NOT_FOUND when the user is not authz'd to see the parent", %{
       conn: conn,
       room_id: room_id,
