@@ -227,7 +227,7 @@ defmodule RadioBeam.Room.Timeline do
         PubSub.subscribe(PS, PS.stripped_state_events(room_id))
         {:ok, room} = Room.get(room_id)
         {:ok, latest_pdus} = PDU.all(room.latest_event_ids)
-        {:ok, :invite, latest_pdus, %{invite_state: %{events: Room.stripped_state(room)}}}
+        {:ok, :invite, latest_pdus, %{invite_state: %{events: Room.stripped_state(room, user_id)}}}
 
       "invite" ->
         {:no_update, last_sync_pdus}

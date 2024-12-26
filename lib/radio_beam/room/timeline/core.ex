@@ -65,7 +65,7 @@ defmodule RadioBeam.Room.Timeline.Core do
       {:room_invite, room, pdu} ->
         event = PDU.to_event(pdu, room.version, :strings)
         room = Room.Core.update_state(room, event)
-        {%{invite: %{room.id => %{invite_state: %{events: Room.stripped_state(room)}}}}, [pdu]}
+        {%{invite: %{room.id => %{invite_state: %{events: Room.stripped_state(room, user_id)}}}}, [pdu]}
     end
   end
 

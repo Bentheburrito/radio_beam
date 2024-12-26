@@ -348,8 +348,10 @@ defmodule RadioBeam.Room do
   @stripped_state_keys Enum.map(@stripped_state_types, &{&1, ""})
   @stripped_keys ["content", "sender", "state_key", "type"]
   @doc "Returns the stripped state of the given room."
-  def stripped_state(room) do
-    room.state |> Map.take(@stripped_state_keys) |> Enum.map(fn {_, event} -> Map.take(event, @stripped_keys) end)
+  def stripped_state(room, user_id) do
+    # we additionally include the calling user's membership event
+    stripped_state_keys = @stripped_state_keys ++ [{"m.room.member", user_id}]
+    room.state |> Map.take(stripped_state_keys) |> Enum.map(fn {_, event} -> Map.take(event, @stripped_keys) end)
   end
 
   ### IMPL ###

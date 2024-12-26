@@ -28,7 +28,7 @@ config :radio_beam, RadioBeamWeb.Endpoint,
   watchers: []
 
 config :radio_beam,
-  server_name: "test-server.dev",
+  server_name: "localhost",
   well_known_client: %{"m.homeserver" => %{"base_url" => "localhost:4000"}}
 
 # ## SSL Support
