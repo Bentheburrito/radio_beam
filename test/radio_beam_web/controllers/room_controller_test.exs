@@ -435,6 +435,19 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
       assert error =~ "msgtype needs to be one of"
     end
+
+    test "rejects a duplicate annotation", %{conn: conn, user: creator} do
+      {:ok, room_id} = Room.create(creator)
+
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, creator.id, "please react with 👍 to vote")
+      rel = %{"m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.annotation", "key" => "👍"}}
+      {:ok, _} = Room.send(room_id, creator.id, "m.reaction", rel)
+
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/send/m.reaction/32777", rel)
+
+      assert %{"errcode" => "M_DUPLICATE_ANNOTATION", "error" => error} = json_response(conn, 400)
+      assert error =~ "already reacted with that"
+    end
   end
 
   describe "get_event/2" do

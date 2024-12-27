@@ -67,6 +67,7 @@ defmodule RadioBeam.PDU do
 
   defdelegate all(event_ids), to: Table
   defdelegate get(event_id), to: Table
+  defdelegate get_redaction(event_id, room_id), to: Table
 
   @doc """
   Compares 2 PDUs according to their topological ordering. This function will

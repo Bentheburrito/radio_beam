@@ -49,10 +49,11 @@ defmodule RadioBeam.Room.TimelineTest do
              } =
                timeline
 
-      assert 3 = length(invite_state.events)
+      assert 4 = length(invite_state.events)
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.create"}, &1))
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.join_rules"}, &1))
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.name"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
 
       refute is_map_key(timeline, :prev_batch)
     end
@@ -149,9 +150,12 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert event_id in token.event_ids
 
-      assert 2 = length(invite_state.events)
+      user_id = user.id
+
+      assert 3 = length(invite_state.events)
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.create"}, &1))
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.join_rules"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
     end
   end
 
@@ -214,10 +218,13 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert 0 = map_size(join_map)
 
-      assert 3 = length(invite_state.events)
+      user_id = user.id
+
+      assert 4 = length(invite_state.events)
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.create"}, &1))
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.join_rules"}, &1))
       assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.name"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
 
       # ---
 

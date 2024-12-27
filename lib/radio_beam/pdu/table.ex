@@ -158,6 +158,30 @@ defmodule RadioBeam.PDU.Table do
     end)
   end
 
+  @content :"$100"
+  @doc """
+  Gets the `m.redaction` PDU that redacted the given `event_id`, if one exists.
+  """
+  def get_redaction(event_id, room_id) do
+    match_head =
+      __MODULE__.__info__().query_base
+      |> put_elem(1, {room_id, :_, :_, :_, :_})
+      |> put_elem(5, @content)
+
+    guards = [{:==, event_id, {:map_get, "redacts", @content}}]
+    match_spec = {match_head, guards, [:"$_"]}
+
+    Repo.one_shot(fn ->
+      __MODULE__
+      |> Memento.Query.select_raw(match_spec, coerce: false)
+      |> Enum.map(&to_pdu/1)
+      |> case do
+        [pdu | _] -> {:ok, pdu}
+        [] -> {:error, :not_found}
+      end
+    end)
+  end
+
   @spec to_pdu(tuple()) :: PDU.t()
   defp to_pdu(
          {__MODULE__, {room_id, chunk, depth, arrival_time, arrival_order}, {arrival_time, arrival_order}, event_id,

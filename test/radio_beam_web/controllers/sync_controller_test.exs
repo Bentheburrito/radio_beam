@@ -53,10 +53,13 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert 0 = map_size(join_map)
       assert 0 = map_size(leave_map)
 
-      assert 3 = length(invite_state)
+      user_id = user.id
+
+      assert 4 = length(invite_state)
       assert Enum.any?(invite_state, &match?(%{"type" => "m.room.create"}, &1))
       assert Enum.any?(invite_state, &match?(%{"type" => "m.room.join_rules"}, &1))
       assert Enum.any?(invite_state, &match?(%{"type" => "m.room.name"}, &1))
+      assert Enum.any?(invite_state, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
 
       assert 1 = map_size(account_data)
       assert %{"m.some_config" => %{"hello" => "world"}} = account_data

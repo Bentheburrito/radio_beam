@@ -403,6 +403,9 @@ defmodule RadioBeam.Room do
 
         {:reply, {:ok, pdu.event_id}, room}
 
+      {:error, :duplicate_annotation} = e ->
+        {:reply, e, room}
+
       {:error, :unauthorized} = e ->
         Logger.info("rejecting a(n) #{event_kind} event for being unauthorized: #{inspect(event)}")
         {:reply, e, room}
@@ -446,9 +449,46 @@ defmodule RadioBeam.Room do
       end)
 
     with {%Room{} = room, [%PDU{} | _] = pdus, _parents} <- put_result,
+         :ok <- assert_no_dup_annotations(pdus),
          {:ok, _} <- persist(room, pdus) do
       {:ok, room, pdus}
     end
+  end
+
+  defp assert_no_dup_annotations(pdus) do
+    new_annotations = Enum.filter(pdus, &(&1.content["m.relates_to"]["rel_type"] == "m.annotation"))
+
+    new_annotations
+    |> Enum.map(& &1.parent_id)
+    |> PDU.all()
+    |> case do
+      {:ok, []} ->
+        :ok
+
+      {:ok, annotated} ->
+        {:ok, children} = PDU.get_children(annotated, _recurse = 1)
+        children_by_parent = Enum.group_by(children, & &1.parent_id)
+
+        duplicate? =
+          Enum.any?(new_annotations, fn new_annotation ->
+            children_by_parent
+            |> Map.get(new_annotation.parent_id, [])
+            |> Enum.any?(&dup_annotation?(&1, new_annotation))
+          end)
+
+        if duplicate? do
+          {:error, :duplicate_annotation}
+        else
+          :ok
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp dup_annotation?(%PDU{} = child, %PDU{} = annotation) do
+    child.type == annotation.type and child.content["m.relates_to"]["key"] == annotation.content["m.relates_to"]["key"] and child.sender == annotation.sender
   end
 
   defp persist(room, pdus) do

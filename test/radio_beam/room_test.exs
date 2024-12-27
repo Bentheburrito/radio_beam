@@ -223,6 +223,20 @@ defmodule RadioBeam.RoomTest do
       assert {:error, :unauthorized} = Room.send(room_id, user.id, "m.room.message", content)
       assert {:ok, %{latest_event_ids: [^event_id]}} = Room.get(room_id)
     end
+
+    test "will reject duplicate annotations", %{user1: creator, user2: user} do
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, creator.id, "React to this twice")
+      rel = %{"m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.annotation", "key" => "👍"}}
+
+      assert {:ok, _} = Room.send(room_id, creator.id, "m.reaction", rel)
+      assert {:error, :duplicate_annotation} = Room.send(room_id, creator.id, "m.reaction", rel)
+      assert {:ok, _} = Room.send(room_id, user.id, "m.reaction", rel)
+      assert {:error, :duplicate_annotation} = Room.send(room_id, user.id, "m.reaction", rel)
+    end
   end
 
   describe "get_event/3" do
