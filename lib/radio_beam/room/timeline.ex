@@ -58,9 +58,13 @@ defmodule RadioBeam.Room.Timeline do
   def get_messages(room_id, user_id, device_id, from_and_direction, to, opts \\ [])
 
   def get_messages(%Room{} = room, user_id, device_id, from_and_direction, to, opts) do
-    # TODO...there's possibly a :limit opt passed too, but the filter 
-    # also has limiting capabilities???
-    filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
+    filter =
+      Keyword.get_lazy(opts, :filter, fn ->
+        case Keyword.get(opts, :limit, :none) do
+          :none -> Filter.parse(%{})
+          limit -> Filter.parse(%{"room" => %{"timeline" => %{"limit" => limit}}})
+        end
+      end)
 
     direction =
       case from_and_direction do
