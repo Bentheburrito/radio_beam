@@ -7,6 +7,22 @@ defmodule RadioBeam.Room.Core do
   alias Polyjuice.Util.RoomVersion
   alias RadioBeam.Room
 
+  @doc """
+  > Any user with a power level greater than or equal to the m.room.redaction
+  > event power level may send redaction events in the room. If the user’s
+  > power level greater is also greater than or equal to the redact power level
+  > of the room, the user may redact events sent by other users.
+  > 
+  > Server administrators may redact events sent by users on their server.
+  > 
+  > https://spec.matrix.org/latest/client-server-api/#put_matrixclientv3roomsroomidredacteventidtxnid
+  """
+  def authz_redact?(%Room{} = room, sender, user_id, admin_user_ids) do
+    user_id in admin_user_ids or
+      RoomVersion.has_power?(user_id, "redact", false, room.state) or
+      (RoomVersion.has_power?(user_id, ~w|events m.room.redaction|, false, room.state) and sender == user_id)
+  end
+
   def authorize(%Room{} = room, event) do
     auth_events = select_auth_events(event, room.state)
 

@@ -20,6 +20,7 @@ defmodule RadioBeam.Room.EventGraph do
   ### CREATE / UPDATE DAG ###
 
   defdelegate append(room, parents, event_params), to: Core
+  defdelegate redact_pdu(pdu, redaction_pdu, room_version), to: Core
 
   # TODO: merge chunks if this PDU fills in a gap!
   def persist_pdu(%PDU{} = pdu), do: PDU.Table.persist(pdu)

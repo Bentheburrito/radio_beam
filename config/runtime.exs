@@ -13,9 +13,12 @@ end
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+server_name = System.fetch_env!("SERVER_NAME")
+
 config :radio_beam,
   registration_enabled: System.get_env("ENABLE_REGISTRATION", "false") == "true",
-  server_name: System.fetch_env!("SERVER_NAME")
+  server_name: server_name,
+  admins: "ADMIN_LOCALPARTS" |> System.fetch_env!() |> String.split(",") |> Enum.map(&"@#{&1}:#{server_name}")
 
 # ## Using releases
 #

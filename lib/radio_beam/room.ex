@@ -238,6 +238,13 @@ defmodule RadioBeam.Room do
     end
   end
 
+  def redact_event(room_id, user_id, event_id, reason \\ nil) do
+    with {:ok, to_redact} <- get_event(room_id, user_id, event_id, _bundled_aggregates? = false) do
+      event = Events.redaction(room_id, user_id, event_id, reason)
+      call_if_alive(room_id, {:redact, event, to_redact, user_id})
+    end
+  end
+
   def member?(room_id, user_id), do: call_if_alive(room_id, {:member?, user_id})
 
   def get_membership(room_id, user_id), do: call_if_alive(room_id, {:membership, user_id})
@@ -417,6 +424,15 @@ defmodule RadioBeam.Room do
   end
 
   @impl GenServer
+  def handle_call({:redact, redaction_event, to_redact, user_id}, _from, %Room{} = room) do
+    if Core.authz_redact?(room, to_redact.sender, user_id, RadioBeam.admins()) do
+      handle_call({:put_event, redaction_event}, :nofrom, room)
+    else
+      {:reply, {:error, :unauthorized}, room}
+    end
+  end
+
+  @impl GenServer
   def handle_call({:member?, user_id}, _from, %Room{} = room) do
     member? = get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) == "join"
     {:reply, member?, room}
@@ -488,26 +504,41 @@ defmodule RadioBeam.Room do
   end
 
   defp dup_annotation?(%PDU{} = child, %PDU{} = annotation) do
-    child.type == annotation.type and child.content["m.relates_to"]["key"] == annotation.content["m.relates_to"]["key"] and child.sender == annotation.sender
+    child.type == annotation.type and child.content["m.relates_to"]["key"] == annotation.content["m.relates_to"]["key"] and
+      child.sender == annotation.sender
   end
 
   defp persist(room, pdus) do
     init_txn = Transaction.add_fxn(Transaction.new(), :room, fn -> {:ok, Memento.Query.write(room)} end)
 
     pdus
-    |> Enum.reduce(init_txn, &persist_pdu_with_side_effects/2)
+    |> Enum.reduce(init_txn, &persist_pdu_with_side_effects(&1, &2, room.version))
     |> Transaction.execute()
   end
 
-  defp persist_pdu_with_side_effects(%PDU{type: "m.room.canonical_alias"} = pdu, txn) do
+  defp persist_pdu_with_side_effects(%PDU{type: "m.room.canonical_alias"} = pdu, txn, _version) do
     [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])]
     |> Stream.reject(&is_nil/1)
     |> Enum.reduce(txn, &Transaction.add_fxn(&2, "put_alias_#{&1}", fn -> Room.Alias.put(&1, pdu.room_id) end))
     |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
   end
 
+  defp persist_pdu_with_side_effects(%PDU{type: "m.room.redaction"} = pdu, txn, version) do
+    event_id = pdu.content["redacts"]
+
+    txn
+    |> Transaction.add_fxn("get-for-redaction-#{event_id}", fn -> PDU.get(event_id) end)
+    |> Transaction.add_fxn("redact-#{event_id}", fn %PDU{event_id: ^event_id} = to_redact ->
+      case EventGraph.redact_pdu(to_redact, pdu, version) do
+        {:ok, redacted_pdu} -> EventGraph.persist_pdu(redacted_pdu)
+        {:error, _cs} = error -> error
+      end
+    end)
+    |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
+  end
+
   # TOIMPL: add room to published room list if visibility option was set to :public
-  defp persist_pdu_with_side_effects(%PDU{} = pdu, txn),
+  defp persist_pdu_with_side_effects(%PDU{} = pdu, txn, _version),
     do: Transaction.add_fxn(txn, :pdu, fn -> EventGraph.persist_pdu(pdu) end)
 
   defp call_if_alive(room_id, message) do

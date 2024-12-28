@@ -81,7 +81,13 @@ defmodule RadioBeamWeb.SyncControllerTest do
                "account_data" => account_data,
                "to_device" => [%{"hello" => "world"}, %{"hello2" => "world"}],
                "rooms" => %{
-                 "join" => %{^room_id1 => %{"account_data" => room_account_data, "state" => [], "timeline" => timeline}},
+                 "join" => %{
+                   ^room_id1 => %{
+                     "account_data" => room_account_data,
+                     "state" => %{"events" => []},
+                     "timeline" => timeline
+                   }
+                 },
                  "invite" => invite_map,
                  "leave" => leave_map
                },
@@ -138,7 +144,9 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/messages?#{query_params}", %{})
 
-      assert %{"chunk" => chunk, "end" => _next2, "start" => ^next, "state" => state} = json_response(conn, 200)
+      assert %{"chunk" => chunk, "end" => _next2, "start" => ^next, "state" => state} =
+               json_response(conn, 200)
+
       assert 1 = length(state)
       assert [%{"type" => "m.room.history_visibility"}, %{"type" => "m.room.join_rules"}, _] = chunk
     end

@@ -102,8 +102,17 @@ defmodule RadioBeam.Room.Events do
     state(room_id, "m.room.topic", sender_id, %{"topic" => topic})
   end
 
+  def redaction(room_id, sender_id, redacts, reason) do
+    message(room_id, sender_id, "m.room.redaction", redaction_content(redacts, reason))
+  end
+
   defp membership_content(membership, nil), do: %{"membership" => to_string(membership)}
 
   defp membership_content(membership, reason) when is_binary(reason),
     do: %{"membership" => to_string(membership), "reason" => reason}
+
+  defp redaction_content(redacts, nil), do: %{"redacts" => redacts}
+
+  defp redaction_content(redacts, reason) when is_binary(reason),
+    do: %{"redacts" => redacts, "reason" => reason}
 end

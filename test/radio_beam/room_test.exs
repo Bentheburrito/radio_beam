@@ -360,6 +360,23 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
+  describe "redact_event/3,4" do
+    setup do
+      user = Fixtures.user()
+      {:ok, room_id} = Room.create(user)
+
+      %{user: user, room_id: room_id}
+    end
+
+    test "redacts a message event", %{user: user, room_id: room_id} do
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "delete me")
+      assert {:ok, redaction_event_id} = Room.redact_event(room_id, user.id, event_id, "meant to be deleted")
+      assert {:ok, %{content: content}} = PDU.get(event_id)
+      assert 0 = map_size(content)
+      assert {:ok, %{latest_event_ids: [^redaction_event_id]}} = Room.get(room_id)
+    end
+  end
+
   describe "get_members/4" do
     setup do
       user1 = Fixtures.user()

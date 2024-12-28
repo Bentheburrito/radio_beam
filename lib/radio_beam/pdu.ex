@@ -147,6 +147,7 @@ defmodule RadioBeam.PDU do
   def to_event(%__MODULE__{} = pdu, room_version, :atoms, :federation) do
     pdu
     |> adjust_redacts_key(room_version)
+    |> Map.from_struct()
     |> case do
       %{state_key: nil} = event -> Map.delete(event, :state_key)
       event -> event
@@ -154,7 +155,7 @@ defmodule RadioBeam.PDU do
   end
 
   @pre_v11_format_versions ~w|1 2 3 4 5 6 7 8 9 10|
-  defp adjust_redacts_key(%{"type" => "m.room.redaction"} = event, room_version)
+  defp adjust_redacts_key(%{type: "m.room.redaction"} = event, room_version)
        when room_version in @pre_v11_format_versions do
     {redacts, content} = Map.pop!(event.content, "redacts")
 

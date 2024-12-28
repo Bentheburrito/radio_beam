@@ -26,7 +26,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: [], timeline: timeline}},
+                 join: %{^room_id1 => %{state: %{events: []}, timeline: timeline}},
                  invite: %{^room_id2 => %{invite_state: invite_state}}
                }
              } =
@@ -74,7 +74,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: [], timeline: timeline}}
+                 join: %{^room_id1 => %{state: %{events: []}, timeline: timeline}}
                }
              } =
                Timeline.sync([room_id1], user.id, device.id)
@@ -122,7 +122,7 @@ defmodule RadioBeam.Room.TimelineTest do
                rooms: %{
                  join: %{
                    ^room_id1 => %{
-                     state: state,
+                     state: %{events: state},
                      timeline: timeline
                    }
                  },
@@ -172,7 +172,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: [], timeline: timeline}},
+                 join: %{^room_id1 => %{state: %{events: []}, timeline: timeline}},
                  invite: invite_map,
                  leave: leave_map
                },
@@ -233,7 +233,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.join(room_id1, rando_id)
 
       assert %{
-               rooms: %{join: %{^room_id1 => %{state: [], timeline: timeline}}, invite: invite_map},
+               rooms: %{join: %{^room_id1 => %{state: %{events: []}, timeline: timeline}}, invite: invite_map},
                next_batch: since
              } =
                Timeline.sync([room_id1, room_id2], user.id, device.id, since: since)
@@ -261,7 +261,7 @@ defmodule RadioBeam.Room.TimelineTest do
                rooms: %{
                  join: join_map,
                  invite: invite_map,
-                 leave: %{^room_id1 => %{state: state, timeline: timeline}}
+                 leave: %{^room_id1 => %{state: %{events: state}, timeline: timeline}}
                },
                next_batch: _since
              } =
@@ -301,7 +301,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: [], timeline: timeline}},
+                 join: %{^room_id1 => %{state: %{events: []}, timeline: timeline}},
                  invite: invite_map,
                  leave: leave_map
                },
@@ -341,7 +341,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: state, timeline: timeline}},
+                 join: %{^room_id1 => %{state: %{events: state}, timeline: timeline}},
                  invite: invite_map,
                  leave: leave_map
                },
@@ -372,7 +372,7 @@ defmodule RadioBeam.Room.TimelineTest do
       Room.send(room_id1, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
 
       assert %{
-               rooms: %{join: %{^room_id1 => %{state: [%{type: "m.room.name"}], timeline: timeline}}},
+               rooms: %{join: %{^room_id1 => %{state: %{events: [%{type: "m.room.name"}]}, timeline: timeline}}},
                next_batch: _since
              } =
                Timeline.sync([room_id1], user.id, device.id, since: since, filter: filter)
@@ -387,7 +387,7 @@ defmodule RadioBeam.Room.TimelineTest do
                timeline
 
       assert %{
-               rooms: %{join: %{^room_id1 => %{state: state, timeline: timeline}}},
+               rooms: %{join: %{^room_id1 => %{state: %{events: state}, timeline: timeline}}},
                next_batch: _since
              } =
                Timeline.sync([room_id1], user.id, device.id, since: since, filter: filter, full_state?: true)
@@ -430,7 +430,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id2 => %{state: [], timeline: timeline}} = join_map,
+                 join: %{^room_id2 => %{state: %{events: []}, timeline: timeline}} = join_map,
                  invite: invite_map,
                  leave: leave_map
                },
@@ -470,7 +470,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id2 => %{state: [], timeline: timeline}} = join_map,
+                 join: %{^room_id2 => %{state: %{events: []}, timeline: timeline}} = join_map,
                  invite: invite_map,
                  leave: leave_map
                },
@@ -513,7 +513,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+                 join: %{^room_id1 => %{state: %{events: state}, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
@@ -529,7 +529,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+                 join: %{^room_id1 => %{state: %{events: state}, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
@@ -568,7 +568,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+                 join: %{^room_id1 => %{state: %{events: state}, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
@@ -588,7 +588,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+                 join: %{^room_id1 => %{state: %{events: state}, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
@@ -612,7 +612,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+                 join: %{^room_id1 => %{state: %{events: state}, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
@@ -627,7 +627,7 @@ defmodule RadioBeam.Room.TimelineTest do
       # and once more without redundant members...should only be the syncing user
       assert %{
                rooms: %{
-                 join: %{^room_id1 => %{state: state, timeline: %{events: [_one, _two]}}}
+                 join: %{^room_id1 => %{state: %{events: state}, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
@@ -649,7 +649,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id => %{state: [], timeline: timeline}}
+                 join: %{^room_id => %{state: %{events: []}, timeline: timeline}}
                },
                next_batch: since
              } =
@@ -684,7 +684,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id => %{state: [], timeline: timeline}}
+                 join: %{^room_id => %{state: %{events: []}, timeline: timeline}}
                }
              } = Task.await(sync_task)
 
@@ -700,7 +700,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id => %{state: [], timeline: timeline}}
+                 join: %{^room_id => %{state: %{events: []}, timeline: timeline}}
                },
                next_batch: since
              } =
@@ -750,7 +750,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id => %{state: [], timeline: _timeline}}
+                 join: %{^room_id => %{state: %{events: []}, timeline: _timeline}}
                },
                next_batch: since
              } =
@@ -774,7 +774,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id => %{state: [], timeline: timeline}}
+                 join: %{^room_id => %{state: %{events: []}, timeline: timeline}}
                }
              } = Task.await(sync_task)
 
@@ -794,7 +794,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert %{
                rooms: %{
-                 join: %{^room_id => %{state: [], timeline: _timeline}}
+                 join: %{^room_id => %{state: %{events: []}, timeline: _timeline}}
                },
                next_batch: since
              } =

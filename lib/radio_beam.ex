@@ -9,6 +9,8 @@ defmodule RadioBeam do
 
   def server_name, do: Application.fetch_env!(:radio_beam, :server_name)
 
+  def admins, do: Application.fetch_env!(:radio_beam, :admins)
+
   def env, do: Application.fetch_env!(:radio_beam, :env)
 
   @cs_event_keys ["content", "event_id", "origin_server_ts", "room_id", "sender", "state_key", "type", "unsigned"]

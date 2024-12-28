@@ -9,6 +9,26 @@ defmodule RadioBeam.Room.EventGraph.Core do
   alias RadioBeam.PDU
   alias RadioBeam.Room
 
+  @pdu_schema PDU.schema()
+  @pdu_schema_keys Map.keys(@pdu_schema)
+
+  @doc """
+  Redacts the given PDU according to the rules of the given room version.
+  """
+  @spec redact_pdu(PDU.t(), PDU.t(), room_version :: String.t()) :: {:ok, PDU.t()} | {:error, Ecto.Changeset.t()}
+  def redact_pdu(%PDU{} = to_redact, %PDU{} = redaction_pdu, room_version) do
+    event = PDU.to_event(to_redact, room_version, :strings, :federation)
+    {:ok, redacted_params} = RoomVersion.redact(room_version, event)
+
+    {to_redact, @pdu_schema}
+    |> cast(redacted_params, @pdu_schema_keys, empty_values: [])
+    |> put_change(:parent_id, :root)
+    |> put_change(:unsigned, %{"redacted_because" => PDU.to_event(redaction_pdu, room_version)})
+    |> validate_required(@pdu_schema_keys -- ~w|state_key|a)
+    |> apply_v11_redaction_changes(redacted_params, room_version)
+    |> apply_action(:update)
+  end
+
   # for the Client-Server API only - add an event to the DAG, appending it to the given PDU
   # does not persist, just functional/biz logic
   def append(%Room{} = room, %PDU{} = parent, event_params), do: append(room, [parent], event_params)
@@ -90,8 +110,6 @@ defmodule RadioBeam.Room.EventGraph.Core do
     end
   end
 
-  @pdu_schema PDU.schema()
-  @pdu_schema_keys Map.keys(@pdu_schema)
   defp new_pdu(params, room_version) do
     {%PDU{}, @pdu_schema}
     |> cast(params, @pdu_schema_keys, empty_values: [])

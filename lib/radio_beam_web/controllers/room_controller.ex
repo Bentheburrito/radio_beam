@@ -172,6 +172,32 @@ defmodule RadioBeamWeb.RoomController do
     |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
 
+  def redact(conn, %{"room_id" => room_id, "event_id" => event_id, "transaction_id" => txn_id} = params) do
+    %User{} = sender = conn.assigns.user
+    reason = Map.get(params, "reason")
+    device_id = conn.assigns.device.id
+
+    with {:ok, handle} <- Transaction.begin(txn_id, device_id, conn.request_path),
+         {:ok, event_id} <- Room.redact_event(room_id, sender.id, event_id, reason) do
+      response = %{event_id: event_id}
+
+      Transaction.done(handle, response)
+      json(conn, response)
+    else
+      {:already_done, response} ->
+        json(conn, response)
+
+      {:error, error} ->
+        handle_common_error(conn, error)
+    end
+  end
+
+  def redact(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
+  end
+
   def get_event(conn, %{"room_id" => room_id, "event_id" => event_id}) do
     case Room.get_event(room_id, conn.assigns.user.id, event_id) do
       {:ok, event} -> json(conn, event)
