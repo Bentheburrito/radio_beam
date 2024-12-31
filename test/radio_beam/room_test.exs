@@ -1,6 +1,8 @@
 defmodule RadioBeam.RoomTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog, only: [capture_log: 1]
+
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.RoomRegistry
@@ -368,12 +370,60 @@ defmodule RadioBeam.RoomTest do
       %{user: user, room_id: room_id}
     end
 
-    test "redacts a message event", %{user: user, room_id: room_id} do
+    test "redacts a message event if the redactor is the creator", %{user: user, room_id: room_id} do
       {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "delete me")
       assert {:ok, redaction_event_id} = Room.redact_event(room_id, user.id, event_id, "meant to be deleted")
       assert {:ok, %{content: content}} = PDU.get(event_id)
       assert 0 = map_size(content)
       assert {:ok, %{latest_event_ids: [^redaction_event_id]}} = Room.get(room_id)
+    end
+
+    test "redacts a message event if the redactor is the sender", %{user: user, room_id: room_id} do
+      rando = Fixtures.user()
+      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
+      {:ok, _event_id} = Room.join(room_id, rando.id)
+
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, rando.id, "rando's message")
+
+      assert {:ok, _event_id} = Room.redact_event(room_id, rando.id, event_id, "can I delete my own msg? yes")
+    end
+
+    test "redacts a message event if the redactor has the 'redact' power", %{user: user, room_id: room_id} do
+      rando = Fixtures.user()
+      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
+      {:ok, _event_id} = Room.join(room_id, rando.id)
+
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, rando.id, "try to delete me")
+
+      assert {:ok, _event_id} = Room.redact_event(room_id, user.id, event_id, "I will bc I'm the creator")
+    end
+
+    test "rejects an unauthorized redactor (does not have 'redact' power)", %{user: user, room_id: room_id} do
+      rando = Fixtures.user()
+      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
+      {:ok, _event_id} = Room.join(room_id, rando.id)
+
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "try to delete me")
+
+      logs =
+        capture_log(fn ->
+          assert {:error, :unauthorized} = Room.redact_event(room_id, rando.id, event_id, "I can try")
+        end)
+
+      assert logs =~ "An error occurred"
+      assert logs =~ "apply-or-enqueue-redaction"
+    end
+
+    test "rejects an unauthorized redactor (does not have 'events -> m.room.redaction' power)", %{user: user} do
+      {:ok, room_id} = Room.create(user, power_levels: %{"events" => %{"m.room.redaction" => 5}})
+
+      rando = Fixtures.user()
+      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
+      {:ok, _event_id} = Room.join(room_id, rando.id)
+
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, rando.id, "rando's message")
+
+      assert {:error, :unauthorized} = Room.redact_event(room_id, rando.id, event_id, "can I delete my own msg? no")
     end
   end
 

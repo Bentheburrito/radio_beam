@@ -239,15 +239,23 @@ defmodule RadioBeam.Room do
   end
 
   def redact_event(room_id, user_id, event_id, reason \\ nil) do
-    with {:ok, to_redact} <- get_event(room_id, user_id, event_id, _bundled_aggregates? = false) do
-      event = Events.redaction(room_id, user_id, event_id, reason)
-      call_if_alive(room_id, {:redact, event, to_redact, user_id})
+    event = Events.redaction(room_id, user_id, event_id, reason)
+    call_if_alive(room_id, {:put_event, event})
+  end
+
+  def member?(room_id, user_id) do
+    case get(room_id) do
+      {:ok, %{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "join"}}}}} -> true
+      _else -> false
     end
   end
 
-  def member?(room_id, user_id), do: call_if_alive(room_id, {:member?, user_id})
-
-  def get_membership(room_id, user_id), do: call_if_alive(room_id, {:membership, user_id})
+  def get_membership(room_id, user_id) do
+    case get(room_id) do
+      {:ok, %{state: %{{"m.room.member", ^user_id} => membership_event}}} -> membership_event
+      _else -> :not_found
+    end
+  end
 
   def get_members(room_id, user_id, at_event_id \\ :current, membership_filter \\ fn _ -> true end)
 
@@ -283,12 +291,11 @@ defmodule RadioBeam.Room do
   end
 
   def get_state(room_id, user_id) do
-    case call_if_alive(room_id, {:membership, user_id}) do
-      %{"content" => %{"membership" => "join"}} ->
-        {:ok, %{state: state}} = get(room_id)
+    case get(room_id) do
+      {:ok, %{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "join"}}} = state}} ->
         {:ok, state}
 
-      %{"content" => %{"membership" => "leave"}} = membership ->
+      {:ok, %{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "leave"}} = membership}}} ->
         event_id = Map.fetch!(membership, "event_id")
         {:ok, pdu} = PDU.get(event_id)
 
@@ -361,6 +368,16 @@ defmodule RadioBeam.Room do
     room.state |> Map.take(stripped_state_keys) |> Enum.map(fn {_, event} -> Map.take(event, @stripped_keys) end)
   end
 
+  def apply_redaction(room_id, event_id) do
+    {:ok, redaction} = PDU.get(event_id)
+
+    with {:ok, to_redact} <- PDU.get(redaction.content["redacts"]) do
+      call_if_alive(room_id, {:try_redact, to_redact, redaction})
+    else
+      _ -> :error
+    end
+  end
+
   ### IMPL ###
 
   @impl GenServer
@@ -390,9 +407,6 @@ defmodule RadioBeam.Room do
 
   @impl GenServer
   def handle_call({:put_event, event}, _from, %Room{} = room) do
-    # TOIMPL: handle duplicate annotations - M_DUPLICATE_ANNOTATION
-    event_kind = if is_map_key(event, "state_key"), do: "state", else: "message"
-
     case put_event(room, event) do
       {:ok, room, [pdu]} ->
         PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_event, room.id, pdu})
@@ -414,34 +428,22 @@ defmodule RadioBeam.Room do
         {:reply, e, room}
 
       {:error, :unauthorized} = e ->
-        Logger.info("rejecting a(n) #{event_kind} event for being unauthorized: #{inspect(event)}")
+        Logger.info("rejecting an event for being unauthorized: #{inspect(event)}")
         {:reply, e, room}
 
       {:error, error} ->
-        Logger.error("an error occurred trying to put a(n) #{event_kind} event: #{inspect(error)}")
+        Logger.error("""
+        An error occurred trying to put an event: #{inspect(error)}
+        ∟> The event: #{inspect(event)}
+        """)
+
         {:reply, {:error, :internal}, room}
     end
   end
 
   @impl GenServer
-  def handle_call({:redact, redaction_event, to_redact, user_id}, _from, %Room{} = room) do
-    if Core.authz_redact?(room, to_redact.sender, user_id, RadioBeam.admins()) do
-      handle_call({:put_event, redaction_event}, :nofrom, room)
-    else
-      {:reply, {:error, :unauthorized}, room}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:member?, user_id}, _from, %Room{} = room) do
-    member? = get_in(room.state, [{"m.room.member", user_id}, "content", "membership"]) == "join"
-    {:reply, member?, room}
-  end
-
-  @impl GenServer
-  def handle_call({:membership, user_id}, _from, %Room{} = room) do
-    membership = Map.get(room.state, {"m.room.member", user_id}, :not_found)
-    {:reply, membership, room}
+  def handle_call({:try_redact, %PDU{} = to_redact, %PDU{type: "m.room.redaction"} = pdu}, _from, %Room{} = room) do
+    {:reply, try_redact(room, to_redact, pdu), room}
   end
 
   defp put_event(%Room{} = room, event), do: put_events(room, [event])
@@ -511,35 +513,61 @@ defmodule RadioBeam.Room do
   defp persist(room, pdus) do
     init_txn = Transaction.add_fxn(Transaction.new(), :room, fn -> {:ok, Memento.Query.write(room)} end)
 
-    pdus
-    |> Enum.reduce(init_txn, &persist_pdu_with_side_effects(&1, &2, room.version))
-    |> Transaction.execute()
+    txn_result =
+      pdus
+      |> Enum.reduce(init_txn, &persist_pdu_with_side_effects(&1, room, &2))
+      |> Transaction.execute()
+
+    with {:error, fxn_name, error} <- txn_result do
+      Logger.warning("An error occurred trying to persist an event at #{fxn_name}: #{inspect(error)}")
+      {:error, error}
+    end
   end
 
-  defp persist_pdu_with_side_effects(%PDU{type: "m.room.canonical_alias"} = pdu, txn, _version) do
+  defp persist_pdu_with_side_effects(%PDU{type: "m.room.canonical_alias"} = pdu, _room, txn) do
     [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])]
     |> Stream.reject(&is_nil/1)
     |> Enum.reduce(txn, &Transaction.add_fxn(&2, "put_alias_#{&1}", fn -> Room.Alias.put(&1, pdu.room_id) end))
     |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
   end
 
-  defp persist_pdu_with_side_effects(%PDU{type: "m.room.redaction"} = pdu, txn, version) do
-    event_id = pdu.content["redacts"]
-
+  defp persist_pdu_with_side_effects(%PDU{type: "m.room.redaction"} = pdu, room, txn) do
     txn
-    |> Transaction.add_fxn("get-for-redaction-#{event_id}", fn -> PDU.get(event_id) end)
-    |> Transaction.add_fxn("redact-#{event_id}", fn %PDU{event_id: ^event_id} = to_redact ->
-      case EventGraph.redact_pdu(to_redact, pdu, version) do
-        {:ok, redacted_pdu} -> EventGraph.persist_pdu(redacted_pdu)
-        {:error, _cs} = error -> error
+    |> Transaction.add_fxn("apply-or-enqueue-redaction-#{pdu.event_id}", fn ->
+      case PDU.get(pdu.content["redacts"]) do
+        {:ok, to_redact} ->
+          try_redact(room, to_redact, pdu)
+
+        {:error, :not_found} ->
+          Logger.info("we do not have #{pdu.content["redacts"]}, enqueueing redaction retry job")
+          # TODO: also try to backfill?
+          RadioBeam.Job.insert(:redactions, __MODULE__, :apply_redaction, [pdu.room_id, pdu.event_id])
       end
     end)
+    # TODO: should also mark the m.room.redaction PDU somehow, to indicate to
+    # not serve to clients
     |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
   end
 
   # TOIMPL: add room to published room list if visibility option was set to :public
-  defp persist_pdu_with_side_effects(%PDU{} = pdu, txn, _version),
+  defp persist_pdu_with_side_effects(%PDU{} = pdu, _room, txn),
     do: Transaction.add_fxn(txn, :pdu, fn -> EventGraph.persist_pdu(pdu) end)
+
+  defp try_redact(room, to_redact, pdu) do
+    if Timeline.authz_to_view?(to_redact, pdu.sender) and Core.authz_redact?(room, to_redact.sender, pdu.sender) do
+      case EventGraph.redact_pdu(to_redact, pdu, room.version) do
+        {:ok, redacted_pdu} ->
+          EventGraph.persist_pdu(redacted_pdu)
+
+        {:error, cs} = error ->
+          Logger.error("Could not redact an event, enqueueing retry job. Error: #{inspect(cs)}")
+          RadioBeam.Job.insert(:redactions, __MODULE__, :apply_redaction, [room.id, pdu.event_id])
+          error
+      end
+    else
+      {:error, :unauthorized}
+    end
+  end
 
   defp call_if_alive(room_id, message) do
     GenServer.call(via(room_id), message)

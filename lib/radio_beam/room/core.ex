@@ -8,6 +8,8 @@ defmodule RadioBeam.Room.Core do
   alias RadioBeam.Room
 
   @doc """
+  TOIMPL: admins should be able to redact too
+
   > Any user with a power level greater than or equal to the m.room.redaction
   > event power level may send redaction events in the room. If the user’s
   > power level greater is also greater than or equal to the redact power level
@@ -17,10 +19,10 @@ defmodule RadioBeam.Room.Core do
   > 
   > https://spec.matrix.org/latest/client-server-api/#put_matrixclientv3roomsroomidredacteventidtxnid
   """
-  def authz_redact?(%Room{} = room, sender, user_id, admin_user_ids) do
-    user_id in admin_user_ids or
-      RoomVersion.has_power?(user_id, "redact", false, room.state) or
-      (RoomVersion.has_power?(user_id, ~w|events m.room.redaction|, false, room.state) and sender == user_id)
+  def authz_redact?(%Room{} = room, to_redact_sender, redaction_sender) do
+    RoomVersion.has_power?(redaction_sender, "redact", false, room.state) or
+      (RoomVersion.has_power?(redaction_sender, ~w|events m.room.redaction|, false, room.state) and
+         to_redact_sender == redaction_sender)
   end
 
   def authorize(%Room{} = room, event) do

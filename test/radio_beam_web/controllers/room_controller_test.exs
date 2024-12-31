@@ -75,6 +75,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
                get_in(state, [{"m.room.member", "@bwyatt:#{server_name}"}, "content"])
     end
 
+    @tag :capture_log
     test "errors with M_ROOM_IN_USE when the supplied alias is already in use", %{conn: conn} do
       req_body = %{
         "name" => "Haunted House",
@@ -672,6 +673,57 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, _event_id} = Room.join(room_id, user.id)
 
       conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.name/", %{"name" => "Can't do this :("})
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+  end
+
+  describe "redact/2" do
+    setup %{conn: conn} do
+      user = Fixtures.user()
+      device = Fixtures.device(user.id)
+
+      %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    end
+
+    test "returns the redaction event ID (200) when deleting own message w/ default power levels", %{
+      conn: conn,
+      user: user
+    } do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "this was meant for another room")
+
+      conn =
+        put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/redact/#{event_id}/abcdf111df", %{
+          "reason" => "oops wrong room"
+        })
+
+      assert %{"event_id" => "$" <> _} = json_response(conn, 200)
+    end
+
+    @tag :capture_log
+    test "returns M_FORBIDDEN (403) when someone w/out `redact` power level tries to redact another's event", %{
+      conn: conn,
+      user: user
+    } do
+      creator = Fixtures.user()
+
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+
+      {:ok, event_id} =
+        Fixtures.send_text_msg(room_id, creator.id, "I am the creator, a mere member cannot redact this")
+
+      conn =
+        put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/redact/#{event_id}/abcdf111df", %{
+          "reason" => "imagine"
+        })
+
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
     end
   end

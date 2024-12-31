@@ -22,6 +22,8 @@ defmodule RadioBeam.Application do
       {Phoenix.PubSub, name: RadioBeam.PubSub},
       # Start the Finch HTTP client for sending emails
       {Finch, name: RadioBeam.Finch},
+      # Start the Job processor
+      {RadioBeam.Job.Processor, workers: [{:redactions, 15}]},
       # Start the RoomRegistry
       {Registry, keys: :unique, name: RadioBeam.RoomRegistry},
       # Start the GenServer that handles transaction IDs

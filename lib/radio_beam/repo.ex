@@ -7,9 +7,10 @@ defmodule RadioBeam.Repo do
 
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Device
-  alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.Job
   alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.User
 
   @doc """
@@ -34,7 +35,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, Device.Table, PDU.Table, Room, Room.Alias, Filter, Upload]
+  @tables [User, Device.Table, PDU.Table, Room, Room.Alias, Filter, Upload, Job]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =
@@ -73,6 +74,16 @@ defmodule RadioBeam.Repo do
         {:error, {:transaction_aborted, error}} -> {:error, error}
         {:error, error} -> raise "Repo.one_shot error: #{error}"
       end
+    end
+  end
+
+  @doc "Same as one_shot/1, except raises on error"
+  @spec one_shot!(function()) :: any()
+  def one_shot!(fxn) do
+    case one_shot(fxn) do
+      {:ok, result} -> result
+      {:error, error} -> raise error
+      result -> result
     end
   end
 end

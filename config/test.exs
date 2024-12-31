@@ -14,7 +14,8 @@ import Config
 #   pool_size: System.schedulers_online() * 2
 
 config :radio_beam,
-  server_name: "test-server.dev"
+  server_name: "localhost",
+  admins: ["@admin:localhost"]
 
 config :radio_beam, RadioBeam.ContentRepo,
   allowed_mimes:
