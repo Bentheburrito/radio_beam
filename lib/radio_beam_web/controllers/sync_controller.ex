@@ -36,7 +36,6 @@ defmodule RadioBeamWeb.SyncController do
       |> put_account_data(user)
       |> put_to_device_messages(user.id, device.id, Keyword.get(opts, :since))
 
-    # IO.puts(Jason.encode!(response, pretty: true))
     json(conn, response)
   end
 

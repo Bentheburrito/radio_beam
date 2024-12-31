@@ -1,9 +1,9 @@
 defmodule RadioBeam.Room do
   @moduledoc """
-  API for interacting with rooms. Every room is represented by a GenServer, 
-  which is responsible for correctly applying events to a room. All actions 
-  made against a room should be done through its GenServer by using this 
-  module.
+  API for interacting with rooms. Every room is represented by a Room.Server
+  (a GenServer), which is responsible for correctly applying events to a room.
+  All actions made against a room should be done through its GenServer using
+  this API.
   """
 
   @types [
@@ -18,20 +18,13 @@ defmodule RadioBeam.Room do
     attributes: @attrs,
     type: :set
 
-  use GenServer
-
   require Logger
 
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Repo
-  alias RadioBeam.Repo.Transaction
-  alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias Phoenix.PubSub
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
   alias RadioBeam.PDU
-  alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
-  alias RadioBeam.Room.Core
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.EventGraph
   alias RadioBeam.RoomSupervisor
@@ -129,14 +122,9 @@ defmodule RadioBeam.Room do
         init_state_events ++
         wrapped_name_event ++ wrapped_topic_event ++ invite_events ++ invite_3pid_events
 
-    case DynamicSupervisor.start_child(RoomSupervisor, {__MODULE__, {room_id, events}}) do
-      {:ok, _pid} -> {:ok, room_id}
-      error -> error
+    with {:ok, _pid} <- DynamicSupervisor.start_child(RoomSupervisor, {Room.Server, {room_id, events}}) do
+      {:ok, room_id}
     end
-  end
-
-  def start_link({room_id, _events_or_room} = init_arg) do
-    GenServer.start_link(__MODULE__, init_arg, name: via(room_id))
   end
 
   @state :"$3"
@@ -171,7 +159,7 @@ defmodule RadioBeam.Room do
   def invite(room_id, inviter_id, invitee_id, reason \\ nil) do
     event = Events.membership(room_id, inviter_id, invitee_id, :invite, reason)
 
-    call_if_alive(room_id, {:put_event, event})
+    Room.Server.call(room_id, {:put_event, event})
   end
 
   @doc "Tries to join the given user to the given room"
@@ -180,7 +168,7 @@ defmodule RadioBeam.Room do
   def join(room_id, joiner_id, reason \\ nil) do
     event = Events.membership(room_id, joiner_id, joiner_id, :join, reason)
 
-    call_if_alive(room_id, {:put_event, event})
+    Room.Server.call(room_id, {:put_event, event})
   end
 
   @doc "Tries to remove the given user from the given room"
@@ -189,7 +177,7 @@ defmodule RadioBeam.Room do
   def leave(room_id, user_id, reason \\ nil) do
     event = Events.membership(room_id, user_id, user_id, :leave, reason)
 
-    call_if_alive(room_id, {:put_event, event})
+    Room.Server.call(room_id, {:put_event, event})
   end
 
   @doc "Helper function to set the name of the room"
@@ -198,7 +186,7 @@ defmodule RadioBeam.Room do
   def set_name(room_id, user_id, name) do
     event = Events.name(room_id, user_id, name)
 
-    call_if_alive(room_id, {:put_event, event})
+    Room.Server.call(room_id, {:put_event, event})
   end
 
   @doc """
@@ -216,7 +204,7 @@ defmodule RadioBeam.Room do
   def put_state(room_id, user_id, type, state_key \\ "", content) do
     event = Events.state(room_id, type, user_id, content, state_key)
 
-    call_if_alive(room_id, {:put_event, event})
+    Room.Server.call(room_id, {:put_event, event})
   end
 
   @doc "Sends a Message Event to the room"
@@ -225,7 +213,7 @@ defmodule RadioBeam.Room do
   def send(room_id, user_id, type, content) do
     event = Events.message(room_id, user_id, type, content)
 
-    call_if_alive(room_id, {:put_event, event})
+    Room.Server.call(room_id, {:put_event, event})
   end
 
   def get_event(_room_id, user_id, event_id, bundle_aggregates? \\ true) do
@@ -240,7 +228,7 @@ defmodule RadioBeam.Room do
 
   def redact_event(room_id, user_id, event_id, reason \\ nil) do
     event = Events.redaction(room_id, user_id, event_id, reason)
-    call_if_alive(room_id, {:put_event, event})
+    Room.Server.call(room_id, {:put_event, event})
   end
 
   def member?(room_id, user_id) do
@@ -372,229 +360,9 @@ defmodule RadioBeam.Room do
     {:ok, redaction} = PDU.get(event_id)
 
     with {:ok, to_redact} <- PDU.get(redaction.content["redacts"]) do
-      call_if_alive(room_id, {:try_redact, to_redact, redaction})
+      Room.Server.call(room_id, {:try_redact, to_redact, redaction})
     else
       _ -> :error
     end
   end
-
-  ### IMPL ###
-
-  @impl GenServer
-  def init({room_id, events_or_room}) do
-    case events_or_room do
-      [%{"type" => "m.room.create", "content" => %{"room_version" => version}} | _] = events ->
-        init_room = %Room{id: room_id, latest_event_ids: [], state: %{}, version: version}
-
-        case put_events(init_room, events) do
-          {:ok, %Room{} = room, _pdus} -> {:ok, room}
-          {:error, :unauthorized} -> {:stop, :invalid_state}
-          {:error, %Ecto.Changeset{} = changeset} -> {:stop, inspect(changeset.errors)}
-          {:error, :alias_in_use} -> {:stop, :alias_in_use}
-          {:error, _txn_fxn_name, error} -> {:stop, error}
-          {:error, error} -> {:stop, inspect(error)}
-        end
-
-      %Room{} = room ->
-        {:ok, room}
-
-      invalid_init_arg ->
-        reason = "Tried to start a Room with invalid arg: #{inspect(invalid_init_arg)}"
-        Logger.error("Aborting room #{room_id} GenServer init: #{reason}")
-        {:stop, reason}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:put_event, event}, _from, %Room{} = room) do
-    case put_event(room, event) do
-      {:ok, room, [pdu]} ->
-        PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_event, room.id, pdu})
-
-        if pdu.type in @stripped_state_types,
-          do: PubSub.broadcast(PS, PS.stripped_state_events(room.id), {:room_stripped_state, room.id, pdu})
-
-        if pdu.type == "m.room.member" do
-          if pdu.content["membership"] == "invite" do
-            PubSub.broadcast(PS, PS.invite_events(pdu.state_key), {:room_invite, room, pdu})
-          end
-
-          LazyLoadMembersCache.mark_dirty(room.id, pdu.state_key)
-        end
-
-        {:reply, {:ok, pdu.event_id}, room}
-
-      {:error, :duplicate_annotation} = e ->
-        {:reply, e, room}
-
-      {:error, :unauthorized} = e ->
-        Logger.info("rejecting an event for being unauthorized: #{inspect(event)}")
-        {:reply, e, room}
-
-      {:error, error} ->
-        Logger.error("""
-        An error occurred trying to put an event: #{inspect(error)}
-        ∟> The event: #{inspect(event)}
-        """)
-
-        {:reply, {:error, :internal}, room}
-    end
-  end
-
-  @impl GenServer
-  def handle_call({:try_redact, %PDU{} = to_redact, %PDU{type: "m.room.redaction"} = pdu}, _from, %Room{} = room) do
-    {:reply, try_redact(room, to_redact, pdu), room}
-  end
-
-  defp put_event(%Room{} = room, event), do: put_events(room, [event])
-
-  defp put_events(%Room{} = room, events) do
-    latest_pdus =
-      case PDU.all(room.latest_event_ids) do
-        {:ok, pdus} -> pdus
-        {:error, _} -> []
-      end
-
-    put_result =
-      Enum.reduce_while(events, {room, [], latest_pdus}, fn event, {%Room{} = room, pdus, parents} ->
-        with {:ok, event} <- Core.authorize(room, event),
-             {:ok, pdu} <- EventGraph.append(room, parents, event) do
-          room = room |> Core.update_state(PDU.to_event(pdu, room.version, :strings)) |> Core.put_tip([pdu.event_id])
-          {:cont, {room, [pdu | pdus], [pdu]}}
-        else
-          error -> {:halt, error}
-        end
-      end)
-
-    with {%Room{} = room, [%PDU{} | _] = pdus, _parents} <- put_result,
-         :ok <- assert_no_dup_annotations(pdus),
-         {:ok, _} <- persist(room, pdus) do
-      {:ok, room, pdus}
-    end
-  end
-
-  defp assert_no_dup_annotations(pdus) do
-    new_annotations = Enum.filter(pdus, &(&1.content["m.relates_to"]["rel_type"] == "m.annotation"))
-
-    new_annotations
-    |> Enum.map(& &1.parent_id)
-    |> PDU.all()
-    |> case do
-      {:ok, []} ->
-        :ok
-
-      {:ok, annotated} ->
-        {:ok, children} = PDU.get_children(annotated, _recurse = 1)
-        children_by_parent = Enum.group_by(children, & &1.parent_id)
-
-        duplicate? =
-          Enum.any?(new_annotations, fn new_annotation ->
-            children_by_parent
-            |> Map.get(new_annotation.parent_id, [])
-            |> Enum.any?(&dup_annotation?(&1, new_annotation))
-          end)
-
-        if duplicate? do
-          {:error, :duplicate_annotation}
-        else
-          :ok
-        end
-
-      error ->
-        error
-    end
-  end
-
-  defp dup_annotation?(%PDU{} = child, %PDU{} = annotation) do
-    child.type == annotation.type and child.content["m.relates_to"]["key"] == annotation.content["m.relates_to"]["key"] and
-      child.sender == annotation.sender
-  end
-
-  defp persist(room, pdus) do
-    init_txn = Transaction.add_fxn(Transaction.new(), :room, fn -> {:ok, Memento.Query.write(room)} end)
-
-    txn_result =
-      pdus
-      |> Enum.reduce(init_txn, &persist_pdu_with_side_effects(&1, room, &2))
-      |> Transaction.execute()
-
-    with {:error, fxn_name, error} <- txn_result do
-      Logger.warning("An error occurred trying to persist an event at #{fxn_name}: #{inspect(error)}")
-      {:error, error}
-    end
-  end
-
-  defp persist_pdu_with_side_effects(%PDU{type: "m.room.canonical_alias"} = pdu, _room, txn) do
-    [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])]
-    |> Stream.reject(&is_nil/1)
-    |> Enum.reduce(txn, &Transaction.add_fxn(&2, "put_alias_#{&1}", fn -> Room.Alias.put(&1, pdu.room_id) end))
-    |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
-  end
-
-  defp persist_pdu_with_side_effects(%PDU{type: "m.room.redaction"} = pdu, room, txn) do
-    txn
-    |> Transaction.add_fxn("apply-or-enqueue-redaction-#{pdu.event_id}", fn ->
-      case PDU.get(pdu.content["redacts"]) do
-        {:ok, to_redact} ->
-          try_redact(room, to_redact, pdu)
-
-        {:error, :not_found} ->
-          Logger.info("we do not have #{pdu.content["redacts"]}, enqueueing redaction retry job")
-          # TODO: also try to backfill?
-          RadioBeam.Job.insert(:redactions, __MODULE__, :apply_redaction, [pdu.room_id, pdu.event_id])
-      end
-    end)
-    # TODO: should also mark the m.room.redaction PDU somehow, to indicate to
-    # not serve to clients
-    |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
-  end
-
-  # TOIMPL: add room to published room list if visibility option was set to :public
-  defp persist_pdu_with_side_effects(%PDU{} = pdu, _room, txn),
-    do: Transaction.add_fxn(txn, :pdu, fn -> EventGraph.persist_pdu(pdu) end)
-
-  defp try_redact(room, to_redact, pdu) do
-    if Timeline.authz_to_view?(to_redact, pdu.sender) and Core.authz_redact?(room, to_redact.sender, pdu.sender) do
-      case EventGraph.redact_pdu(to_redact, pdu, room.version) do
-        {:ok, redacted_pdu} ->
-          EventGraph.persist_pdu(redacted_pdu)
-
-        {:error, cs} = error ->
-          Logger.error("Could not redact an event, enqueueing retry job. Error: #{inspect(cs)}")
-          RadioBeam.Job.insert(:redactions, __MODULE__, :apply_redaction, [room.id, pdu.event_id])
-          error
-      end
-    else
-      {:error, :unauthorized}
-    end
-  end
-
-  defp call_if_alive(room_id, message) do
-    GenServer.call(via(room_id), message)
-  catch
-    :exit, {:noproc, _} ->
-      case revive(room_id) do
-        {:ok, ^room_id} -> GenServer.call(via(room_id), message)
-        {:error, _} = error -> error
-      end
-  end
-
-  defp revive(room_id) do
-    case get(room_id) do
-      {:ok, %Room{} = room} ->
-        case DynamicSupervisor.start_child(RoomSupervisor, {__MODULE__, {room.id, room}}) do
-          {:ok, _pid} -> {:ok, room_id}
-          error -> error
-        end
-
-      {:error, :not_found} ->
-        {:error, :room_does_not_exist}
-
-      {:error, error} ->
-        Logger.error("Error reviving #{room_id}: #{inspect(error)}")
-        {:error, error}
-    end
-  end
-
-  defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}
 end
