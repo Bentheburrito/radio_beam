@@ -52,7 +52,7 @@ defmodule RadioBeam.RoomTest do
           content: %{"m.federate" => false},
           name: "The Computer Room",
           topic: "this one's for the nerds",
-          direct?: false,
+          direct?: true,
           visibility: :public,
           invite: [invitee.id],
           # TODO
@@ -82,8 +82,10 @@ defmodule RadioBeam.RoomTest do
         assert %{"name" => "The Computer Room"} = get_in(state, [{"m.room.name", ""}, "content"])
         assert %{"topic" => "this one's for the nerds"} = get_in(state, [{"m.room.topic", ""}, "content"])
 
-        assert %{"membership" => "invite"} = get_in(state, [{"m.room.member", invitee.id}, "content"])
-        # TODO: assert invite_3pid, direct?, and visibility
+        assert %{"membership" => "invite", "is_direct" => true} =
+                 get_in(state, [{"m.room.member", invitee.id}, "content"])
+
+        # TODO: assert invite_3pid, and visibility
       end
     end
   end

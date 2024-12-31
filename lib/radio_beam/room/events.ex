@@ -34,9 +34,9 @@ defmodule RadioBeam.Room.Events do
   defp maybe_put_creator(content, _version, _creator_id), do: content
 
   @membership_values [:join, :invite, :leave, :kick, :ban]
-  def membership(room_id, sender_id, subject_id, membership, reason \\ nil)
+  def membership(room_id, sender_id, subject_id, membership, reason \\ nil, direct? \\ false)
       when membership in @membership_values do
-    content = membership_content(membership, reason)
+    content = membership_content(membership, reason, direct?)
     state(room_id, "m.room.member", sender_id, content, subject_id)
   end
 
@@ -106,10 +106,11 @@ defmodule RadioBeam.Room.Events do
     message(room_id, sender_id, "m.room.redaction", redaction_content(redacts, reason))
   end
 
-  defp membership_content(membership, nil), do: %{"membership" => to_string(membership)}
+  defp membership_content(membership, nil, direct?),
+    do: %{"membership" => to_string(membership), "is_direct" => direct?}
 
-  defp membership_content(membership, reason) when is_binary(reason),
-    do: %{"membership" => to_string(membership), "reason" => reason}
+  defp membership_content(membership, reason, direct?) when is_binary(reason),
+    do: %{"membership" => to_string(membership), "reason" => reason, "is_direct" => direct?}
 
   defp redaction_content(redacts, nil), do: %{"redacts" => redacts}
 

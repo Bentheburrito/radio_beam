@@ -102,10 +102,12 @@ defmodule RadioBeam.Room do
         topic -> [Events.topic(room_id, creator.id, topic)]
       end
 
+    direct? = Keyword.get(opts, :direct?, false)
+
     invite_events =
       opts
       |> Keyword.get(:invite, [])
-      |> Enum.map(&Events.membership(room_id, creator.id, &1, :invite))
+      |> Enum.map(&Events.membership(room_id, creator.id, &1, :invite, nil, direct?))
 
     # TOIMPL
     invite_3pid_events = []
