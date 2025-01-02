@@ -19,7 +19,7 @@ defmodule RadioBeam.Device.OneTimeKeyRingTest do
       }
     },
     "signed_curve25519:AAAAHg" => %{
-      "key" => "key2+NrIjpnagy+pIY6uPL4ZwEG2v+8F9lmgsnlZzs",
+      "key" => "key2",
       "signatures" => %{
         "@alice:example.com" => %{
           "ed25519:JLAFKJWSCS" =>
@@ -76,6 +76,39 @@ defmodule RadioBeam.Device.OneTimeKeyRingTest do
         OneTimeKeyRing.put_fallback_keys(otk_ring, put_in(@fallback_key, ~w|signed_curve25519:AAAAGj key|, "fallback2"))
 
       assert %{"signed_curve25519" => %{"key" => "fallback2"}} = otk_ring.fallback_keys
+    end
+  end
+
+  describe "claim_otk/2" do
+    test "pops the first otk in the list under the given algorithm", %{device: device} do
+      assert {:error, :not_found} = OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
+
+      otk_ring = OneTimeKeyRing.put_otks(device.one_time_key_ring, @otk_keys)
+
+      assert {:ok, {%{"key" => "key1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      assert {:ok, {%{"key" => "key2"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      assert {:error, :not_found} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+    end
+
+    test "uses the fallback key when all one time keys have been exhausted", %{device: device} do
+      assert {:error, :not_found} = OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
+
+      otk_ring = OneTimeKeyRing.put_otks(device.one_time_key_ring, @otk_keys)
+      otk_ring = OneTimeKeyRing.put_fallback_keys(otk_ring, @fallback_key)
+
+      refute get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+
+      assert {:ok, {%{"key" => "key1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      refute get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+
+      assert {:ok, {%{"key" => "key2"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      refute get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+
+      assert {:ok, {%{"key" => "fallback1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      assert get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+
+      assert {:ok, {%{"key" => "fallback1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      assert get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
     end
   end
 end
