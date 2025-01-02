@@ -12,10 +12,12 @@ defmodule RadioBeam.Device do
     :refresh_token,
     :prev_refresh_token,
     :expires_at,
-    :messages
+    :messages,
+    :one_time_key_ring
   ]
 
   alias RadioBeam.Repo
+  alias RadioBeam.Device.OneTimeKeyRing
   alias RadioBeam.Device.Table
   alias RadioBeam.User
 
@@ -51,7 +53,8 @@ defmodule RadioBeam.Device do
       refresh_token: if(refreshable?, do: generate_token(), else: nil),
       prev_refresh_token: nil,
       expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
-      messages: %{}
+      messages: %{},
+      one_time_key_ring: OneTimeKeyRing.new()
     }
   end
 
