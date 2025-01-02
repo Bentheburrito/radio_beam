@@ -112,6 +112,45 @@ defmodule RadioBeam.Device do
     end)
   end
 
+  def put_keys(user_id, device_id, opts) do
+    one_time_keys = Keyword.get(opts, :one_time_keys, %{})
+    fallback_keys = Keyword.get(opts, :fallback_keys, %{})
+
+    Repo.one_shot(fn ->
+      with {:ok, %__MODULE__{} = device} = Table.get(user_id, device_id, lock: :write) do
+        otk_ring =
+          device.one_time_key_ring
+          |> OneTimeKeyRing.put_otks(one_time_keys)
+          |> OneTimeKeyRing.put_fallback_keys(fallback_keys)
+
+        Table.persist(%__MODULE__{device | one_time_key_ring: otk_ring})
+      end
+    end)
+  end
+
+  def claim_otks(user_device_algo_map) do
+    Repo.one_shot(fn ->
+      Map.new(user_device_algo_map, fn {user_id, device_algo_map} ->
+        device_key_map =
+          device_algo_map
+          |> Stream.map(fn {device_id, algo} ->
+            with {:ok, %__MODULE__{} = device} <- Table.get(user_id, device_id, lock: :write),
+                 {:ok, {key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algo),
+                 {:ok, _device} <- Table.persist(%__MODULE__{device | one_time_key_ring: otk_ring}) do
+              {key_id, key} = Map.pop!(key, "id")
+              {device_id, %{"#{algo}:#{key_id}" => key}}
+            else
+              _error -> :ignore
+            end
+          end)
+          |> Stream.reject(&(&1 == :ignore))
+          |> Map.new()
+
+        {user_id, device_key_map}
+      end)
+    end)
+  end
+
   defp get_device_by(field, value, user_id) do
     case field do
       :id -> Table.get(user_id, value, lock: :write)

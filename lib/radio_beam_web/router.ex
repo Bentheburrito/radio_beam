@@ -6,6 +6,7 @@ defmodule RadioBeamWeb.Router do
     AuthController,
     ClientController,
     ContentRepoController,
+    DeviceKeysController,
     FilterController,
     HomeserverInfoController,
     LoginController,
@@ -70,6 +71,11 @@ defmodule RadioBeamWeb.Router do
         get "/joined_rooms", RoomController, :joined
 
         put "/sendToDevice/:type/:transaction_id", ClientController, :send_to_device
+
+        scope "/keys" do
+          post "/upload", DeviceKeysController, :upload
+          post "/claim", DeviceKeysController, :claim
+        end
 
         scope "/rooms" do
           post "/:room_id/invite", RoomController, :invite

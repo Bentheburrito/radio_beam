@@ -38,6 +38,10 @@ defmodule RadioBeam.Device.OneTimeKeyRing do
     %__MODULE__{otk_ring | fallback_keys: fallback_keys}
   end
 
+  def one_time_key_counts(%__MODULE__{one_time_keys: otks}) do
+    Map.new(otks, fn {algo, key_list} -> {algo, length(key_list)} end)
+  end
+
   def claim_otk(%__MODULE__{} = otk_ring, algorithm) do
     with :none <- pop_otk(otk_ring, algorithm),
          :none <- get_fallback_key(otk_ring, algorithm) do
