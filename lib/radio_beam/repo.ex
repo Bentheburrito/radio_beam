@@ -72,7 +72,7 @@ defmodule RadioBeam.Repo do
         :ok -> :ok
         {:ok, result} -> result
         {:error, {:transaction_aborted, error}} -> {:error, error}
-        {:error, error} -> raise "Repo.one_shot error: #{error}"
+        {:error, error} -> raise "Repo.one_shot error: #{Exception.format(:error, error)}"
       end
     end
   end

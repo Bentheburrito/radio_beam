@@ -34,7 +34,7 @@ defmodule RadioBeamWeb.DeviceKeysControllerTest do
     }
   }
   describe "upload/2" do
-    test "returns the count (200) of new keys uploaded", %{conn: conn} do
+    test "returns the count (200) of new one-time keys uploaded", %{conn: conn} do
       conn = post(conn, ~p"/_matrix/client/v3/keys/upload", %{one_time_keys: @otk_keys})
       assert %{"one_time_key_counts" => %{"signed_curve25519" => 2}} = json_response(conn, 200)
     end

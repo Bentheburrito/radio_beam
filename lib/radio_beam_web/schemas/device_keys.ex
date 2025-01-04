@@ -7,6 +7,7 @@ defmodule RadioBeamWeb.Schemas.DeviceKeys do
 
   def upload do
     %{
+      "device_keys" => optional(device_keys()),
       "one_time_keys" => optional(Schema.object_with_entries(:string, Schema.any_of([:string, key_object()]))),
       "fallback_keys" => optional(Schema.object_with_entries(:string, Schema.any_of([:string, fallback_key_object()])))
     }
@@ -18,12 +19,24 @@ defmodule RadioBeamWeb.Schemas.DeviceKeys do
     }
   end
 
+  defp device_keys do
+    %{
+      "algorithms" => Schema.array_of(:string),
+      "device_id" => :string,
+      "keys" => Schema.object_with_entries(:string, :string),
+      "signatures" => signatures(),
+      "user_id" => &user_id/1
+    }
+  end
+
   defp key_object do
     %{
       "key" => :string,
-      "signatures" => Schema.object_with_entries(&user_id/1, Schema.object_with_entries(:string, :string))
+      "signatures" => signatures()
     }
   end
+
+  defp signatures, do: Schema.object_with_entries(&user_id/1, Schema.object_with_entries(:string, :string))
 
   defp fallback_key_object do
     Map.put(key_object(), "fallback", [:boolean, default: false])

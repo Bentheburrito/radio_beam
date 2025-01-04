@@ -34,4 +34,95 @@ defmodule RadioBeam.DeviceTest do
       assert {:ok, []} = Device.get_all_by_user(user2.id)
     end
   end
+
+  @otk_keys %{
+    "signed_curve25519:AAAAHQ" => %{
+      "key" => "key1",
+      "signatures" => %{
+        "@alice:example.com" => %{
+          "ed25519:JLAFKJWSCS" =>
+            "IQeCEPb9HFk217cU9kw9EOiusC6kMIkoIRnbnfOh5Oc63S1ghgyjShBGpu34blQomoalCyXWyhaaT3MrLZYQAA"
+        }
+      }
+    },
+    "signed_curve25519:AAAAHg" => %{
+      "key" => "key2",
+      "signatures" => %{
+        "@alice:example.com" => %{
+          "ed25519:JLAFKJWSCS" =>
+            "FLWxXqGbwrb8SM3Y795eB6OA8bwBcoMZFXBqnTn58AYWZSqiD45tlBVcDa2L7RwdKXebW/VzDlnfVJ+9jok1Bw"
+        }
+      }
+    }
+  }
+  describe "put_keys/3" do
+    setup do
+      user = Fixtures.user()
+      %{user: user, device: Fixtures.device(user.id)}
+    end
+
+    test "adds the given one-time keys to a device", %{device: device} do
+      {:ok, device} = Device.put_keys(device.user_id, device.id, one_time_keys: @otk_keys)
+
+      assert %{"signed_curve25519" => 2} = Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)
+    end
+
+    @fallback_key %{
+      "signed_curve25519:AAAAGj" => %{
+        "fallback" => true,
+        "key" => "fallback1",
+        "signatures" => %{
+          "@alice:example.com" => %{
+            "ed25519:JLAFKJWSCS" =>
+              "FLWxXqGbwrb8SM3Y795eB6OA8bwBcoMZFXBqnTn58AYWZSqiD45tlBVcDa2L7RwdKXebW/VzDlnfVJ+9jok1Bw"
+          }
+        }
+      }
+    }
+    test "adds the given fallback key to a device", %{device: device} do
+      {:ok, device} = Device.put_keys(device.user_id, device.id, fallback_keys: @fallback_key)
+
+      assert {:ok, {%{"key" => "fallback1"}, _}} =
+               Device.OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
+    end
+
+    test "adds the given device identity keys to a device", %{device: device} do
+      {:ok, device} = Device.put_keys(device.user_id, device.id, identity_keys: device_keys(device.id, device.user_id))
+
+      expected_curve_key = "curve25519:#{device.id}"
+      expected_ed_key = "ed25519:#{device.id}"
+
+      assert %{"keys" => %{^expected_curve_key => "curve_key", ^expected_ed_key => "ed_key"}} = device.identity_keys
+    end
+
+    test "errors when the user or device ID on the given device identity keys map don't match the device's ID or its owner's user ID",
+         %{device: device} do
+      for device_id <- ["blah", device.id],
+          user_id <- ["blah", device.user_id],
+          device_id != device.id or user_id != device.user_id do
+        assert {:error, :invalid_user_or_device_id} =
+                 Device.put_keys(device.user_id, device.id, identity_keys: device_keys(device_id, user_id))
+      end
+    end
+  end
+
+  defp device_keys(id, user_id) do
+    %{
+      "algorithms" => [
+        "m.olm.v1.curve25519-aes-sha2",
+        "m.megolm.v1.aes-sha2"
+      ],
+      "device_id" => id,
+      "keys" => %{
+        "curve25519:#{id}" => "curve_key",
+        "ed25519:#{id}" => "ed_key"
+      },
+      "signatures" => %{
+        user_id => %{
+          "ed25519:#{id}" => "dSO80A01XiigH3uBiDVx/EjzaoycHcjq9lfQX0uWsqxl2giMIiSPR8a4d291W1ihKJL/a+myXS367WT6NAIcBA"
+        }
+      },
+      "user_id" => user_id
+    }
+  end
 end

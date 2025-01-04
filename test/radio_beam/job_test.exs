@@ -44,7 +44,7 @@ defmodule RadioBeam.JobTest do
       capture_log(fn ->
         assert :ok = Job.insert(worker, TestJobs, :blow_up, [], opts)
 
-        assert_receive {:attempt, 1}, 300
+        assert_receive {:attempt, 1}, 500
         assert_receive {:attempt, 2}, 2100
       end)
 

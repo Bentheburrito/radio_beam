@@ -13,6 +13,7 @@ defmodule RadioBeam.Device do
     :prev_refresh_token,
     :expires_at,
     :messages,
+    :identity_keys,
     :one_time_key_ring
   ]
 
@@ -123,7 +124,15 @@ defmodule RadioBeam.Device do
           |> OneTimeKeyRing.put_otks(one_time_keys)
           |> OneTimeKeyRing.put_fallback_keys(fallback_keys)
 
-        Table.persist(%__MODULE__{device | one_time_key_ring: otk_ring})
+        identity_keys = Keyword.get(opts, :identity_keys, device.identity_keys)
+
+        if is_nil(identity_keys) or
+             (Map.get(identity_keys, "device_id", device_id) == device_id and
+                Map.get(identity_keys, "user_id", user_id) == user_id) do
+          Table.persist(%__MODULE__{device | one_time_key_ring: otk_ring, identity_keys: identity_keys})
+        else
+          {:error, :invalid_user_or_device_id}
+        end
       end
     end)
   end

@@ -10,6 +10,7 @@ defmodule RadioBeam.Device.Table do
     :prev_refresh_token,
     :expires_at,
     :messages,
+    :identity_keys,
     :one_time_key_ring
   ]
   use Memento.Table,
@@ -78,7 +79,7 @@ defmodule RadioBeam.Device.Table do
 
   defp to_device(
          {__MODULE__, {user_id, device_id}, display_name, access_token, refresh_token, prev_refresh_token, expires_at,
-          messages, one_time_key_ring}
+          messages, identity_keys, one_time_key_ring}
        ) do
     %Device{
       id: device_id,
@@ -89,6 +90,7 @@ defmodule RadioBeam.Device.Table do
       prev_refresh_token: prev_refresh_token,
       expires_at: expires_at,
       messages: messages,
+      identity_keys: identity_keys,
       one_time_key_ring: one_time_key_ring
     }
   end
