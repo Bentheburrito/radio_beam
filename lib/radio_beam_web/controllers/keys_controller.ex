@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.DeviceKeysController do
+defmodule RadioBeamWeb.KeysController do
   @moduledoc """
   Endpoints for retrieving and uploading media and files
   """
@@ -6,6 +6,8 @@ defmodule RadioBeamWeb.DeviceKeysController do
 
   import RadioBeamWeb.Utils, only: [json_error: 3, halting_json_error: 4]
 
+  alias RadioBeam.User
+  alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.Device.OneTimeKeyRing
   alias RadioBeam.Device
   alias RadioBeamWeb.Schemas.DeviceKeys, as: DeviceKeysSchema
@@ -58,8 +60,8 @@ defmodule RadioBeamWeb.DeviceKeysController do
         {"user_signing_key", user_signing_key} -> {:user_signing_key, user_signing_key}
       end)
 
-    case Device.put_keys(user_id, device_id, opts) do
-      {:ok, %Device{}} ->
+    case CrossSigningKeyRing.put(user_id, opts) do
+      {:ok, %User{}} ->
         json(conn, %{})
 
       {:error, error} when error in ~w|too_many_keys no_key_provided malformed_key|a ->

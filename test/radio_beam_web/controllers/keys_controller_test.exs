@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.DeviceKeysControllerTest do
+defmodule RadioBeamWeb.KeysControllerTest do
   alias RadioBeam.Device
   use RadioBeamWeb.ConnCase, async: true
 

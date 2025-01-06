@@ -1,4 +1,4 @@
-defmodule RadioBeam.Device.CrossSigningKey do
+defmodule RadioBeam.User.CrossSigningKey do
   @attrs ~w|algorithm id key signatures usages|a
   @enforce_keys @attrs
   defstruct @attrs
@@ -12,6 +12,12 @@ defmodule RadioBeam.Device.CrossSigningKey do
           signatures: map() | :none,
           usages: [String.t()]
         }
+
+  @typedoc """
+  String-key params defining a CrossSigningKey, as defined in 
+  [the spec](https://spec.matrix.org/v1.13/client-server-api/#post_matrixclientv3keysdevice_signingupload)
+  """
+  @type params() :: map()
 
   @type parse_error() :: {:error, :too_many_keys | :no_key_provided | :user_ids_do_not_match | :malformed_key}
 

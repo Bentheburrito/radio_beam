@@ -1,7 +1,7 @@
-defmodule RadioBeam.Device.CrossSigningKeyTest do
+defmodule RadioBeam.User.CrossSigningKeyTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Device.CrossSigningKey
+  alias RadioBeam.User.CrossSigningKey
 
   describe "parse/2" do
     test "parses a CrossSigningKey map as defined in the spec" do

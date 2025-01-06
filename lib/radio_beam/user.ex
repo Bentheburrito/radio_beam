@@ -2,7 +2,13 @@ defmodule RadioBeam.User do
   @moduledoc """
   A user registered on this homeserver.
   """
-  @types [id: :string, account_data: :map, pwd_hash: :string, registered_at: :utc_datetime]
+  @types [
+    id: :string,
+    account_data: :map,
+    pwd_hash: :string,
+    registered_at: :utc_datetime,
+    cross_signing_key_ring: :map
+  ]
   @attrs Keyword.keys(@types)
 
   @type id :: String.t()
@@ -13,8 +19,9 @@ defmodule RadioBeam.User do
 
   import Ecto.Changeset
 
-  alias RadioBeam.Repo
   alias RadioBeam.Credentials
+  alias RadioBeam.Repo
+  alias RadioBeam.User.CrossSigningKeyRing
 
   @type t() :: %__MODULE__{}
 
@@ -23,7 +30,8 @@ defmodule RadioBeam.User do
       id: id,
       pwd_hash: Credentials.hash_pwd(password),
       registered_at: DateTime.utc_now(),
-      account_data: %{}
+      account_data: %{},
+      cross_signing_key_ring: CrossSigningKeyRing.new()
     }
 
     {%__MODULE__{}, Map.new(@types)}
