@@ -13,13 +13,18 @@ defmodule RadioBeam.Device do
     :prev_refresh_token,
     :expires_at,
     :messages,
+    :master_key,
+    :self_signing_key,
+    :user_signing_key,
     :identity_keys,
     :one_time_key_ring
   ]
 
-  alias RadioBeam.Repo
+  alias Polyjuice.Util
+  alias RadioBeam.Device.CrossSigningKey
   alias RadioBeam.Device.OneTimeKeyRing
   alias RadioBeam.Device.Table
+  alias RadioBeam.Repo
   alias RadioBeam.User
 
   @typedoc """
@@ -55,6 +60,10 @@ defmodule RadioBeam.Device do
       prev_refresh_token: nil,
       expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
       messages: %{},
+      master_key: nil,
+      self_signing_key: nil,
+      user_signing_key: nil,
+      identity_keys: nil,
       one_time_key_ring: OneTimeKeyRing.new()
     }
   end
@@ -125,17 +134,59 @@ defmodule RadioBeam.Device do
           |> OneTimeKeyRing.put_fallback_keys(fallback_keys)
 
         identity_keys = Keyword.get(opts, :identity_keys, device.identity_keys)
+        master_key = Keyword.get(opts, :master_key, device.master_key)
+        self_signing_key = Keyword.get(opts, :self_signing_key, device.self_signing_key)
+        user_signing_key = Keyword.get(opts, :user_signing_key, device.user_signing_key)
 
-        if is_nil(identity_keys) or
-             (Map.get(identity_keys, "device_id", device_id) == device_id and
-                Map.get(identity_keys, "user_id", user_id) == user_id) do
-          Table.persist(%__MODULE__{device | one_time_key_ring: otk_ring, identity_keys: identity_keys})
-        else
-          {:error, :invalid_user_or_device_id}
+        with {:ok, master_key} <- parse_signing_key(master_key, user_id),
+             {:ok, self_signing_key} <- parse_signing_key(self_signing_key, user_id),
+             {:ok, user_signing_key} <- parse_signing_key(user_signing_key, user_id) do
+          cond do
+            not valid_identity_keys?(identity_keys, user_id, device_id) ->
+              {:error, :invalid_user_or_device_id}
+
+            # disallow uploading self-/user-signing keys if we have no master key to verify signatures
+            is_nil(master_key) and (not is_nil(self_signing_key) or not is_nil(user_signing_key)) ->
+              {:error, :missing_master_key}
+
+            not valid_signing_keys?(master_key, self_signing_key, user_signing_key, user_id) ->
+              {:error, :missing_or_invalid_master_key_signatures}
+
+            :else ->
+              Table.persist(%__MODULE__{
+                device
+                | one_time_key_ring: otk_ring,
+                  identity_keys: identity_keys,
+                  master_key: master_key,
+                  self_signing_key: self_signing_key,
+                  user_signing_key: user_signing_key
+              })
+          end
         end
       end
     end)
   end
+
+  defp valid_identity_keys?(identity_keys, user_id, device_id) do
+    is_nil(identity_keys) or
+      (Map.get(identity_keys, "device_id", device_id) == device_id and
+         Map.get(identity_keys, "user_id", user_id) == user_id)
+  end
+
+  # TOIMPL: …Servers therefore must ensure that device IDs will not collide with cross-signing public keys
+  defp valid_signing_keys?(master_key, self_signing_key, user_signing_key, user_id) do
+    signed?(self_signing_key, user_id, master_key) and signed?(user_signing_key, user_id, master_key)
+  end
+
+  defp parse_signing_key(nil, _user_id), do: {:ok, nil}
+  defp parse_signing_key(%CrossSigningKey{} = csk, _user_id), do: {:ok, csk}
+  defp parse_signing_key(params, user_id), do: CrossSigningKey.parse(params, user_id)
+
+  # since the user/self signing keys are optional, they could be nil
+  defp signed?(nil, _user_id, _key), do: true
+
+  defp signed?(%CrossSigningKey{} = signed, user_id, key),
+    do: Util.JSON.signed?(CrossSigningKey.to_map(signed, user_id), user_id, key)
 
   def claim_otks(user_device_algo_map) do
     Repo.one_shot(fn ->
