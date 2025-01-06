@@ -74,6 +74,7 @@ defmodule RadioBeamWeb.Router do
 
         scope "/keys" do
           post "/upload", DeviceKeysController, :upload
+          post "/device_signing/upload", DeviceKeysController, :upload_signing
           post "/claim", DeviceKeysController, :claim
         end
 

@@ -122,6 +122,16 @@ defmodule RadioBeam.Device do
     end)
   end
 
+  @doc "Put cross-signing keys for a device"
+  @spec put_keys(User.id(), String.t(), Keyword.t()) ::
+          {:ok, t()}
+          | {:error,
+             :not_found
+             | :user_does_not_exist
+             | :invalid_user_or_device_id
+             | :missing_master_key
+             | :missing_or_invalid_master_key_signatures}
+          | CrossSigningKey.parse_error()
   def put_keys(user_id, device_id, opts) do
     one_time_keys = Keyword.get(opts, :one_time_keys, %{})
     fallback_keys = Keyword.get(opts, :fallback_keys, %{})

@@ -5,6 +5,16 @@ defmodule RadioBeam.Device.CrossSigningKey do
 
   alias Polyjuice.Util.VerifyKey
 
+  @type t() :: %__MODULE__{
+          algorithm: String.t(),
+          id: String.t(),
+          key: binary(),
+          signatures: map() | :none,
+          usages: [String.t()]
+        }
+
+  @type parse_error() :: {:error, :too_many_keys | :no_key_provided | :user_ids_do_not_match | :malformed_key}
+
   @doc """
   Convert a CrossSigningKey to a map as defined in the spec.
   """
@@ -25,6 +35,7 @@ defmodule RadioBeam.Device.CrossSigningKey do
   @doc """
   Parse a CrossSigningKey as defined in the spec
   """
+  @spec parse(params :: map(), User.id()) :: {:ok, t()} | parse_error()
   def parse(%{"keys" => key, "usage" => usages, "user_id" => user_id} = params, user_id)
       when map_size(key) == 1 and is_list(usages) do
     signatures = Map.get(params, "signatures", :none)
