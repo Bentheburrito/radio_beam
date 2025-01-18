@@ -35,6 +35,7 @@ defmodule RadioBeam.Device do
   to repeat the refresh operation."
   """
   @type t() :: %__MODULE__{}
+  @type id() :: term()
 
   @spec new(User.id(), Keyword.t()) :: t()
   def new(user_id, opts) do

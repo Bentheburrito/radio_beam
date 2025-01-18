@@ -87,7 +87,8 @@ defmodule RadioBeam.DeviceTest do
     end
 
     test "adds the given device identity keys to a device", %{device: device} do
-      {:ok, device} = Device.put_keys(device.user_id, device.id, identity_keys: device_keys(device.id, device.user_id))
+      {:ok, device} =
+        Device.put_keys(device.user_id, device.id, identity_keys: Fixtures.device_keys(device.id, device.user_id))
 
       expected_curve_key = "curve25519:#{device.id}"
       expected_ed_key = "ed25519:#{device.id}"
@@ -101,28 +102,8 @@ defmodule RadioBeam.DeviceTest do
           user_id <- ["blah", device.user_id],
           device_id != device.id or user_id != device.user_id do
         assert {:error, :invalid_user_or_device_id} =
-                 Device.put_keys(device.user_id, device.id, identity_keys: device_keys(device_id, user_id))
+                 Device.put_keys(device.user_id, device.id, identity_keys: Fixtures.device_keys(device_id, user_id))
       end
     end
-  end
-
-  defp device_keys(id, user_id) do
-    %{
-      "algorithms" => [
-        "m.olm.v1.curve25519-aes-sha2",
-        "m.megolm.v1.aes-sha2"
-      ],
-      "device_id" => id,
-      "keys" => %{
-        "curve25519:#{id}" => "curve_key",
-        "ed25519:#{id}" => "ed_key"
-      },
-      "signatures" => %{
-        user_id => %{
-          "ed25519:#{id}" => "dSO80A01XiigH3uBiDVx/EjzaoycHcjq9lfQX0uWsqxl2giMIiSPR8a4d291W1ihKJL/a+myXS367WT6NAIcBA"
-        }
-      },
-      "user_id" => user_id
-    }
   end
 end

@@ -27,6 +27,10 @@ defmodule RadioBeamWeb.Schemas.DeviceKeys do
     }
   end
 
+  def query do
+    %{"device_keys" => Schema.object_with_entries(&user_id/1, Schema.array_of(:string))}
+  end
+
   defp device_keys do
     %{
       "algorithms" => Schema.array_of(:string),

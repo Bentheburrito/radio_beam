@@ -73,9 +73,11 @@ defmodule RadioBeamWeb.Router do
         put "/sendToDevice/:type/:transaction_id", ClientController, :send_to_device
 
         scope "/keys" do
-          post "/upload", KeysController, :upload
-          post "/device_signing/upload", KeysController, :upload_signing
           post "/claim", KeysController, :claim
+          post "/device_signing/upload", KeysController, :upload_signing
+          post "/upload", KeysController, :upload
+          post "/query", KeysController, :query
+          # post "/signatures/upload", KeysController, :upload_signatures
         end
 
         scope "/rooms" do

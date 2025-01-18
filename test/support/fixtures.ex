@@ -59,4 +59,72 @@ defmodule Fixtures do
     content = Map.merge(%{"msgtype" => "m.text", "body" => message}, content_overrides)
     Room.send(room_id, user_id, "m.room.message", content)
   end
+
+  def create_cross_signing_keys(user_id) do
+    master_key_id = "base64masterpublickey"
+    {master_pubkey, master_privkey} = :crypto.generate_key(:eddsa, :ed25519)
+
+    master_key = %{
+      "keys" => %{("ed25519:" <> master_key_id) => Base.encode64(master_pubkey, padding: false)},
+      "usage" => ["master"],
+      "user_id" => user_id
+    }
+
+    master_signingkey =
+      Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(master_privkey, padding: false), master_key_id)
+
+    {:ok, self_signing_key} =
+      Polyjuice.Util.JSON.sign(
+        %{
+          "keys" => %{
+            "ed25519:base64selfsigningpublickey" =>
+              Base.encode64("base64+self+signing+master+public+key", padding: false)
+          },
+          "usage" => ["self_signing"],
+          "user_id" => user_id
+        },
+        user_id,
+        master_signingkey
+      )
+
+    {:ok, user_signing_key} =
+      Polyjuice.Util.JSON.sign(
+        %{
+          "keys" => %{
+            "ed25519:base64usersigningpublickey" =>
+              Base.encode64("base64+user+signing+master+public+key", padding: false)
+          },
+          "usage" => ["user_signing"],
+          "user_id" => user_id
+        },
+        user_id,
+        master_signingkey
+      )
+
+    [
+      master_key: master_key,
+      self_signing_key: self_signing_key,
+      user_signing_key: user_signing_key
+    ]
+  end
+
+  def device_keys(id, user_id) do
+    %{
+      "algorithms" => [
+        "m.olm.v1.curve25519-aes-sha2",
+        "m.megolm.v1.aes-sha2"
+      ],
+      "device_id" => id,
+      "keys" => %{
+        "curve25519:#{id}" => "curve_key",
+        "ed25519:#{id}" => "ed_key"
+      },
+      "signatures" => %{
+        user_id => %{
+          "ed25519:#{id}" => "dSO80A01XiigH3uBiDVx/EjzaoycHcjq9lfQX0uWsqxl2giMIiSPR8a4d291W1ihKJL/a+myXS367WT6NAIcBA"
+        }
+      },
+      "user_id" => user_id
+    }
+  end
 end

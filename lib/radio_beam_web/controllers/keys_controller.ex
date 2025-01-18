@@ -86,8 +86,22 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def claim(conn, _params) do
-    with otks when is_map(otks) <- Device.claim_otks(conn.assigns.request["one_time_keys"]) do
+    with %{} = otks <- Device.claim_otks(conn.assigns.request["one_time_keys"]) do
       json(conn, %{"one_time_keys" => otks})
+    else
+      error ->
+        Logger.error("Expected a map as the result of Device.claim_otks, got: #{inspect(error)}")
+        json_error(conn, 500, :unknown)
+    end
+  end
+
+  def query(conn, _params) do
+    with %{} = user_key_map <- User.query_all_keys(conn.assigns.request["device_keys"], conn.assigns.user.id) do
+      json(conn, user_key_map)
+    else
+      error ->
+        Logger.error("Expected a map as the result of User.query_all_keys, got: #{inspect(error)}")
+        json_error(conn, 500, :unknown)
     end
   end
 end
