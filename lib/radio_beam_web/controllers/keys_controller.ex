@@ -6,6 +6,7 @@ defmodule RadioBeamWeb.KeysController do
 
   import RadioBeamWeb.Utils, only: [json_error: 3, halting_json_error: 4]
 
+  alias RadioBeam.User.Keys
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.Device.OneTimeKeyRing
@@ -96,11 +97,11 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def query(conn, _params) do
-    with %{} = user_key_map <- User.query_all_keys(conn.assigns.request["device_keys"], conn.assigns.user.id) do
+    with %{} = user_key_map <- Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.user.id) do
       json(conn, user_key_map)
     else
       error ->
-        Logger.error("Expected a map as the result of User.query_all_keys, got: #{inspect(error)}")
+        Logger.error("Expected a map as the result of Keys.query_all, got: #{inspect(error)}")
         json_error(conn, 500, :unknown)
     end
   end
