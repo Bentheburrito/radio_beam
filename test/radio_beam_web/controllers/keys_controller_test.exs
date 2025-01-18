@@ -126,4 +126,22 @@ defmodule RadioBeamWeb.KeysControllerTest do
       assert key_obj["key"] in ~w|key1 key2|
     end
   end
+
+  describe "query/2" do
+    test "returns the queried keys (200)", %{conn: conn} do
+      %{id: user_id} = user = Fixtures.user()
+      cross_signing_keys = Fixtures.create_cross_signing_keys(user.id)
+      {:ok, user} = RadioBeam.User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
+
+      %{id: device_id} = device = Fixtures.device(user.id)
+      {:ok, _device} = Device.put_keys(user.id, device.id, identity_keys: Fixtures.device_keys(device.id, user.id))
+      conn = post(conn, ~p"/_matrix/client/v3/keys/query", %{device_keys: %{user.id => []}})
+
+      assert %{} = response = json_response(conn, 200)
+      assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["master"]}} = response["master_keys"]
+      assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["self_signing"]}} = response["self_signing_keys"]
+      refute is_map_key(response, "user_signing_keys")
+      assert %{^user_id => %{^device_id => %{}}} = response["device_keys"]
+    end
+  end
 end
