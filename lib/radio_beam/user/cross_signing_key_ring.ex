@@ -28,7 +28,7 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
           | CrossSigningKey.parse_error()
   def put(user_id, opts) do
     Repo.one_shot(fn ->
-      with {:ok, %User{} = user} = User.get(user_id, lock: :write) do
+      with {:ok, %User{} = user} <- User.get(user_id, lock: :write) do
         master_key = Keyword.get(opts, :master_key, user.cross_signing_key_ring.master)
         self_signing_key = Keyword.get(opts, :self_signing_key, user.cross_signing_key_ring.self)
         user_signing_key = Keyword.get(opts, :user_signing_key, user.cross_signing_key_ring.user)
@@ -45,8 +45,13 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
               {:error, :missing_or_invalid_master_key_signatures}
 
             :else ->
-              key_ring = %__MODULE__{master: master_key, self: self_signing_key, user: user_signing_key}
-              {:ok, Memento.Query.write(%User{user | cross_signing_key_ring: key_ring})}
+              key_ring = %__MODULE__{
+                master: master_key,
+                self: self_signing_key,
+                user: user_signing_key
+              }
+
+              {:ok, Memento.Query.write(put_in(user.cross_signing_key_ring, key_ring))}
           end
         end
       end
@@ -67,4 +72,13 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
 
   defp signed?(%CrossSigningKey{} = signed, user_id, key),
     do: Polyjuice.Util.JSON.signed?(CrossSigningKey.to_map(signed, user_id), user_id, key)
+
+  def get_key_by_id(%__MODULE__{} = key_ring, key_id) do
+    case key_ring do
+      %__MODULE__{master: %{id: ^key_id} = key} -> key
+      %__MODULE__{self: %{id: ^key_id} = key} -> key
+      %__MODULE__{user: %{id: ^key_id} = key} -> key
+      _no_match -> nil
+    end
+  end
 end

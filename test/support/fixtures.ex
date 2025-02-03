@@ -61,25 +61,27 @@ defmodule Fixtures do
   end
 
   def create_cross_signing_keys(user_id) do
-    master_key_id = "base64masterpublickey"
     {master_pubkey, master_privkey} = :crypto.generate_key(:eddsa, :ed25519)
+    {user_pubkey, user_privkey} = :crypto.generate_key(:eddsa, :ed25519)
+    {self_pubkey, self_privkey} = :crypto.generate_key(:eddsa, :ed25519)
+
+    master_pubkeyb64 = Base.encode64(master_pubkey, padding: false)
+    user_pubkeyb64 = Base.encode64(user_pubkey, padding: false)
+    self_pubkeyb64 = Base.encode64(self_pubkey, padding: false)
 
     master_key = %{
-      "keys" => %{("ed25519:" <> master_key_id) => Base.encode64(master_pubkey, padding: false)},
+      "keys" => %{"ed25519:#{master_pubkeyb64}" => master_pubkeyb64},
       "usage" => ["master"],
       "user_id" => user_id
     }
 
     master_signingkey =
-      Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(master_privkey, padding: false), master_key_id)
+      Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(master_privkey, padding: false), master_pubkeyb64)
 
     {:ok, self_signing_key} =
       Polyjuice.Util.JSON.sign(
         %{
-          "keys" => %{
-            "ed25519:base64selfsigningpublickey" =>
-              Base.encode64("base64+self+signing+master+public+key", padding: false)
-          },
+          "keys" => %{"ed25519:#{self_pubkeyb64}" => self_pubkeyb64},
           "usage" => ["self_signing"],
           "user_id" => user_id
         },
@@ -90,10 +92,7 @@ defmodule Fixtures do
     {:ok, user_signing_key} =
       Polyjuice.Util.JSON.sign(
         %{
-          "keys" => %{
-            "ed25519:base64usersigningpublickey" =>
-              Base.encode64("base64+user+signing+master+public+key", padding: false)
-          },
+          "keys" => %{"ed25519:#{user_pubkeyb64}" => user_pubkeyb64},
           "usage" => ["user_signing"],
           "user_id" => user_id
         },
@@ -101,30 +100,38 @@ defmodule Fixtures do
         master_signingkey
       )
 
-    [
-      master_key: master_key,
-      self_signing_key: self_signing_key,
-      user_signing_key: user_signing_key
-    ]
+    {[
+       master_key: master_key,
+       self_signing_key: self_signing_key,
+       user_signing_key: user_signing_key
+     ], _priv_keys = %{master_key: master_privkey, self_key: self_privkey, user_key: user_privkey}}
   end
 
   def device_keys(id, user_id) do
-    %{
-      "algorithms" => [
-        "m.olm.v1.curve25519-aes-sha2",
-        "m.megolm.v1.aes-sha2"
-      ],
-      "device_id" => id,
-      "keys" => %{
-        "curve25519:#{id}" => "curve_key",
-        "ed25519:#{id}" => "ed_key"
-      },
-      "signatures" => %{
-        user_id => %{
-          "ed25519:#{id}" => "dSO80A01XiigH3uBiDVx/EjzaoycHcjq9lfQX0uWsqxl2giMIiSPR8a4d291W1ihKJL/a+myXS367WT6NAIcBA"
-        }
-      },
-      "user_id" => user_id
-    }
+    {pubkey, privkey} = :crypto.generate_key(:eddsa, :ed25519)
+    pubkeyb64 = Base.encode64(pubkey, padding: false)
+
+    signingkey = Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(privkey, padding: false), id)
+
+    {:ok, signed_key_obj} =
+      Polyjuice.Util.JSON.sign(
+        %{
+          "algorithms" => [
+            "m.olm.v1.curve25519-aes-sha2",
+            "m.megolm.v1.aes-sha2"
+          ],
+          "device_id" => id,
+          "keys" => %{
+            # "curve25519:#{id}" => "curve_key",
+            "ed25519:#{id}" => pubkeyb64
+          },
+          "signatures" => %{},
+          "user_id" => user_id
+        },
+        user_id,
+        signingkey
+      )
+
+    {signed_key_obj, signingkey}
   end
 end

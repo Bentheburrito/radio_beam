@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.Schemas.DeviceKeys do
+defmodule RadioBeamWeb.Schemas.Keys do
   @moduledoc false
 
   import RadioBeamWeb.Schemas, only: [user_id: 1]

@@ -56,6 +56,19 @@ defmodule RadioBeam.User do
     end)
   end
 
+  @doc "Gets all users of the given IDs"
+  @spec all([id()]) :: [t()]
+  def all(ids, opts \\ []) do
+    Repo.one_shot(fn ->
+      Enum.reduce(ids, [], fn id, acc ->
+        case get(id, opts) do
+          {:error, :not_found} -> acc
+          {:ok, user} -> [user | acc]
+        end
+      end)
+    end)
+  end
+
   @doc """
   Persists a User to the DB, unless a record with the same ID already exists.
   """

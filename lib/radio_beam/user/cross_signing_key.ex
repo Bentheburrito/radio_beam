@@ -3,13 +3,14 @@ defmodule RadioBeam.User.CrossSigningKey do
   @enforce_keys @attrs
   defstruct @attrs
 
+  alias Polyjuice.Util.JSON
   alias Polyjuice.Util.VerifyKey
 
   @type t() :: %__MODULE__{
           algorithm: String.t(),
           id: String.t(),
           key: binary(),
-          signatures: map() | :none,
+          signatures: map(),
           usages: [String.t()]
         }
 
@@ -31,7 +32,7 @@ defmodule RadioBeam.User.CrossSigningKey do
       "user_id" => user_id
     }
 
-    if is_nil(csk.signatures) or csk.signatures == :none do
+    if map_size(csk.signatures) == 0 do
       init_map
     else
       Map.put(init_map, "signatures", csk.signatures)
@@ -41,10 +42,10 @@ defmodule RadioBeam.User.CrossSigningKey do
   @doc """
   Parse a CrossSigningKey as defined in the spec
   """
-  @spec parse(params :: map(), User.id()) :: {:ok, t()} | parse_error()
+  @spec parse(params :: map(), RadioBeam.User.id()) :: {:ok, t()} | parse_error()
   def parse(%{"keys" => key, "usage" => usages, "user_id" => user_id} = params, user_id)
       when map_size(key) == 1 and is_list(usages) do
-    signatures = Map.get(params, "signatures", :none)
+    signatures = Map.get(params, "signatures", %{})
 
     with {:ok, algo, id, key_base64} <- parse_key(key),
          {:ok, binary} <- Base.decode64(key_base64, padding: false, ignore: :whitespace) do
@@ -62,6 +63,37 @@ defmodule RadioBeam.User.CrossSigningKey do
       {:ok, algo, id, key_value}
     else
       _ -> {:error, :malformed_key}
+    end
+  end
+
+  @doc """
+  Validates a new signature present in `csk_params_with_new_signature` made by
+  `signer` of the given `t:CrossSigningKey`, `csk`. Returns an :ok tuple with
+  the new signature added to `csk`'s `signatures` field if all checks pass, and
+  an error tuple otherwise.
+  """
+  def put_signature(%__MODULE__{} = csk, csk_user_id, csk_params_with_new_signature, signer_id, signer_key) do
+    csk_params = Map.delete(csk_params_with_new_signature, "signatures")
+
+    cond do
+      # this equality check seems to just be for a better error message, since
+      # if we just check the signature against `to_map(csk, user_id)`, it would
+      # also fail
+      csk |> to_map(csk_user_id) |> Map.delete("signatures") != csk_params ->
+        {:error, :different_keys}
+
+      JSON.signed?(csk_params_with_new_signature, signer_id, signer_key) ->
+        signatures =
+          RadioBeam.put_nested(
+            csk.signatures,
+            [signer_id, VerifyKey.id(csk)],
+            csk_params_with_new_signature["signatures"][signer_id][VerifyKey.id(csk)]
+          )
+
+        {:ok, put_in(csk.signatures, signatures)}
+
+      :else ->
+        {:error, :invalid_signature}
     end
   end
 

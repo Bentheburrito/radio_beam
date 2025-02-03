@@ -87,13 +87,15 @@ defmodule RadioBeam.DeviceTest do
     end
 
     test "adds the given device identity keys to a device", %{device: device} do
+      {device_key, _signingkey} = Fixtures.device_keys(device.id, device.user_id)
+
       {:ok, device} =
-        Device.put_keys(device.user_id, device.id, identity_keys: Fixtures.device_keys(device.id, device.user_id))
+        Device.put_keys(device.user_id, device.id, identity_keys: device_key)
 
-      expected_curve_key = "curve25519:#{device.id}"
       expected_ed_key = "ed25519:#{device.id}"
+      expected_ed_value = device_key["keys"] |> Map.values() |> hd()
 
-      assert %{"keys" => %{^expected_curve_key => "curve_key", ^expected_ed_key => "ed_key"}} = device.identity_keys
+      assert %{"keys" => %{^expected_ed_key => ^expected_ed_value}} = device.identity_keys
     end
 
     test "errors when the user or device ID on the given device identity keys map don't match the device's ID or its owner's user ID",
@@ -101,8 +103,10 @@ defmodule RadioBeam.DeviceTest do
       for device_id <- ["blah", device.id],
           user_id <- ["blah", device.user_id],
           device_id != device.id or user_id != device.user_id do
+        {device_key, _signingkey} = Fixtures.device_keys(device_id, user_id)
+
         assert {:error, :invalid_user_or_device_id} =
-                 Device.put_keys(device.user_id, device.id, identity_keys: Fixtures.device_keys(device_id, user_id))
+                 Device.put_keys(device.user_id, device.id, identity_keys: device_key)
       end
     end
   end

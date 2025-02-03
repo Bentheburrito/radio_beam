@@ -11,12 +11,12 @@ defmodule RadioBeamWeb.KeysController do
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.Device.OneTimeKeyRing
   alias RadioBeam.Device
-  alias RadioBeamWeb.Schemas.DeviceKeys, as: DeviceKeysSchema
+  alias RadioBeamWeb.Schemas.Keys, as: KeysSchema
 
   require Logger
 
   plug RadioBeamWeb.Plugs.Authenticate
-  plug RadioBeamWeb.Plugs.EnforceSchema, mod: DeviceKeysSchema
+  plug RadioBeamWeb.Plugs.EnforceSchema, mod: KeysSchema
 
   @creds_dont_match_msg "The user/device ID specified in 'device_keys' do not match your session."
 

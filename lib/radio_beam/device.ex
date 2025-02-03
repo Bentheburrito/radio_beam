@@ -140,6 +140,29 @@ defmodule RadioBeam.Device do
     end)
   end
 
+  def put_identity_keys_signature(%__MODULE__{} = device, key_params_with_new_signature, verify_key) do
+    cond do
+      # this equality check seems to just be for a better error message, since
+      # if we just check the signature against `device.identity_keys`, it would
+      # also fail
+      Map.delete(device.identity_keys, "signatures") != Map.delete(key_params_with_new_signature, "signatures") ->
+        {:error, :different_keys}
+
+      Polyjuice.Util.JSON.signed?(key_params_with_new_signature, device.user_id, verify_key) ->
+        identity_keys =
+          RadioBeam.put_nested(
+            device.identity_keys,
+            ["signatures", device.user_id, device.id],
+            key_params_with_new_signature["signatures"][device.user_id][device.id]
+          )
+
+        {:ok, put_in(device.identity_keys, identity_keys)}
+
+      :else ->
+        {:error, :invalid_signature}
+    end
+  end
+
   defp valid_identity_keys?(identity_keys, user_id, device_id) do
     is_nil(identity_keys) or
       (Map.get(identity_keys, "device_id", device_id) == device_id and

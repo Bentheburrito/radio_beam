@@ -130,11 +130,12 @@ defmodule RadioBeamWeb.KeysControllerTest do
   describe "query/2" do
     test "returns the queried keys (200)", %{conn: conn} do
       %{id: user_id} = user = Fixtures.user()
-      cross_signing_keys = Fixtures.create_cross_signing_keys(user.id)
+      {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(user.id)
       {:ok, user} = RadioBeam.User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
 
       %{id: device_id} = device = Fixtures.device(user.id)
-      {:ok, _device} = Device.put_keys(user.id, device.id, identity_keys: Fixtures.device_keys(device.id, user.id))
+      {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
+      {:ok, _device} = Device.put_keys(user.id, device.id, identity_keys: device_key)
       conn = post(conn, ~p"/_matrix/client/v3/keys/query", %{device_keys: %{user.id => []}})
 
       assert %{} = response = json_response(conn, 200)

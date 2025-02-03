@@ -1172,8 +1172,10 @@ defmodule RadioBeam.Room.TimelineTest do
       encoded_token = PaginationToken.encode(token)
       timeline = Timeline.partial([%{event_id: "whateva"}], token)
 
-      expected_json_string = ~s|{"events":[{"event_id":"whateva"}],"limited":true,"prev_batch":"#{encoded_token}"}|
-      assert {:ok, ^expected_json_string} = Jason.encode(timeline)
+      assert {:ok, json} = Jason.encode(timeline)
+      assert json =~ ~s|"events":[{"event_id":"whateva"}]|
+      assert json =~ ~s|"limited":true|
+      assert json =~ ~s|"prev_batch":"#{encoded_token}"|
     end
   end
 end

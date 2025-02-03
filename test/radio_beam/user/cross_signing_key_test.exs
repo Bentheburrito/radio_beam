@@ -19,7 +19,7 @@ defmodule RadioBeam.User.CrossSigningKeyTest do
       assert "ed25519" = csk.algorithm
       assert ^key_id = csk.id
       assert ^pubkey = csk.key
-      assert :none = csk.signatures
+      assert 0 = map_size(csk.signatures)
       assert ["master"] = csk.usages
     end
 
