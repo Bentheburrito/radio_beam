@@ -13,12 +13,19 @@ defmodule RadioBeamWeb.Schemas.Keys do
     }
   end
 
-  def upload_signing do
+  def upload_cross_signing do
     %{
       "master_key" => optional(cross_signing_key()),
       "self_signing_key" => optional(cross_signing_key()),
       "user_signing_key" => optional(cross_signing_key())
     }
+  end
+
+  def upload_signatures do
+    Schema.object_with_entries(
+      &user_id/1,
+      Schema.object_with_entries(:string, Schema.any_of([cross_signing_key(), device_keys()]))
+    )
   end
 
   def claim do

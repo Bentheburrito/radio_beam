@@ -1,6 +1,8 @@
 defmodule RadioBeamWeb.KeysControllerTest do
-  alias RadioBeam.Device
   use RadioBeamWeb.ConnCase, async: true
+
+  alias RadioBeam.Device
+  alias RadioBeam.User
 
   setup %{conn: conn} do
     user1 = Fixtures.user()
@@ -40,7 +42,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
     end
   end
 
-  describe "upload_signing/2" do
+  describe "upload_cross_signing/2" do
     test "returns an empty object (200) when the keys pass all checks and are successfully uploaded", %{
       conn: conn,
       device: device
@@ -107,6 +109,59 @@ defmodule RadioBeamWeb.KeysControllerTest do
         self_signing_key: self_signing_key,
         user_signing_key: user_signing_key
       }
+    end
+  end
+
+  describe "upload_signatures/2" do
+    setup %{user: user, device: device} do
+      {csks, privkeys} = Fixtures.create_cross_signing_keys(user.id)
+      {:ok, user} = User.CrossSigningKeyRing.put(user.id, csks)
+
+      {device_key, device_signingkey} = Fixtures.device_keys(device.id, user.id)
+      {:ok, device} = Device.put_keys(user.id, device.id, identity_keys: device_key)
+
+      %{user: user, device: device, user_priv_csks: privkeys, device_signingkey: device_signingkey}
+    end
+
+    test "returns an empty object (200) when the signatures are successfully uploaded", %{
+      conn: conn,
+      device_signingkey: device_signingkey,
+      user: user
+    } do
+      master_key = User.CrossSigningKey.to_map(user.cross_signing_key_ring.master, user.id)
+      master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
+
+      {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
+
+      request_body = %{user.id => %{master_pubkeyb64 => master_key}}
+      conn = post(conn, ~p"/_matrix/client/v3/keys/signatures/upload", request_body)
+
+      assert %{} = failures = json_response(conn, 200)
+      assert 0 = map_size(failures)
+    end
+
+    test "returns a failures object (200) if the uploaded signature is invalid", %{
+      conn: conn,
+      user: user,
+      device: device
+    } do
+      {_random, random_privkey} = :crypto.generate_key(:eddsa, :ed25519)
+
+      device_signingkey =
+        Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(random_privkey, padding: false), device.id)
+
+      master_key = User.CrossSigningKey.to_map(user.cross_signing_key_ring.master, user.id)
+      master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
+
+      {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
+
+      request_body = %{user.id => %{master_pubkeyb64 => master_key}}
+      conn = post(conn, ~p"/_matrix/client/v3/keys/signatures/upload", request_body)
+
+      assert %{} = failures = json_response(conn, 200)
+      assert 1 = map_size(failures)
+      assert %{"errcode" => "M_INVALID_SIGNATURE", "error" => error} = failures["failures"][user.id][master_pubkeyb64]
+      assert error =~ "signature failed verification"
     end
   end
 

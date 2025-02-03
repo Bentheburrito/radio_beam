@@ -3,6 +3,7 @@ defmodule RadioBeam.User.CrossSigningKey do
   @enforce_keys @attrs
   defstruct @attrs
 
+  alias RadioBeam.User
   alias Polyjuice.Util.JSON
   alias Polyjuice.Util.VerifyKey
 
@@ -21,6 +22,7 @@ defmodule RadioBeam.User.CrossSigningKey do
   @type params() :: map()
 
   @type parse_error() :: {:error, :too_many_keys | :no_key_provided | :user_ids_do_not_match | :malformed_key}
+  @type put_signature_error() :: :different_keys | :invalid_signature
 
   @doc """
   Convert a CrossSigningKey to a map as defined in the spec.
@@ -42,7 +44,7 @@ defmodule RadioBeam.User.CrossSigningKey do
   @doc """
   Parse a CrossSigningKey as defined in the spec
   """
-  @spec parse(params :: map(), RadioBeam.User.id()) :: {:ok, t()} | parse_error()
+  @spec parse(params :: map(), User.id()) :: {:ok, t()} | parse_error()
   def parse(%{"keys" => key, "usage" => usages, "user_id" => user_id} = params, user_id)
       when map_size(key) == 1 and is_list(usages) do
     signatures = Map.get(params, "signatures", %{})
@@ -72,6 +74,8 @@ defmodule RadioBeam.User.CrossSigningKey do
   the new signature added to `csk`'s `signatures` field if all checks pass, and
   an error tuple otherwise.
   """
+  @spec put_signature(t(), User.id(), map(), User.id(), Polyjuice.Util.VerifyKey.t()) ::
+          {:ok, t()} | {:error, put_signature_error()}
   def put_signature(%__MODULE__{} = csk, csk_user_id, csk_params_with_new_signature, signer_id, signer_key) do
     csk_params = Map.delete(csk_params_with_new_signature, "signatures")
 

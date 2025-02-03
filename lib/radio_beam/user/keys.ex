@@ -10,6 +10,8 @@ defmodule RadioBeam.User.Keys do
 
   require Logger
 
+  @type put_signatures_error() :: :unknown_key | :disallowed_key_type | :no_master_csk | :user_not_found
+
   @doc """
   Queries all local users' keys by the given map of %{user_id => [device_id]}.
   Only signatures the given `user_id` is allowed to view will be included.
@@ -66,13 +68,21 @@ defmodule RadioBeam.User.Keys do
     end
   end
 
+  @spec put_signatures(User.id(), map()) ::
+          :ok
+          | {:error,
+             %{String.t() => %{String.t() => put_signatures_error() | CrossSigningKey.put_signature_error()}}
+             | :signer_has_no_user_csk}
   def put_signatures(signer_user_id, user_key_map) do
     {self_signatures, others_signatures} = Map.pop(user_key_map, signer_user_id)
 
     Repo.one_shot(fn ->
-      with {:ok, signer} when not is_nil(signer.cross_signing_key_ring.user) <- User.get(signer_user_id) do
-        _failures =
-          Map.merge(put_self_signatures(self_signatures, signer), put_others_signatures(others_signatures, signer))
+      with {:ok, signer} when map_size(others_signatures) == 0 or not is_nil(signer.cross_signing_key_ring.user) <-
+             User.get(signer_user_id) do
+        case Map.merge(put_self_signatures(self_signatures, signer), put_others_signatures(others_signatures, signer)) do
+          failures when map_size(failures) == 0 -> :ok
+          failures -> {:error, failures}
+        end
       else
         _ -> {:error, :signer_has_no_user_csk}
       end

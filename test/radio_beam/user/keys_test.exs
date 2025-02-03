@@ -109,8 +109,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{user.id => %{master_pubkeyb64 => master_key}})
-      assert 0 = map_size(failures)
+      assert :ok = Keys.put_signatures(user.id, %{user.id => %{master_pubkeyb64 => master_key}})
     end
 
     test "puts signatures for the user's own device keys", %{user: user, device: device, user_priv_csks: privkeys} do
@@ -122,8 +121,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, device_key} = Polyjuice.Util.JSON.sign(device.identity_keys, user.id, self_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{user.id => %{device.id => device_key}})
-      assert 0 = map_size(failures)
+      assert :ok = Keys.put_signatures(user.id, %{user.id => %{device.id => device_key}})
     end
 
     test "puts signatures for another user's master CSK", %{user: user, user_priv_csks: privkeys} do
@@ -142,8 +140,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
-      assert 0 = map_size(failures)
+      assert :ok = Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
     end
 
     test "errors with user_ids_do_not_match if CSKs do not belong to the given user" do
@@ -168,7 +165,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{user.id => %{master_pubkeyb64 => master_key}})
+      assert {:error, failures} = Keys.put_signatures(user.id, %{user.id => %{master_pubkeyb64 => master_key}})
       assert 1 = map_size(failures)
       assert failures[user.id][master_pubkeyb64] == :invalid_signature
     end
@@ -187,7 +184,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, device_key} = Polyjuice.Util.JSON.sign(device.identity_keys, user.id, self_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{user.id => %{device.id => device_key}})
+      assert {:error, failures} = Keys.put_signatures(user.id, %{user.id => %{device.id => device_key}})
       assert 1 = map_size(failures)
       assert failures[user.id][device.id] == :invalid_signature
     end
@@ -211,7 +208,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, glerp_self_key} = Polyjuice.Util.JSON.sign(glerp_self_key, user.id, user_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{glerp.id => %{glerp_self_pubkeyb64 => glerp_self_key}})
+      assert {:error, failures} = Keys.put_signatures(user.id, %{glerp.id => %{glerp_self_pubkeyb64 => glerp_self_key}})
       assert 1 = map_size(failures)
       assert failures[glerp.id][glerp_self_pubkeyb64] == :disallowed_key_type
     end
@@ -231,13 +228,15 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+      assert {:error, failures} =
+               Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+
       assert 1 = map_size(failures)
       assert failures[glerp.id][glerp_master_pubkeyb64] == :no_master_csk
     end
 
     test "errors with :user_not_found when the user does not exist", %{user: user} do
-      assert %{} = failures = Keys.put_signatures(user.id, %{"@whateverman:localhost" => %{"asdf" => %{}}})
+      assert {:error, failures} = Keys.put_signatures(user.id, %{"@whateverman:localhost" => %{"asdf" => %{}}})
       assert 1 = map_size(failures)
       assert failures["@whateverman:localhost"]["asdf"] == :user_not_found
     end
@@ -263,7 +262,9 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
-      assert %{} = failures = Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+      assert {:error, failures} =
+               Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+
       assert 1 = map_size(failures)
       assert failures[glerp.id][glerp_master_pubkeyb64] == :different_keys
     end

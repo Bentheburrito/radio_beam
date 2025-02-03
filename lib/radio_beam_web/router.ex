@@ -74,10 +74,10 @@ defmodule RadioBeamWeb.Router do
 
         scope "/keys" do
           post "/claim", KeysController, :claim
-          post "/device_signing/upload", KeysController, :upload_signing
-          post "/upload", KeysController, :upload
+          post "/device_signing/upload", KeysController, :upload_cross_signing
           post "/query", KeysController, :query
-          # post "/signatures/upload", KeysController, :upload_signatures
+          post "/signatures/upload", KeysController, :upload_signatures
+          post "/upload", KeysController, :upload
         end
 
         scope "/rooms" do

@@ -62,6 +62,9 @@ defmodule RadioBeamWeb.Plugs.EnforceSchema do
       {:error, :missing_value, field_path} ->
         error(conn, "#{Enum.join(field_path, ".")} is required but is not present")
 
+      {:error, :no_match} ->
+        error(conn, "Request is not of the expected shape")
+
       {:error, :invalid_pattern} ->
         Logger.error("The given schema/pattern is invalid: #{inspect(schema)}")
         error(conn, "An internal error has occurred", 500, &Errors.unknown/1)

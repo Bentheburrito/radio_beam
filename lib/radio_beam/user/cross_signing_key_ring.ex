@@ -23,7 +23,7 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
 
   @doc "Put cross-signing keys for a user"
   @spec put(User.id(), put_opts()) ::
-          {:ok, t()}
+          {:ok, User.t()}
           | {:error, :not_found | :missing_master_key | :missing_or_invalid_master_key_signatures}
           | CrossSigningKey.parse_error()
   def put(user_id, opts) do
