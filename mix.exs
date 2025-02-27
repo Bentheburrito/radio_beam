@@ -55,15 +55,36 @@ defmodule RadioBeam.MixProject do
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.2"},
       # {:memento, "~> 0.3.2"},
-      {:memento, path: "../../memento"},
+      memento(),
       {:argon2_elixir, "~> 4.0"},
       {:dotenv_parser, "~> 1.2", only: [:dev, :test]},
-      {:polyjuice_util, path: "../../polyjuice_util"},
+      polyjuice_util(),
       {:vix, "~> 0.30.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
     ]
+  end
+
+  defp memento do
+    case System.get_env("MEMENTO_PATH", "use_fork") do
+      "use_fork" ->
+        {:memento, git: "https://github.com/Bentheburrito/memento.git", branch: "format-and-spec-corrections"}
+
+      path ->
+        {:memento, path: path}
+    end
+  end
+
+  defp polyjuice_util do
+    case System.get_env("POLYJUICE_PATH", "use_fork") do
+      "use_fork" ->
+        {:polyjuice_util,
+         git: "https://gitlab.com/Bentheburrito/polyjuice_util.git", branch: "auth-checks-for-rooms-v6-thru-v11"}
+
+      path ->
+        {:polyjuice_util, path: path}
+    end
   end
 
   # Aliases are shortcuts or tasks specific to the current project.
