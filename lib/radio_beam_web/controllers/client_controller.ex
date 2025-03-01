@@ -7,8 +7,8 @@ defmodule RadioBeamWeb.ClientController do
   require Logger
   alias RadioBeam.Transaction
   alias RadioBeam.Errors
-  alias RadioBeam.Device
   alias RadioBeam.User
+  alias RadioBeam.User.Device
 
   plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Client

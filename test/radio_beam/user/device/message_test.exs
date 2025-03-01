@@ -1,9 +1,9 @@
-defmodule RadioBeam.Device.MessageTest do
+defmodule RadioBeam.User.Device.MessageTest do
   use ExUnit.Case, async: true
-  doctest RadioBeam.Device.Message
+  doctest RadioBeam.User.Device.Message
 
-  alias RadioBeam.Device
-  alias RadioBeam.Device.Message
+  alias RadioBeam.User.Device
+  alias RadioBeam.User.Device.Message
 
   setup do
     user = Fixtures.user()

@@ -5,8 +5,8 @@ defmodule RadioBeamWeb.SyncController do
 
   require Logger
 
-  alias RadioBeam.Device
   alias RadioBeam.User
+  alias RadioBeam.User.Device
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline

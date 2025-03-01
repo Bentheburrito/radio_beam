@@ -2,7 +2,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
   use ExUnit.Case, async: true
   use Plug.Test
 
-  alias RadioBeam.Device
+  alias RadioBeam.User.Device
   alias RadioBeamWeb.Plugs.Authenticate
 
   describe "call/2" do

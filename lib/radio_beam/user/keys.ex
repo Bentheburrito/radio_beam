@@ -2,10 +2,10 @@ defmodule RadioBeam.User.Keys do
   @moduledoc """
   Query a User's Device and CrossSigningKeys
   """
-  alias RadioBeam.User.CrossSigningKeyRing
-  alias RadioBeam.Device
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
+  alias RadioBeam.User.CrossSigningKeyRing
+  alias RadioBeam.User.Device
   alias RadioBeam.Repo
 
   require Logger

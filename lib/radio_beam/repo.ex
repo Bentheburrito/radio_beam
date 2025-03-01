@@ -6,12 +6,12 @@ defmodule RadioBeam.Repo do
   require Logger
 
   alias RadioBeam.ContentRepo.Upload
-  alias RadioBeam.Device
   alias RadioBeam.Job
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.User
+  alias RadioBeam.User.Device
 
   @doc """
   Initializes Mnesia schema for the given list of nodes (defaults to `[node()]`.

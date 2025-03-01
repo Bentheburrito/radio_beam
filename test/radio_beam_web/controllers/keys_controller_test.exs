@@ -1,8 +1,8 @@
 defmodule RadioBeamWeb.KeysControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Device
   alias RadioBeam.User
+  alias RadioBeam.User.Device
 
   setup %{conn: conn} do
     user1 = Fixtures.user()

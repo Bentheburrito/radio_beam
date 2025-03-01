@@ -1,8 +1,8 @@
 defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Device
   alias RadioBeam.User
+  alias RadioBeam.User.Device
   alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.Room
 

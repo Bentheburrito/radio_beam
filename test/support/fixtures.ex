@@ -7,8 +7,8 @@ defmodule Fixtures do
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo
-  alias RadioBeam.Device
   alias RadioBeam.User
+  alias RadioBeam.User.Device
   alias Vix.Vips.Operation
 
   def strong_password, do: "Asdf123$"

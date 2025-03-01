@@ -1,10 +1,10 @@
-defmodule RadioBeam.Device.Message do
+defmodule RadioBeam.User.Device.Message do
   @moduledoc """
   Functions for Send-to-Device messaging
   """
 
-  alias RadioBeam.Device
   alias RadioBeam.Repo
+  alias RadioBeam.User.Device
 
   @derive Jason.Encoder
   @enforce_keys [:content, :sender, :type]
@@ -14,8 +14,8 @@ defmodule RadioBeam.Device.Message do
   @doc """
   Create a new %Device.Message{}
 
-  iex> RadioBeam.Device.Message.new(%{"content" => "test"}, "@someone:somewhere", "com.msg.type")
-  %RadioBeam.Device.Message{content: %{"content" => "test"}, sender: "@someone:somewhere", type: "com.msg.type"}
+  iex> RadioBeam.User.Device.Message.new(%{"content" => "test"}, "@someone:somewhere", "com.msg.type")
+  %RadioBeam.User.Device.Message{content: %{"content" => "test"}, sender: "@someone:somewhere", type: "com.msg.type"}
   """
   def new(content, sender, type) do
     %__MODULE__{content: content, sender: sender, type: type}

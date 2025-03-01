@@ -4,8 +4,10 @@ defmodule RadioBeamWeb.LoginController do
   require Logger
 
   alias Polyjuice.Util.Schema
-  alias RadioBeam.{Device, Errors, User}
+  alias RadioBeam.Errors
+  alias RadioBeam.User
   alias RadioBeam.User.Auth
+  alias RadioBeam.User.Device
 
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: __MODULE__, fun: :schema
   plug :identify

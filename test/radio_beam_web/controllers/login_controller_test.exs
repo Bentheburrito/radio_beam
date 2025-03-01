@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.LoginControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Device
+  alias RadioBeam.User.Device
 
   setup_all do
     %{id: user_id} = Fixtures.user()

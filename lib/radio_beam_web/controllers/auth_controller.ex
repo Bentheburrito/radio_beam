@@ -1,8 +1,11 @@
 defmodule RadioBeamWeb.AuthController do
   use RadioBeamWeb, :controller
 
+  alias RadioBeam.Credentials
+  alias RadioBeam.Errors
+  alias RadioBeam.User
   alias RadioBeam.User.Auth
-  alias RadioBeam.{Credentials, Device, Errors, User}
+  alias RadioBeam.User.Device
 
   require Logger
 

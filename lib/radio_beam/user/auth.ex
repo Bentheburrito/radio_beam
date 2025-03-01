@@ -4,8 +4,8 @@ defmodule RadioBeam.User.Auth do
   """
 
   alias RadioBeam.Repo
-  alias RadioBeam.Device
   alias RadioBeam.User
+  alias RadioBeam.User.Device
 
   require Logger
 

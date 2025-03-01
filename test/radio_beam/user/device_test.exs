@@ -1,7 +1,7 @@
-defmodule RadioBeam.DeviceTest do
+defmodule RadioBeam.User.DeviceTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Device
+  alias RadioBeam.User.Device
 
   describe "get/2" do
     setup do

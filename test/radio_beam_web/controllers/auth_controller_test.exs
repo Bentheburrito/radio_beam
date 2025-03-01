@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.AuthControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Device
+  alias RadioBeam.User.Device
 
   describe "valid user password registration requests succeed" do
     test "with an access token and the supplied username and device ID", %{conn: conn} do

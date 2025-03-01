@@ -4,7 +4,7 @@ defmodule RadioBeam.User.AuthTest do
   import ExUnit.CaptureLog, only: [capture_log: 1]
 
   alias RadioBeam.User.Auth
-  alias RadioBeam.Device
+  alias RadioBeam.User.Device
 
   describe "login/3" do
     setup do

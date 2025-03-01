@@ -10,8 +10,8 @@ defmodule RadioBeamWeb.KeysController do
   alias RadioBeam.User.Keys
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKeyRing
-  alias RadioBeam.Device.OneTimeKeyRing
-  alias RadioBeam.Device
+  alias RadioBeam.User.Device.OneTimeKeyRing
+  alias RadioBeam.User.Device
   alias RadioBeamWeb.Schemas.Keys, as: KeysSchema
 
   require Logger

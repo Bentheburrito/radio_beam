@@ -1,9 +1,9 @@
 defmodule RadioBeam.User.KeysTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Device
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
+  alias RadioBeam.User.Device
   alias RadioBeam.User.Keys
 
   describe "query_all/2" do

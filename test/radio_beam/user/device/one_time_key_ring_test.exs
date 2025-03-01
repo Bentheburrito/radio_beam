@@ -1,7 +1,7 @@
-defmodule RadioBeam.Device.OneTimeKeyRingTest do
+defmodule RadioBeam.User.Device.OneTimeKeyRingTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Device.OneTimeKeyRing
+  alias RadioBeam.User.Device.OneTimeKeyRing
 
   setup do
     user = Fixtures.user()

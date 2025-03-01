@@ -1,4 +1,4 @@
-defmodule RadioBeam.Device do
+defmodule RadioBeam.User.Device do
   @moduledoc """
   A user's device. A device has an entry in this table for every pair of 
   access/refresh tokens.
@@ -17,10 +17,10 @@ defmodule RadioBeam.Device do
     :one_time_key_ring
   ]
 
-  alias RadioBeam.Device.OneTimeKeyRing
-  alias RadioBeam.Device.Table
   alias RadioBeam.Repo
   alias RadioBeam.User
+  alias RadioBeam.User.Device.OneTimeKeyRing
+  alias RadioBeam.User.Device.Table
 
   @typedoc """
   A user's device.

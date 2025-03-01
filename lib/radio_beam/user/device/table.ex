@@ -1,4 +1,4 @@
-defmodule RadioBeam.Device.Table do
+defmodule RadioBeam.User.Device.Table do
   @moduledoc """
   ❗This is a private module intended to only be used by Device and Device.Message
   """
@@ -18,9 +18,9 @@ defmodule RadioBeam.Device.Table do
     index: [:access_token, :refresh_token, :prev_refresh_token],
     type: :set
 
-  alias RadioBeam.Device
   alias RadioBeam.Repo
   alias RadioBeam.User
+  alias RadioBeam.User.Device
 
   def persist(%Device{} = device) do
     case User.get(device.user_id) do

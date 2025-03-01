@@ -1,4 +1,4 @@
-defmodule RadioBeam.Device.OneTimeKeyRing do
+defmodule RadioBeam.User.Device.OneTimeKeyRing do
   @moduledoc """
   This module defines functions for managing a Device's one-time and fallback
   keys.
