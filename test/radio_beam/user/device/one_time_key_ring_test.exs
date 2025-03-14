@@ -4,8 +4,8 @@ defmodule RadioBeam.User.Device.OneTimeKeyRingTest do
   alias RadioBeam.User.Device.OneTimeKeyRing
 
   setup do
-    user = Fixtures.user()
-    %{user: user, device: Fixtures.device(user.id)}
+    {user, device} = Fixtures.device(Fixtures.user())
+    %{user: user, device: device}
   end
 
   @otk_keys %{

@@ -7,8 +7,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
 
   describe "call/2" do
     setup do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{user: user, device: device}
     end
@@ -42,8 +41,10 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
       assert body =~ "M_UNKNOWN_TOKEN"
     end
 
-    test "returns an unknown token (401) error when an otherwise valid token has expired", %{device: device} do
-      {:ok, device} = Device.expire(device)
+    test "returns an unknown token (401) error when an otherwise valid token has expired", %{user: user, device: device} do
+      {:ok, user} = Device.expire(user, device.id)
+      Memento.transaction!(fn -> Memento.Query.write(user) end)
+      {:ok, device} = Device.get(user, device.id)
 
       conn =
         :post

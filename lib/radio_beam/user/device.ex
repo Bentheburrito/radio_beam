@@ -6,7 +6,6 @@ defmodule RadioBeam.User.Device do
 
   defstruct [
     :id,
-    :user_id,
     :display_name,
     :access_token,
     :refresh_token,
@@ -17,10 +16,8 @@ defmodule RadioBeam.User.Device do
     :one_time_key_ring
   ]
 
-  alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.Device.OneTimeKeyRing
-  alias RadioBeam.User.Device.Table
 
   @typedoc """
   A user's device.
@@ -37,9 +34,16 @@ defmodule RadioBeam.User.Device do
   @type t() :: %__MODULE__{}
   @type id() :: term()
 
-  @spec new(User.id(), Keyword.t()) :: t()
-  def new(user_id, opts) do
-    id = Keyword.get_lazy(opts, :id, &generate_token/0)
+  @typedoc """
+  A string representing an access or refresh token. The token is divided into
+  three parts: user ID, device ID, token, all delimited by a colon (`:`). For
+  example: `"@someone:somewhere:abcdEFG:XYZxyz"`
+  """
+  @opaque auth_token() :: String.t()
+
+  @spec new(User.t(), Keyword.t()) :: User.t()
+  def new(%User{} = user, opts) do
+    id = Keyword.get_lazy(opts, :id, &generate_id/0)
     refreshable? = Keyword.get(opts, :refreshable?, true)
 
     expires_in_ms =
@@ -47,119 +51,110 @@ defmodule RadioBeam.User.Device do
         Application.fetch_env!(:radio_beam, :access_token_lifetime)
       end)
 
-    %__MODULE__{
-      id: id,
-      user_id: user_id,
-      display_name: Keyword.get(opts, :display_name, default_device_name()),
-      access_token: generate_token(),
-      refresh_token: if(refreshable?, do: generate_token(), else: nil),
-      prev_refresh_token: nil,
-      expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
-      messages: %{},
-      identity_keys: nil,
-      one_time_key_ring: OneTimeKeyRing.new()
-    }
+    put_in(
+      user.device_map[id],
+      %__MODULE__{
+        id: id,
+        display_name: Keyword.get(opts, :display_name, default_device_name()),
+        access_token: generate_token(user.id, id),
+        refresh_token: if(refreshable?, do: generate_token(user.id, id), else: nil),
+        prev_refresh_token: nil,
+        expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
+        messages: %{},
+        identity_keys: nil,
+        one_time_key_ring: OneTimeKeyRing.new()
+      }
+    )
   end
 
-  defdelegate get(user_id, device_id, opts \\ []), to: Table
-  defdelegate get_all_by_user(user_id), to: Table
-  defdelegate get_by_access_token(access), to: Table
-  defdelegate get_by_refresh_token(refresh, lock \\ :read), to: Table
-
-  @doc """
-  Upkeep that needs to happen when an access token or refresh token is used.
-  Namely, marking the previous refresh token (if any) as `nil`.
-
-  > The old refresh token remains valid until the new access token or refresh 
-  > token is used, at which point the old refresh token is revoked. This 
-  > ensures that if a client fails to receive or persist the new tokens, it 
-  > will be able to repeat the refresh operation.
-  """
-  def upkeep(%__MODULE__{prev_refresh_token: nil} = device), do: device
-
-  def upkeep(%__MODULE__{} = device) do
-    Table.persist(%__MODULE__{device | prev_refresh_token: nil})
+  @spec get(User.t(), id()) :: {:ok, t()} | {:error, :not_found}
+  def get(%User{} = user, device_id) do
+    with :error <- Map.fetch(user.device_map, device_id), do: {:error, :not_found}
   end
+
+  @spec get_all(User.t()) :: [t()]
+  def get_all(%User{} = user), do: Map.values(user.device_map)
 
   @doc "Expires the given device's tokens, setting `expires_at` to `DateTime.utc_now()`"
-  def expire(%__MODULE__{} = device),
-    do: Repo.one_shot(fn -> Table.persist(%__MODULE__{device | expires_at: DateTime.utc_now()}) end)
+  @spec expire(User.t(), id()) :: {:ok, User.t()} | {:error, :not_found}
+  def expire(%User{} = user, device_id) do
+    with {:ok, %__MODULE__{} = _device} <- get(user, device_id) do
+      {:ok, put_in(user.device_map[device_id].expires_at, DateTime.utc_now())}
+    end
+  end
 
   @doc """
-  Generates a new access/refresh token pair for the given user ID's existing 
-  device, moving the current refresh token to to `prev_refresh_token`. 
-
-  The last argument describes what will happen if a device could not be found
-  using the given `field` and `value`. Valid options are:
-  - `:error`: simply returns `{:error, :not_found}`.
-  - `{:create, opts}` creates and persists a new device using `opts`. `field`
-  will be put in the `opts` and set to `value`.
+  Generates a new access/refresh token pair for the given user's existing 
+  device, moving the current refresh token to `prev_refresh_token`. 
   """
-  def refresh_by(field, value, user_id, on_not_found \\ :error) do
-    on_not_found = fn ->
-      case on_not_found do
-        :error ->
-          {:error, :not_found}
+  @spec refresh(User.t(), id) :: {:ok, User.t()} | {:error, :not_found}
+  def refresh(%User{} = user, device_id) do
+    with {:ok, %__MODULE__{} = device} <- get(user, device_id) do
+      prev_refresh_token =
+        if is_nil(device.prev_refresh_token), do: device.refresh_token, else: device.prev_refresh_token
 
-        {:create, opts} ->
-          device = new(user_id, Keyword.put(opts, field, value))
-          Table.persist(device)
-      end
+      {:ok,
+       put_in(user.device_map[device.id], %__MODULE__{
+         device
+         | access_token: generate_token(user.id, device_id),
+           refresh_token: generate_token(user.id, device_id),
+           prev_refresh_token: prev_refresh_token
+       })}
     end
-
-    Repo.one_shot(fn ->
-      case get_device_by(field, value, user_id) do
-        {:ok, device} -> try_refresh(device, user_id, on_not_found)
-        {:error, :not_found} -> on_not_found.()
-      end
-    end)
   end
 
   @doc "Put cross-signing keys for a device"
-  @spec put_keys(User.id(), String.t(), Keyword.t()) ::
-          {:ok, t()} | {:error, :not_found | :user_does_not_exist | :invalid_user_or_device_id}
-  def put_keys(user_id, device_id, opts) do
+  @spec put_keys(User.t(), id(), Keyword.t()) ::
+          {:ok, User.t()} | {:error, :not_found | :user_does_not_exist | :invalid_user_or_device_id}
+  def put_keys(%User{} = user, device_id, opts) do
     one_time_keys = Keyword.get(opts, :one_time_keys, %{})
     fallback_keys = Keyword.get(opts, :fallback_keys, %{})
 
-    Repo.one_shot(fn ->
-      with {:ok, %__MODULE__{} = device} = Table.get(user_id, device_id, lock: :write) do
-        otk_ring =
-          device.one_time_key_ring
-          |> OneTimeKeyRing.put_otks(one_time_keys)
-          |> OneTimeKeyRing.put_fallback_keys(fallback_keys)
+    with {:ok, %__MODULE__{} = device} = get(user, device_id) do
+      otk_ring =
+        device.one_time_key_ring
+        |> OneTimeKeyRing.put_otks(one_time_keys)
+        |> OneTimeKeyRing.put_fallback_keys(fallback_keys)
 
-        identity_keys = Keyword.get(opts, :identity_keys, device.identity_keys)
+      identity_keys = Keyword.get(opts, :identity_keys, device.identity_keys)
 
-        if valid_identity_keys?(identity_keys, user_id, device_id) do
-          Table.persist(%__MODULE__{device | one_time_key_ring: otk_ring, identity_keys: identity_keys})
-        else
-          {:error, :invalid_user_or_device_id}
-        end
+      if valid_identity_keys?(identity_keys, user.id, device_id) do
+        {:ok,
+         put_in(user.device_map[device_id], %__MODULE__{
+           device
+           | one_time_key_ring: otk_ring,
+             identity_keys: identity_keys
+         })}
+      else
+        {:error, :invalid_user_or_device_id}
       end
-    end)
+    end
   end
 
-  def put_identity_keys_signature(%__MODULE__{} = device, key_params_with_new_signature, verify_key) do
-    cond do
-      # this equality check seems to just be for a better error message, since
-      # if we just check the signature against `device.identity_keys`, it would
-      # also fail
-      Map.delete(device.identity_keys, "signatures") != Map.delete(key_params_with_new_signature, "signatures") ->
-        {:error, :different_keys}
+  @spec put_identity_keys_signature(User.t(), id(), map(), Polyjuice.Util.VerifyKey.t()) ::
+          {:ok, User.t()} | {:error, :different_keys | :invalid_signature}
+  def put_identity_keys_signature(%User{} = user, device_id, key_params_with_new_signature, verify_key) do
+    with {:ok, %__MODULE__{} = device} <- get(user, device_id) do
+      cond do
+        # this equality check seems to just be for a better error message, since
+        # if we just check the signature against `device.identity_keys`, it would
+        # also fail
+        Map.delete(device.identity_keys, "signatures") != Map.delete(key_params_with_new_signature, "signatures") ->
+          {:error, :different_keys}
 
-      Polyjuice.Util.JSON.signed?(key_params_with_new_signature, device.user_id, verify_key) ->
-        identity_keys =
-          RadioBeam.put_nested(
-            device.identity_keys,
-            ["signatures", device.user_id, device.id],
-            key_params_with_new_signature["signatures"][device.user_id][device.id]
-          )
+        Polyjuice.Util.JSON.signed?(key_params_with_new_signature, user.id, verify_key) ->
+          identity_keys =
+            RadioBeam.put_nested(
+              device.identity_keys,
+              ["signatures", user.id, device.id],
+              key_params_with_new_signature["signatures"][user.id][device.id]
+            )
 
-        {:ok, put_in(device.identity_keys, identity_keys)}
+          {:ok, put_in(user.device_map[device_id].identity_keys, identity_keys)}
 
-      :else ->
-        {:error, :invalid_signature}
+        :else ->
+          {:error, :invalid_signature}
+      end
     end
   end
 
@@ -170,55 +165,21 @@ defmodule RadioBeam.User.Device do
   end
 
   def claim_otks(user_device_algo_map) do
-    Repo.one_shot(fn ->
-      Map.new(user_device_algo_map, fn {user_id, device_algo_map} ->
-        device_key_map =
-          device_algo_map
-          |> Stream.map(fn {device_id, algo} ->
-            with {:ok, %__MODULE__{} = device} <- Table.get(user_id, device_id, lock: :write),
-                 {:ok, {key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algo),
-                 {:ok, _device} <- Table.persist(%__MODULE__{device | one_time_key_ring: otk_ring}) do
-              {key_id, key} = Map.pop!(key, "id")
-              {device_id, %{"#{algo}:#{key_id}" => key}}
-            else
-              _error -> :ignore
-            end
-          end)
-          |> Stream.reject(&(&1 == :ignore))
-          |> Map.new()
-
-        {user_id, device_key_map}
+    Map.new(user_device_algo_map, fn {%User{} = user, device_algo_map} ->
+      Enum.reduce(device_algo_map, {user, %{}}, fn {device_id, algo}, {%User{} = user, device_key_map} ->
+        with {:ok, %__MODULE__{} = device} <- get(user, device_id),
+             {:ok, {key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algo) do
+          user = put_in(user.device_map[device_id].one_time_key_ring, otk_ring)
+          {key_id, key} = Map.pop!(key, "id")
+          {user, Map.put(device_key_map, device_id, %{"#{algo}:#{key_id}" => key})}
+        else
+          _error -> {user, device_key_map}
+        end
       end)
     end)
   end
 
-  defp get_device_by(field, value, user_id) do
-    case field do
-      :id -> Table.get(user_id, value, lock: :write)
-      :refresh_token -> Table.get_by_refresh_token(value, :write)
-    end
-  end
-
-  defp try_refresh(device, user_id, on_not_found) do
-    case device do
-      %__MODULE__{user_id: ^user_id, prev_refresh_token: nil} = device ->
-        Table.persist(%__MODULE__{
-          device
-          | access_token: generate_token(),
-            refresh_token: generate_token(),
-            prev_refresh_token: device.refresh_token
-        })
-
-      # if prev_refresh_token is not nil, do nothing; the client probably 
-      # didn't receive the response for the initial refresh call
-      %__MODULE__{user_id: ^user_id} = device ->
-        {:ok, device}
-
-      _not_found ->
-        on_not_found.()
-    end
-  end
-
-  def generate_token, do: Ecto.UUID.generate()
+  def generate_id, do: Ecto.UUID.generate()
+  def generate_token(user_id, device_id), do: "#{user_id}:#{device_id}:#{Ecto.UUID.generate()}"
   def default_device_name, do: "New Device (added #{Date.to_string(Date.utc_today())})"
 end

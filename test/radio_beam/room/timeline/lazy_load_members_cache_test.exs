@@ -5,8 +5,7 @@ defmodule RadioBeam.Room.Timeline.LazyLoadMembersCacheTest do
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
 
   setup do
-    user = Fixtures.user()
-    device = Fixtures.device(user.id)
+    {user, device} = Fixtures.device(Fixtures.user())
     {:ok, room_id} = Room.create(user)
     %{user: user, device: device, room_id: room_id}
   end

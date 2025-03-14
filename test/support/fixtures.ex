@@ -19,10 +19,12 @@ defmodule Fixtures do
     user
   end
 
-  def device(user_id, display_name \\ Device.default_device_name()) do
-    {:ok, %{access_token: at}} = User.Auth.login(user_id, Device.generate_token(), display_name)
-    {:ok, device} = Device.get_by_access_token(at)
-    device
+  def device(user, display_name \\ Device.default_device_name()) do
+    %{access_token: at} =
+      User.Auth.upsert_device_session(user, Device.generate_id(), display_name)
+
+    {:ok, user, device} = User.Auth.get_user_and_device_by_token(at)
+    {user, device}
   end
 
   def file_info(content, type \\ "txt", filename \\ "TestUpload") do

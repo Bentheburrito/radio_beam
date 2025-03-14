@@ -7,11 +7,12 @@ defmodule RadioBeam.User do
     account_data: :map,
     pwd_hash: :string,
     registered_at: :utc_datetime,
-    cross_signing_key_ring: :map
+    cross_signing_key_ring: :map,
+    device_map: :map
   ]
   @attrs Keyword.keys(@types)
 
-  @type id :: String.t()
+  @type id() :: String.t()
 
   use Memento.Table,
     attributes: @attrs,
@@ -33,7 +34,8 @@ defmodule RadioBeam.User do
       pwd_hash: Credentials.hash_pwd(password),
       registered_at: DateTime.utc_now(),
       account_data: %{},
-      cross_signing_key_ring: CrossSigningKeyRing.new()
+      cross_signing_key_ring: CrossSigningKeyRing.new(),
+      device_map: %{}
     }
 
     {%__MODULE__{}, Map.new(@types)}

@@ -13,7 +13,7 @@ defmodule RadioBeamWeb.Plugs.Authenticate do
   def init(default), do: default
 
   def call(%{assigns: %{access_token: access_token}} = conn, _opts) do
-    case Auth.by(:access, access_token) do
+    case Auth.get_user_and_device_by_token(access_token) do
       {:ok, user, device} ->
         conn
         |> assign(:user, user)

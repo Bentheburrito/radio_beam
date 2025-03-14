@@ -44,7 +44,7 @@ defmodule RadioBeam.User.Keys do
     key_results
     |> put_csk(["master_keys", user.id], user.cross_signing_key_ring.master, user.id)
     |> put_csk(["self_signing_keys", user.id], user.cross_signing_key_ring.self, user.id)
-    |> put_device_keys(user.id, device_ids)
+    |> put_device_keys(user, device_ids)
   end
 
   defp put_csk(key_results, _path, nil, _user_id), do: key_results
@@ -53,18 +53,11 @@ defmodule RadioBeam.User.Keys do
     RadioBeam.put_nested(key_results, path, CrossSigningKey.to_map(key, user_id))
   end
 
-  defp put_device_keys(key_results, user_id, device_ids) do
-    case Device.get_all_by_user(user_id) do
-      {:ok, devices} ->
-        for %{id: device_id} = device <- devices,
-            Enum.empty?(device_ids) or device_id in device_ids,
-            reduce: key_results do
-          key_results -> RadioBeam.put_nested(key_results, ["device_keys", user_id, device_id], device.identity_keys)
-        end
+  defp put_device_keys(key_results, user, device_ids) do
+    devices = Device.get_all(user)
 
-      {:error, error} ->
-        Logger.error("Failed to get devices by user ID #{inspect(user_id)} while querying devices: #{inspect(error)}")
-        key_results
+    for %{id: device_id} = device <- devices, Enum.empty?(device_ids) or device_id in device_ids, reduce: key_results do
+      key_results -> RadioBeam.put_nested(key_results, ["device_keys", user.id, device_id], device.identity_keys)
     end
   end
 
@@ -92,7 +85,7 @@ defmodule RadioBeam.User.Keys do
   defp put_self_signatures(nil, %User{}), do: %{}
 
   defp put_self_signatures(self_signatures, %User{id: user_id} = user) do
-    {:ok, devices} = Device.get_all_by_user(user.id)
+    devices = Device.get_all(user)
 
     Enum.reduce(self_signatures, _failures = %{}, fn {key_or_device_id, key_params}, failures ->
       key_params["signatures"][user_id]
@@ -104,10 +97,6 @@ defmodule RadioBeam.User.Keys do
       |> Enum.reduce(failures, fn
         {:ok, %User{} = user}, failures ->
           Memento.Query.write(user)
-          failures
-
-        {:ok, %Device{} = device}, failures ->
-          Device.Table.persist(device)
           failures
 
         {:error, error}, failures ->
@@ -131,10 +120,8 @@ defmodule RadioBeam.User.Keys do
           {:ok, put_in(user.cross_signing_key_ring.master, new_master_csk)}
         end
 
-      %Device{} = device ->
-        with {:ok, new_identity_key} <- Device.put_identity_keys_signature(device, key_params, verify_key) do
-          {:ok, put_in(device.identity_keys, new_identity_key)}
-        end
+      %Device{id: device_id} ->
+        Device.put_identity_keys_signature(user, device_id, key_params, verify_key)
     end
   end
 
@@ -187,7 +174,7 @@ defmodule RadioBeam.User.Keys do
   defp get_csk_or_device_by_id(key_ring, key_or_device_id, devices) do
     case CrossSigningKeyRing.get_key_by_id(key_ring, key_or_device_id) do
       %CrossSigningKey{} = csk -> csk
-      nil -> Enum.find(devices, %{}, &(&1.id == key_or_device_id))
+      nil -> Enum.find(devices, &(&1.id == key_or_device_id))
     end
   end
 end

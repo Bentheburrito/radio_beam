@@ -4,6 +4,7 @@ defmodule RadioBeam.User.Device.Message do
   """
 
   alias RadioBeam.Repo
+  alias RadioBeam.User
   alias RadioBeam.User.Device
 
   @derive Jason.Encoder
@@ -34,7 +35,7 @@ defmodule RadioBeam.User.Device.Message do
       for {user_id, device_id, message} <- entries, into: Repo.Transaction.new() do
         {
           {:put_device_message, user_id, device_id},
-          &with({:ok, %Device{}} <- persist(user_id, device_id, message), do: {:ok, &1 + 1})
+          &with({:ok, %User{}} <- persist(user_id, device_id, message), do: {:ok, &1 + 1})
         }
       end
 
@@ -49,7 +50,8 @@ defmodule RadioBeam.User.Device.Message do
   """
   def take_unsent(user_id, device_id, since_token, mark_as_read \\ nil) do
     Repo.one_shot(fn ->
-      {:ok, %Device{messages: messages} = device} = Device.get(user_id, device_id, lock: :write)
+      {:ok, %User{} = user} = User.get(user_id, lock: :write)
+      {:ok, %Device{messages: messages}} = Device.get(user, device_id)
 
       # TOIMPL: only take first 100 msgs
       case Map.pop(messages, :unsent, :none) do
@@ -58,29 +60,20 @@ defmodule RadioBeam.User.Device.Message do
 
         {unsent, messages} ->
           messages = messages |> Map.put(since_token, unsent) |> mark_as_read(mark_as_read)
-          Device.Table.persist(%Device{device | messages: messages})
+          Memento.Query.write(put_in(user.device_map[device_id].messages, messages))
           {:ok, Enum.reverse(unsent)}
       end
     end)
   end
 
-  def expand_device_id(user_id, "*") do
-    case Device.get_all_by_user(user_id) do
-      {:ok, devices} -> Enum.map(devices, & &1.id)
-      _error -> []
-    end
-  end
-
-  def expand_device_id(_user_id, device_id), do: [device_id]
+  def expand_device_id(user, "*"), do: user |> Device.get_all() |> Enum.map(& &1.id)
+  def expand_device_id(_user, device_id), do: [device_id]
 
   defp persist(user_id, device_id, %__MODULE__{} = message) do
-    case Device.get(user_id, device_id, lock: :write) do
-      {:ok, %Device{} = device} ->
-        messages = Map.update(device.messages, :unsent, [message], &[message | &1])
-        Device.Table.persist(%Device{device | messages: messages})
-
-      {:error, :not_found} ->
-        {:error, :not_found}
+    with {:ok, user} <- User.get(user_id, lock: :write),
+         {:ok, %Device{} = device} <- Device.get(user, device_id) do
+      messages = Map.update(device.messages, :unsent, [message], &[message | &1])
+      {:ok, Memento.Query.write(put_in(user.device_map[device.id].messages, messages))}
     end
   end
 

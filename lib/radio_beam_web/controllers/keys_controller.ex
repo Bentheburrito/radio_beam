@@ -22,7 +22,7 @@ defmodule RadioBeamWeb.KeysController do
   @creds_dont_match_msg "The user/device ID specified in 'device_keys' do not match your session."
 
   def upload(conn, _params) do
-    user_id = conn.assigns.user.id
+    user = conn.assigns.user
     device_id = conn.assigns.device.id
 
     opts =
@@ -32,8 +32,8 @@ defmodule RadioBeamWeb.KeysController do
         {"fallback_keys", fallback_keys} -> {:fallback_keys, fallback_keys}
       end)
 
-    case Device.put_keys(user_id, device_id, opts) do
-      {:ok, %Device{one_time_key_ring: otk_ring}} ->
+    case Device.Keys.put(user, device_id, opts) do
+      {:ok, %User{device_map: %{^device_id => %{one_time_key_ring: otk_ring}}}} ->
         json(conn, %{"one_time_key_counts" => OneTimeKeyRing.one_time_key_counts(otk_ring)})
 
       {:error, :invalid_user_or_device_id} ->
@@ -127,11 +127,11 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def claim(conn, _params) do
-    with %{} = otks <- Device.claim_otks(conn.assigns.request["one_time_keys"]) do
+    with %{} = otks <- Device.Keys.claim_otks(conn.assigns.request["one_time_keys"]) do
       json(conn, %{"one_time_keys" => otks})
     else
       error ->
-        Logger.error("Expected a map as the result of Device.claim_otks, got: #{inspect(error)}")
+        Logger.error("Expected a map as the result of Device.Keys.claim_otks, got: #{inspect(error)}")
         json_error(conn, 500, :unknown)
     end
   end

@@ -7,9 +7,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
   alias RadioBeam.Room
 
   setup %{conn: conn} do
-    user1 = Fixtures.user()
+    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
     user2 = Fixtures.user()
-    device = Fixtures.device(user1.id, "da steam deck")
 
     %{
       conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"),

@@ -13,8 +13,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
 
   describe "get_children/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id, "da steam deck")
+      {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
 
       {:ok, room_id} = Room.create(user)
       {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "this is the parent event")
@@ -96,8 +95,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       room_id: room_id,
       parent_event_id: parent_event_id
     } do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
       conn = put_req_header(conn, "authorization", "Bearer #{device.access_token}")
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
 
@@ -118,8 +116,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       user: user,
       parent_event_id: parent_event_id
     } do
-      user2 = Fixtures.user()
-      device = Fixtures.device(user2.id)
+      {user2, device} = Fixtures.device(Fixtures.user())
 
       {:ok, _} = Room.invite(room_id, user.id, user2.id)
       {:ok, _} = Room.join(room_id, user2.id)

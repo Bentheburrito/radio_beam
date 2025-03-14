@@ -11,7 +11,6 @@ defmodule RadioBeam.Repo do
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.User
-  alias RadioBeam.User.Device
 
   @doc """
   Initializes Mnesia schema for the given list of nodes (defaults to `[node()]`.
@@ -35,7 +34,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, Device.Table, PDU.Table, Room, Room.Alias, Filter, Upload, Job]
+  @tables [User, PDU.Table, Room, Room.Alias, Filter, Upload, Job]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =

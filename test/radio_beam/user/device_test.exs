@@ -5,33 +5,32 @@ defmodule RadioBeam.User.DeviceTest do
 
   describe "get/2" do
     setup do
-      user = Fixtures.user()
-      %{user: user, device: Fixtures.device(user.id)}
+      {user, device} = Fixtures.device(Fixtures.user())
+      %{user: user, device: device}
     end
 
-    test "returns a user's device", %{user: user, device: device} do
-      user_id = user.id
-      assert {:ok, %Device{user_id: ^user_id}} = Device.get(user.id, device.id)
+    test "returns a user's device", %{user: user, device: %{id: device_id} = device} do
+      assert {:ok, %Device{id: ^device_id}} = Device.get(user, device.id)
     end
 
     test "returns an error if not device is found for a valid user", %{user: user} do
-      assert {:error, :not_found} = Device.get(user.id, "does not exist")
+      assert {:error, :not_found} = Device.get(user, "does not exist")
     end
   end
 
-  describe "get_all_by_user/2" do
+  describe "get_all/2" do
     setup do
       user = Fixtures.user()
-      Fixtures.device(user.id)
-      Fixtures.device(user.id)
+      {user, device} = Fixtures.device(user)
+      {user, device} = Fixtures.device(user)
 
       %{user: user, user_no_devices: Fixtures.user()}
     end
 
     test "gets all of a user's devices", %{user: user, user_no_devices: user2} do
-      assert {:ok, devices} = Device.get_all_by_user(user.id)
+      assert devices = Device.get_all(user)
       assert 2 = length(devices)
-      assert {:ok, []} = Device.get_all_by_user(user2.id)
+      assert [] = Device.get_all(user2)
     end
   end
 
@@ -57,12 +56,13 @@ defmodule RadioBeam.User.DeviceTest do
   }
   describe "put_keys/3" do
     setup do
-      user = Fixtures.user()
-      %{user: user, device: Fixtures.device(user.id)}
+      {user, device} = Fixtures.device(Fixtures.user())
+      %{user: user, device: device}
     end
 
-    test "adds the given one-time keys to a device", %{device: device} do
-      {:ok, device} = Device.put_keys(device.user_id, device.id, one_time_keys: @otk_keys)
+    test "adds the given one-time keys to a device", %{user: user, device: device} do
+      {:ok, user} = Device.Keys.put(user, device.id, one_time_keys: @otk_keys)
+      {:ok, device} = Device.get(user, device.id)
 
       assert %{"signed_curve25519" => 2} = Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)
     end
@@ -79,18 +79,21 @@ defmodule RadioBeam.User.DeviceTest do
         }
       }
     }
-    test "adds the given fallback key to a device", %{device: device} do
-      {:ok, device} = Device.put_keys(device.user_id, device.id, fallback_keys: @fallback_key)
+    test "adds the given fallback key to a device", %{user: user, device: device} do
+      {:ok, user} = Device.Keys.put(user, device.id, fallback_keys: @fallback_key)
+      {:ok, device} = Device.get(user, device.id)
 
       assert {:ok, {%{"key" => "fallback1"}, _}} =
                Device.OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
     end
 
-    test "adds the given device identity keys to a device", %{device: device} do
-      {device_key, _signingkey} = Fixtures.device_keys(device.id, device.user_id)
+    test "adds the given device identity keys to a device", %{user: user, device: device} do
+      {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
 
-      {:ok, device} =
-        Device.put_keys(device.user_id, device.id, identity_keys: device_key)
+      {:ok, user} =
+        Device.Keys.put(user, device.id, identity_keys: device_key)
+
+      {:ok, device} = Device.get(user, device.id)
 
       expected_ed_key = "ed25519:#{device.id}"
       expected_ed_value = device_key["keys"] |> Map.values() |> hd()
@@ -99,14 +102,14 @@ defmodule RadioBeam.User.DeviceTest do
     end
 
     test "errors when the user or device ID on the given device identity keys map don't match the device's ID or its owner's user ID",
-         %{device: device} do
+         %{user: user, device: device} do
       for device_id <- ["blah", device.id],
-          user_id <- ["blah", device.user_id],
-          device_id != device.id or user_id != device.user_id do
+          user_id <- ["blah", user.id],
+          device_id != device.id or user_id != user.id do
         {device_key, _signingkey} = Fixtures.device_keys(device_id, user_id)
 
         assert {:error, :invalid_user_or_device_id} =
-                 Device.put_keys(device.user_id, device.id, identity_keys: device_key)
+                 Device.Keys.put(user, device.id, identity_keys: device_key)
       end
     end
   end

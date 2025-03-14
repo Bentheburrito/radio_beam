@@ -11,7 +11,6 @@ defmodule RadioBeamWeb.AuthController do
 
   plug :ensure_registration_enabled when action == :register
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Auth] when action in [:register, :refresh]
-  plug :authenticate_by_refresh_token when action == :refresh
   plug RadioBeamWeb.Plugs.Authenticate when action == :whoami
 
   def register(conn, params) do
@@ -21,26 +20,30 @@ defmodule RadioBeamWeb.AuthController do
       if Map.get(params, "inhibit_login", false) do
         json(conn, %{user_id: user.id})
       else
-        device_id = Map.get_lazy(params, "device_id", &Device.generate_token/0)
+        device_id = Map.get_lazy(params, "device_id", &Device.generate_id/0)
         display_name = Map.get_lazy(params, "initial_device_display_name", &Device.default_device_name/0)
 
-        {:ok, auth_info} = Auth.login(user.id, device_id, display_name)
-
+        auth_info = Auth.upsert_device_session(user, device_id, display_name)
         json(conn, Map.merge(auth_info, %{device_id: device_id, user_id: user.id}))
       end
     end
   end
 
   def refresh(conn, _params) do
-    user = conn.assigns.user
-    refresh_token = conn.assigns.device.refresh_token
+    %{"refresh_token" => refresh_token} = conn.assigns.request
 
-    case Auth.refresh(user.id, refresh_token) do
+    case Auth.refresh(refresh_token) do
       {:ok, auth_info} ->
         json(conn, auth_info)
 
       {:error, :not_found} ->
         conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false))
+
+      {:error, :expired} ->
+        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", true)) |> halt()
+
+      {:error, :unknown_token} ->
+        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false)) |> halt()
 
       # TODO: should add config to expire refresh tokens after X time. 
       # Currently, refresh tokens never expire, so it just lives forever unless
@@ -119,30 +122,6 @@ defmodule RadioBeamWeb.AuthController do
         conn
         |> put_status(500)
         |> json(Errors.unknown())
-    end
-  end
-
-  defp authenticate_by_refresh_token(conn, _) do
-    %{"refresh_token" => refresh_token} = conn.assigns.request
-
-    case Auth.by(:refresh, refresh_token) do
-      {:ok, user, device} ->
-        conn
-        |> assign(:user, user)
-        |> assign(:device, device)
-
-      {:error, :expired} ->
-        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", true)) |> halt()
-
-      {:error, :unknown_token} ->
-        conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false)) |> halt()
-
-      {:error, error} ->
-        Logger.error(
-          "A fatal error occurred trying to fetch user/device records for refresh authentication: #{inspect(error)}"
-        )
-
-        conn |> put_status(500) |> json(Errors.unknown()) |> halt()
     end
   end
 end

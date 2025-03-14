@@ -5,8 +5,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
   alias RadioBeam.Room
 
   setup %{conn: conn} do
-    user1 = Fixtures.user()
-    device = Fixtures.device(user1.id, "da steam deck")
+    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
 
     %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}")}
   end
@@ -126,8 +125,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "joined/2" do
     test "returns a list of rooms the user is joined to", %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       conn = put_req_header(conn, "authorization", "Bearer #{device.access_token}")
 
@@ -152,8 +150,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "invite/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       {:ok, room_id} = Room.create(user, power_levels: %{"invite" => 5})
 
@@ -198,8 +195,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
 
     test "rejects if inviter is in the room but does not have permission to invite", %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       {:ok, room_id} = Room.create(user, power_levels: %{"invite" => 101})
 
@@ -235,8 +231,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "join/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -325,8 +320,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "leave/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -375,8 +369,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "send/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -453,8 +446,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "get_event/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -489,8 +481,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "get_joined_members/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -528,8 +519,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "get_members/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -599,8 +589,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "get_state/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -625,8 +614,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "put_state/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -679,8 +667,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "redact/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -730,8 +717,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "get_state_event/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end
@@ -770,8 +756,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "get_nearest_event/2" do
     setup %{conn: conn} do
-      user = Fixtures.user()
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(Fixtures.user())
 
       %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
     end

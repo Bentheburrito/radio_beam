@@ -10,8 +10,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
   alias RadioBeam.ContentRepo
 
   setup %{conn: conn} do
-    user1 = Fixtures.user()
-    device = Fixtures.device(user1.id, "da steam deck")
+    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
 
     %{
       conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"),

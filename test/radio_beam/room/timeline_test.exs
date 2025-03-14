@@ -10,8 +10,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
   setup do
     creator = Fixtures.user()
-    user = Fixtures.user()
-    device = Fixtures.device(user.id)
+    {user, device} = Fixtures.device(Fixtures.user())
 
     %{creator: creator, user: user, device: device}
   end
@@ -510,6 +509,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = send_msg.(room_id1, user3.id, "yo")
 
       filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
+      {user3, %{id: user3_device_id}} = Fixtures.device(user3)
 
       assert %{
                rooms: %{
@@ -517,7 +517,7 @@ defmodule RadioBeam.Room.TimelineTest do
                },
                next_batch: _since
              } =
-               Timeline.sync([room_id1], user3.id, Fixtures.device(user3.id).id, filter: filter)
+               Timeline.sync([room_id1], user3.id, user3_device_id, filter: filter)
 
       refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
       refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
@@ -527,13 +527,15 @@ defmodule RadioBeam.Room.TimelineTest do
 
       # the creator's membership event should always be present
 
+      {creator, %{id: creator_device_id}} = Fixtures.device(creator)
+
       assert %{
                rooms: %{
                  join: %{^room_id1 => %{state: %{events: state}, timeline: %{events: [_one, _two]}}}
                },
                next_batch: _since
              } =
-               Timeline.sync([room_id1], creator.id, Fixtures.device(creator.id).id, filter: filter)
+               Timeline.sync([room_id1], creator.id, creator_device_id, filter: filter)
 
       refute Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == user.id))
       assert Enum.find(state, &(&1.type == "m.room.member" and &1.state_key == creator.id))
@@ -564,7 +566,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = send_msg.(room_id1, user3.id, "yo")
 
       filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
-      device = Fixtures.device(user3.id)
+      {user, device} = Fixtures.device(user)
 
       assert %{
                rooms: %{
@@ -846,7 +848,7 @@ defmodule RadioBeam.Room.TimelineTest do
     } do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
-      device = Fixtures.device(creator.id)
+      {creator, device} = Fixtures.device(creator)
 
       %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} =
         Timeline.sync([room_id], creator.id, device.id, filter: filter)
@@ -901,7 +903,7 @@ defmodule RadioBeam.Room.TimelineTest do
       user: %{id: user_id}
     } do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
-      device = Fixtures.device(creator.id)
+      {creator, device} = Fixtures.device(creator)
 
       %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} =
         Timeline.sync([room_id], creator.id, device.id, filter: filter)
@@ -947,7 +949,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
     test "can successfully paginate forward from the beginning of a room", %{room_id: room_id, creator: creator} do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
-      device = Fixtures.device(creator.id)
+      {creator, device} = Fixtures.device(creator)
 
       {:ok, root} = EventGraph.root(room_id)
       from = PaginationToken.new(root, :forward)
@@ -998,7 +1000,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
     test "can successfully paginate backward from the end of a room", %{room_id: room_id, creator: creator} do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
-      device = Fixtures.device(creator.id)
+      {creator, device} = Fixtures.device(creator)
 
       {:ok, tip} = EventGraph.tip(room_id)
       from = PaginationToken.new(tip, :backward)
@@ -1049,7 +1051,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
     test "can successfully paginate in either direction froma prev_batch_token", %{room_id: room_id, creator: creator} do
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
-      device = Fixtures.device(creator.id)
+      {creator, device} = Fixtures.device(creator)
 
       %{rooms: %{join: %{^room_id => %{timeline: %{sync: prev_batch}}}}} =
         Timeline.sync([room_id], creator.id, device.id, filter: filter)
@@ -1128,8 +1130,10 @@ defmodule RadioBeam.Room.TimelineTest do
 
       filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
+      {user2, user2_device_id} = Fixtures.device(user2)
+
       assert {:ok, %{chunk: [_one, _two], state: state}} =
-               Timeline.get_messages(room_id, user2.id, Fixtures.device(user2.id).id, :tip, :limit, filter: filter)
+               Timeline.get_messages(room_id, user2.id, user2_device_id, :tip, :limit, filter: filter)
 
       for id <- [user.id, user2.id] do
         assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
@@ -1146,8 +1150,10 @@ defmodule RadioBeam.Room.TimelineTest do
 
       filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
+      {creator, creator_device_id} = Fixtures.device(creator)
+
       {:ok, %{chunk: chunk}} =
-        Timeline.get_messages(room_id, creator.id, Fixtures.device(creator.id).id, :tip, :limit, filter: filter)
+        Timeline.get_messages(room_id, creator.id, creator_device_id, :tip, :limit, filter: filter)
 
       assert [
                %{

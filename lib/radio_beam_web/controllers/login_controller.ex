@@ -20,19 +20,12 @@ defmodule RadioBeamWeb.LoginController do
   end
 
   def login(conn, params) do
-    device_id = Map.get_lazy(params, "device_id", &Device.generate_token/0)
+    device_id = Map.get_lazy(params, "device_id", &Device.generate_id/0)
     display_name = Map.get(params, "initial_device_display_name", Device.default_device_name())
     user = conn.assigns.user
 
-    case Auth.login(user.id, device_id, display_name) do
-      {:ok, auth_info} ->
-        json(conn, Map.merge(auth_info, %{device_id: device_id, user_id: user.id}))
-
-      {:error, _error} ->
-        conn
-        |> put_status(500)
-        |> json(Errors.unknown("Error creating device for user #{user.id}. Please try again."))
-    end
+    auth_info = Auth.upsert_device_session(user, device_id, display_name)
+    json(conn, Map.merge(auth_info, %{device_id: device_id, user_id: user.id}))
   end
 
   defp identify(%{params: %{"identifier" => %{"type" => "m.id.user", "user" => localpart_or_id}}} = conn, _) do

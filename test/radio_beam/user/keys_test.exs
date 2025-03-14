@@ -17,9 +17,9 @@ defmodule RadioBeam.User.KeysTest do
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["self_signing"]}} = query_result["self_signing_keys"]
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["user_signing"]}} = query_result["user_signing_keys"]
 
-      %{id: device_id} = device = Fixtures.device(user.id)
+      {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, _device} = Device.put_keys(user.id, device.id, identity_keys: device_key)
+      {:ok, _device} = Device.Keys.put(user, device.id, identity_keys: device_key)
       assert %{} = query_result = Keys.query_all(%{user.id => []}, user.id)
 
       assert %{
@@ -44,9 +44,9 @@ defmodule RadioBeam.User.KeysTest do
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["self_signing"]}} = query_result["self_signing_keys"]
       refute is_map_key(query_result, "user_signing_keys")
 
-      %{id: device_id} = device = Fixtures.device(user.id)
+      {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, _device} = Device.put_keys(user.id, device.id, identity_keys: device_key)
+      {:ok, user} = Device.Keys.put(user, device.id, identity_keys: device_key)
       assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
 
       assert %{
@@ -64,16 +64,16 @@ defmodule RadioBeam.User.KeysTest do
       querying = Fixtures.user()
 
       %{id: user_id} = user = Fixtures.user()
-      %{id: device_id1} = device1 = Fixtures.device(user.id)
-      %{id: device_id2} = device2 = Fixtures.device(user.id)
-      %{id: device_id3} = device3 = Fixtures.device(user.id)
+      {user, %{id: device_id1} = device1} = Fixtures.device(user)
+      {user, %{id: device_id2} = device2} = Fixtures.device(user)
+      {user, %{id: device_id3} = device3} = Fixtures.device(user)
 
       {device1_key, _signingkey} = Fixtures.device_keys(device1.id, user.id)
       {device2_key, _signingkey} = Fixtures.device_keys(device2.id, user.id)
       {device3_key, _signingkey} = Fixtures.device_keys(device3.id, user.id)
-      {:ok, _device} = Device.put_keys(user.id, device1.id, identity_keys: device1_key)
-      {:ok, _device} = Device.put_keys(user.id, device2.id, identity_keys: device2_key)
-      {:ok, _device} = Device.put_keys(user.id, device3.id, identity_keys: device3_key)
+      {:ok, user} = Device.Keys.put(user, device1.id, identity_keys: device1_key)
+      {:ok, user} = Device.Keys.put(user, device2.id, identity_keys: device2_key)
+      {:ok, user} = Device.Keys.put(user, device3.id, identity_keys: device3_key)
       assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
 
       assert %{^user_id => device_keys_map} = query_result["device_keys"]
@@ -93,9 +93,10 @@ defmodule RadioBeam.User.KeysTest do
       {csks, privkeys} = Fixtures.create_cross_signing_keys(user.id)
       {:ok, user} = User.CrossSigningKeyRing.put(user.id, csks)
 
-      device = Fixtures.device(user.id)
+      {user, device} = Fixtures.device(user)
       {device_key, device_signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, device} = Device.put_keys(user.id, device.id, identity_keys: device_key)
+      {:ok, user} = Device.Keys.put(user, device.id, identity_keys: device_key)
+      {:ok, device} = Device.get(user, device.id)
 
       %{user: user, device: device, user_priv_csks: privkeys, device_signingkey: device_signingkey}
     end
