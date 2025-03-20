@@ -11,7 +11,6 @@ defmodule RadioBeamWeb.KeysController do
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device.OneTimeKeyRing
-  alias RadioBeam.User.Device
   alias RadioBeamWeb.Schemas.Keys, as: KeysSchema
 
   require Logger
@@ -32,7 +31,7 @@ defmodule RadioBeamWeb.KeysController do
         {"fallback_keys", fallback_keys} -> {:fallback_keys, fallback_keys}
       end)
 
-    case Device.Keys.put(user, device_id, opts) do
+    case Keys.put_device_keys(user, device_id, opts) do
       {:ok, %User{device_map: %{^device_id => %{one_time_key_ring: otk_ring}}}} ->
         json(conn, %{"one_time_key_counts" => OneTimeKeyRing.one_time_key_counts(otk_ring)})
 
@@ -127,13 +126,8 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def claim(conn, _params) do
-    with %{} = otks <- Device.Keys.claim_otks(conn.assigns.request["one_time_keys"]) do
-      json(conn, %{"one_time_keys" => otks})
-    else
-      error ->
-        Logger.error("Expected a map as the result of Device.Keys.claim_otks, got: #{inspect(error)}")
-        json_error(conn, 500, :unknown)
-    end
+    %{} = otks = Keys.claim_otks(conn.assigns.request["one_time_keys"])
+    json(conn, %{"one_time_keys" => otks})
   end
 
   def query(conn, _params) do

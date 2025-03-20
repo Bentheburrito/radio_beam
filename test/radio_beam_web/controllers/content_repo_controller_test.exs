@@ -2,18 +2,20 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.ContentRepo.Thumbnail
-  alias Vix.Vips.Operation
-  alias Vix.Vips.Image
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo
+  alias RadioBeam.User.Auth
+  alias Vix.Vips.Operation
+  alias Vix.Vips.Image
 
   setup %{conn: conn} do
     {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
+    %{access_token: token} = Auth.session_info(user1, device)
 
     %{
-      conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"),
+      conn: put_req_header(conn, "authorization", "Bearer #{token}"),
       user: user1,
       device: device
     }

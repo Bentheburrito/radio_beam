@@ -1,6 +1,8 @@
 defmodule RadioBeamWeb.RelationsContnrollerTest do
-  alias RadioBeam.Room
   use RadioBeamWeb.ConnCase, async: true
+
+  alias RadioBeam.Room
+  alias RadioBeam.User.Auth
 
   defp relates_to(parent_id) do
     %{
@@ -14,12 +16,13 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
   describe "get_children/2" do
     setup %{conn: conn} do
       {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
+      %{access_token: token} = Auth.session_info(user, device)
 
       {:ok, room_id} = Room.create(user)
       {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "this is the parent event")
 
       %{
-        conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"),
+        conn: put_req_header(conn, "authorization", "Bearer #{token}"),
         room_id: room_id,
         user: user,
         parent_event_id: event_id
@@ -96,7 +99,9 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       parent_event_id: parent_event_id
     } do
       {user, device} = Fixtures.device(Fixtures.user())
-      conn = put_req_header(conn, "authorization", "Bearer #{device.access_token}")
+      %{access_token: token} = Auth.session_info(user, device)
+
+      conn = put_req_header(conn, "authorization", "Bearer #{token}")
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
 
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
@@ -117,6 +122,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       parent_event_id: parent_event_id
     } do
       {user2, device} = Fixtures.device(Fixtures.user())
+      %{access_token: token} = Auth.session_info(user2, device)
 
       {:ok, _} = Room.invite(room_id, user.id, user2.id)
       {:ok, _} = Room.join(room_id, user2.id)
@@ -131,7 +137,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
 
       conn =
         conn
-        |> put_req_header("authorization", "Bearer #{device.access_token}")
+        |> put_req_header("authorization", "Bearer #{token}")
         |> get(~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
 
       assert %{"chunk" => chunk} = json_response(conn, 200)

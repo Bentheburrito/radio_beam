@@ -2,15 +2,39 @@ defmodule RadioBeam.User.Keys do
   @moduledoc """
   Query a User's Device and CrossSigningKeys
   """
+  alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
-  alias RadioBeam.Repo
 
   require Logger
 
   @type put_signatures_error() :: :unknown_key | :disallowed_key_type | :no_master_csk | :user_not_found
+
+  def put_device_keys(%User{} = user, device_id, opts) do
+    with {:ok, %Device{} = device} <- User.get_device(user, device_id),
+         {:ok, %Device{} = device} <- Device.put_keys(device, user.id, opts) do
+      user = User.put_device(user, device)
+      Repo.one_shot(fn -> {:ok, Memento.Query.write(user)} end)
+    end
+  end
+
+  def claim_otks(user_device_algo_map) do
+    Repo.one_shot(fn ->
+      user_map = user_device_algo_map |> Map.keys() |> User.all() |> Map.new(&{&1.id, &1})
+
+      user_device_key_map =
+        user_device_algo_map
+        |> Map.new(fn {user_id, device_algo_map} -> {Map.fetch!(user_map, user_id), device_algo_map} end)
+        |> User.claim_device_otks()
+
+      Map.new(user_device_key_map, fn {%User{} = updated_user, device_key_map} ->
+        Memento.Query.write(updated_user)
+        {updated_user.id, device_key_map}
+      end)
+    end)
+  end
 
   @doc """
   Queries all local users' keys by the given map of %{user_id => [device_id]}.
@@ -37,24 +61,24 @@ defmodule RadioBeam.User.Keys do
   defp add_authz_keys(key_results, %{id: id} = user, %{id: id}, device_ids) do
     key_results
     |> add_authz_keys(user, device_ids)
-    |> put_csk(["user_signing_keys", user.id], user.cross_signing_key_ring.user, user.id)
+    |> add_csk(["user_signing_keys", user.id], user.cross_signing_key_ring.user, user.id)
   end
 
   defp add_authz_keys(key_results, user, device_ids) do
     key_results
-    |> put_csk(["master_keys", user.id], user.cross_signing_key_ring.master, user.id)
-    |> put_csk(["self_signing_keys", user.id], user.cross_signing_key_ring.self, user.id)
-    |> put_device_keys(user, device_ids)
+    |> add_csk(["master_keys", user.id], user.cross_signing_key_ring.master, user.id)
+    |> add_csk(["self_signing_keys", user.id], user.cross_signing_key_ring.self, user.id)
+    |> add_device_keys(user, device_ids)
   end
 
-  defp put_csk(key_results, _path, nil, _user_id), do: key_results
+  defp add_csk(key_results, _path, nil, _user_id), do: key_results
 
-  defp put_csk(key_results, path, %CrossSigningKey{} = key, user_id) do
+  defp add_csk(key_results, path, %CrossSigningKey{} = key, user_id) do
     RadioBeam.put_nested(key_results, path, CrossSigningKey.to_map(key, user_id))
   end
 
-  defp put_device_keys(key_results, user, device_ids) do
-    devices = Device.get_all(user)
+  defp add_device_keys(key_results, user, device_ids) do
+    devices = User.get_all_devices(user)
 
     for %{id: device_id} = device <- devices, Enum.empty?(device_ids) or device_id in device_ids, reduce: key_results do
       key_results -> RadioBeam.put_nested(key_results, ["device_keys", user.id, device_id], device.identity_keys)
@@ -85,7 +109,7 @@ defmodule RadioBeam.User.Keys do
   defp put_self_signatures(nil, %User{}), do: %{}
 
   defp put_self_signatures(self_signatures, %User{id: user_id} = user) do
-    devices = Device.get_all(user)
+    devices = User.get_all_devices(user)
 
     Enum.reduce(self_signatures, _failures = %{}, fn {key_or_device_id, key_params}, failures ->
       key_params["signatures"][user_id]
@@ -120,8 +144,10 @@ defmodule RadioBeam.User.Keys do
           {:ok, put_in(user.cross_signing_key_ring.master, new_master_csk)}
         end
 
-      %Device{id: device_id} ->
-        Device.put_identity_keys_signature(user, device_id, key_params, verify_key)
+      %Device{} = device ->
+        with {:ok, device} <- Device.put_identity_keys_signature(device, user.id, key_params, verify_key) do
+          {:ok, User.put_device(user, device)}
+        end
     end
   end
 

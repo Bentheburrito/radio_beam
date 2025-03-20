@@ -3,37 +3,6 @@ defmodule RadioBeam.User.DeviceTest do
 
   alias RadioBeam.User.Device
 
-  describe "get/2" do
-    setup do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{user: user, device: device}
-    end
-
-    test "returns a user's device", %{user: user, device: %{id: device_id} = device} do
-      assert {:ok, %Device{id: ^device_id}} = Device.get(user, device.id)
-    end
-
-    test "returns an error if not device is found for a valid user", %{user: user} do
-      assert {:error, :not_found} = Device.get(user, "does not exist")
-    end
-  end
-
-  describe "get_all/2" do
-    setup do
-      user = Fixtures.user()
-      {user, device} = Fixtures.device(user)
-      {user, device} = Fixtures.device(user)
-
-      %{user: user, user_no_devices: Fixtures.user()}
-    end
-
-    test "gets all of a user's devices", %{user: user, user_no_devices: user2} do
-      assert devices = Device.get_all(user)
-      assert 2 = length(devices)
-      assert [] = Device.get_all(user2)
-    end
-  end
-
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
       "key" => "key1",
@@ -61,8 +30,7 @@ defmodule RadioBeam.User.DeviceTest do
     end
 
     test "adds the given one-time keys to a device", %{user: user, device: device} do
-      {:ok, user} = Device.Keys.put(user, device.id, one_time_keys: @otk_keys)
-      {:ok, device} = Device.get(user, device.id)
+      {:ok, device} = Device.put_keys(device, user.id, one_time_keys: @otk_keys)
 
       assert %{"signed_curve25519" => 2} = Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)
     end
@@ -80,8 +48,7 @@ defmodule RadioBeam.User.DeviceTest do
       }
     }
     test "adds the given fallback key to a device", %{user: user, device: device} do
-      {:ok, user} = Device.Keys.put(user, device.id, fallback_keys: @fallback_key)
-      {:ok, device} = Device.get(user, device.id)
+      {:ok, device} = Device.put_keys(device, user.id, fallback_keys: @fallback_key)
 
       assert {:ok, {%{"key" => "fallback1"}, _}} =
                Device.OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
@@ -90,10 +57,7 @@ defmodule RadioBeam.User.DeviceTest do
     test "adds the given device identity keys to a device", %{user: user, device: device} do
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
 
-      {:ok, user} =
-        Device.Keys.put(user, device.id, identity_keys: device_key)
-
-      {:ok, device} = Device.get(user, device.id)
+      {:ok, device} = Device.put_keys(device, user.id, identity_keys: device_key)
 
       expected_ed_key = "ed25519:#{device.id}"
       expected_ed_value = device_key["keys"] |> Map.values() |> hd()
@@ -108,8 +72,8 @@ defmodule RadioBeam.User.DeviceTest do
           device_id != device.id or user_id != user.id do
         {device_key, _signingkey} = Fixtures.device_keys(device_id, user_id)
 
-        assert {:error, :invalid_user_or_device_id} =
-                 Device.Keys.put(user, device.id, identity_keys: device_key)
+        assert {:error, :invalid_identity_keys} =
+                 Device.put_keys(device, user.id, identity_keys: device_key)
       end
     end
   end

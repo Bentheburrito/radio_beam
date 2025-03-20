@@ -15,15 +15,15 @@ defmodule Fixtures do
 
   def user(user_id \\ "localhost" |> UserIdentifier.generate() |> to_string()) do
     {:ok, user} = User.new(user_id, strong_password())
-    :ok = User.put_new(user)
+    {:ok, user} = User.put_new(user)
     user
   end
 
-  def device(user, display_name \\ Device.default_device_name()) do
-    %{access_token: at} =
-      User.Auth.upsert_device_session(user, Device.generate_id(), display_name)
+  def device(user_or_user_id, display_name \\ Device.default_device_name(), pwd \\ strong_password())
+  def device(%User{id: user_id}, display_name, pwd), do: device(user_id, display_name, pwd)
 
-    {:ok, user, device} = User.Auth.get_user_and_device_by_token(at)
+  def device(user_id, display_name, pwd) do
+    {:ok, user, device} = User.Auth.password_login(user_id, pwd, Device.generate_id(), display_name)
     {user, device}
   end
 

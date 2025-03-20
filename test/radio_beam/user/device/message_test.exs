@@ -22,7 +22,7 @@ defmodule RadioBeam.User.Device.MessageTest do
 
       assert {:ok, 2} = Message.put_many(entries)
       {:ok, user} = User.get(user.id)
-      assert {:ok, %Device{messages: %{unsent: [%Message{type: "org.msg.type"}]}}} = Device.get(user, device1.id)
+      assert {:ok, %Device{messages: %{unsent: [%Message{type: "org.msg.type"}]}}} = User.get_device(user, device1.id)
     end
   end
 
@@ -40,7 +40,7 @@ defmodule RadioBeam.User.Device.MessageTest do
 
       assert {:ok, [^message1, ^message2]} = Message.take_unsent(user.id, device.id, "abc")
       {:ok, user} = User.get(user.id)
-      assert {:ok, %Device{messages: %{"abc" => [^message2, ^message1]}}} = Device.get(user, device.id)
+      assert {:ok, %Device{messages: %{"abc" => [^message2, ^message1]}}} = User.get_device(user, device.id)
     end
 
     test "marks messages as read (deletes them)", %{user: user, device: device} do
@@ -56,7 +56,7 @@ defmodule RadioBeam.User.Device.MessageTest do
 
       assert {:ok, [^message3]} = Message.take_unsent(user.id, device.id, "xyz", "abc")
       {:ok, user} = User.get(user.id)
-      assert {:ok, %Device{messages: messages}} = Device.get(user, device.id)
+      assert {:ok, %Device{messages: messages}} = User.get_device(user, device.id)
       refute is_map_key(messages, "abc")
       assert %{"xyz" => [^message3]} = messages
     end

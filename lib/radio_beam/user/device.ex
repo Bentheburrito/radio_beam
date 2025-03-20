@@ -41,8 +41,8 @@ defmodule RadioBeam.User.Device do
   """
   @opaque auth_token() :: String.t()
 
-  @spec new(User.t(), Keyword.t()) :: User.t()
-  def new(%User{} = user, opts) do
+  @spec new(Keyword.t()) :: t()
+  def new(opts) do
     id = Keyword.get_lazy(opts, :id, &generate_id/0)
     refreshable? = Keyword.get(opts, :refreshable?, true)
 
@@ -51,110 +51,79 @@ defmodule RadioBeam.User.Device do
         Application.fetch_env!(:radio_beam, :access_token_lifetime)
       end)
 
-    put_in(
-      user.device_map[id],
-      %__MODULE__{
-        id: id,
-        display_name: Keyword.get(opts, :display_name, default_device_name()),
-        access_token: generate_token(user.id, id),
-        refresh_token: if(refreshable?, do: generate_token(user.id, id), else: nil),
-        prev_refresh_token: nil,
-        expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
-        messages: %{},
-        identity_keys: nil,
-        one_time_key_ring: OneTimeKeyRing.new()
-      }
-    )
+    %__MODULE__{
+      id: id,
+      display_name: Keyword.get(opts, :display_name, default_device_name()),
+      access_token: generate_token(),
+      refresh_token: if(refreshable?, do: generate_token(), else: nil),
+      prev_refresh_token: nil,
+      expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
+      messages: %{},
+      identity_keys: nil,
+      one_time_key_ring: OneTimeKeyRing.new()
+    }
   end
-
-  @spec get(User.t(), id()) :: {:ok, t()} | {:error, :not_found}
-  def get(%User{} = user, device_id) do
-    with :error <- Map.fetch(user.device_map, device_id), do: {:error, :not_found}
-  end
-
-  @spec get_all(User.t()) :: [t()]
-  def get_all(%User{} = user), do: Map.values(user.device_map)
 
   @doc "Expires the given device's tokens, setting `expires_at` to `DateTime.utc_now()`"
-  @spec expire(User.t(), id()) :: {:ok, User.t()} | {:error, :not_found}
-  def expire(%User{} = user, device_id) do
-    with {:ok, %__MODULE__{} = _device} <- get(user, device_id) do
-      {:ok, put_in(user.device_map[device_id].expires_at, DateTime.utc_now())}
-    end
-  end
+  @spec expire(t()) :: t()
+  def expire(%__MODULE__{} = device), do: put_in(device.expires_at, DateTime.utc_now())
 
   @doc """
   Generates a new access/refresh token pair for the given user's existing 
-  device, moving the current refresh token to `prev_refresh_token`. 
+  device, moving the current refresh token (if any) to `prev_refresh_token`. 
   """
-  @spec refresh(User.t(), id) :: {:ok, User.t()} | {:error, :not_found}
-  def refresh(%User{} = user, device_id) do
-    with {:ok, %__MODULE__{} = device} <- get(user, device_id) do
-      prev_refresh_token =
-        if is_nil(device.prev_refresh_token), do: device.refresh_token, else: device.prev_refresh_token
-
-      {:ok,
-       put_in(user.device_map[device.id], %__MODULE__{
-         device
-         | access_token: generate_token(user.id, device_id),
-           refresh_token: generate_token(user.id, device_id),
-           prev_refresh_token: prev_refresh_token
-       })}
-    end
+  @spec refresh(t()) :: t()
+  def refresh(%__MODULE__{} = device) do
+    %__MODULE__{
+      device
+      | access_token: generate_token(),
+        refresh_token: generate_token(),
+        prev_refresh_token: device.refresh_token
+    }
   end
 
-  @doc "Put cross-signing keys for a device"
-  @spec put_keys(User.t(), id(), Keyword.t()) ::
-          {:ok, User.t()} | {:error, :not_found | :user_does_not_exist | :invalid_user_or_device_id}
-  def put_keys(%User{} = user, device_id, opts) do
-    one_time_keys = Keyword.get(opts, :one_time_keys, %{})
-    fallback_keys = Keyword.get(opts, :fallback_keys, %{})
+  @doc "Puts cross-signing keys for a device"
+  @spec put_keys(t(), User.id(), Keyword.t()) :: {:ok, t()} | {:error, :invalid_identity_keys}
+  def put_keys(%__MODULE__{} = device, user_id, opts) do
+    identity_keys = Keyword.get(opts, :identity_keys, device.identity_keys)
 
-    with {:ok, %__MODULE__{} = device} = get(user, device_id) do
+    if valid_identity_keys?(identity_keys, user_id, device.id) do
+      one_time_keys = Keyword.get(opts, :one_time_keys, %{})
+      fallback_keys = Keyword.get(opts, :fallback_keys, %{})
+
       otk_ring =
         device.one_time_key_ring
         |> OneTimeKeyRing.put_otks(one_time_keys)
         |> OneTimeKeyRing.put_fallback_keys(fallback_keys)
 
-      identity_keys = Keyword.get(opts, :identity_keys, device.identity_keys)
-
-      if valid_identity_keys?(identity_keys, user.id, device_id) do
-        {:ok,
-         put_in(user.device_map[device_id], %__MODULE__{
-           device
-           | one_time_key_ring: otk_ring,
-             identity_keys: identity_keys
-         })}
-      else
-        {:error, :invalid_user_or_device_id}
-      end
+      {:ok, %__MODULE__{device | one_time_key_ring: otk_ring, identity_keys: identity_keys}}
+    else
+      {:error, :invalid_identity_keys}
     end
   end
 
-  @spec put_identity_keys_signature(User.t(), id(), map(), Polyjuice.Util.VerifyKey.t()) ::
-          {:ok, User.t()} | {:error, :different_keys | :invalid_signature}
-  def put_identity_keys_signature(%User{} = user, device_id, key_params_with_new_signature, verify_key) do
-    with {:ok, %__MODULE__{} = device} <- get(user, device_id) do
-      cond do
-        # this equality check seems to just be for a better error message, since
-        # if we just check the signature against `device.identity_keys`, it would
-        # also fail
-        Map.delete(device.identity_keys, "signatures") != Map.delete(key_params_with_new_signature, "signatures") ->
-          {:error, :different_keys}
+  @spec put_identity_keys_signature(t(), User.id(), map(), Polyjuice.Util.VerifyKey.t()) ::
+          {:ok, t()} | {:error, :different_keys | :invalid_signature}
+  def put_identity_keys_signature(%__MODULE__{} = device, user_id, key_params_with_new_signature, verify_key) do
+    cond do
+      # this equality check seems to just be for a better error message, since
+      # if we just check the signature against `device.identity_keys`, it would
+      # also fail
+      Map.delete(device.identity_keys, "signatures") != Map.delete(key_params_with_new_signature, "signatures") ->
+        {:error, :different_keys}
 
-        Polyjuice.Util.JSON.signed?(key_params_with_new_signature, user.id, verify_key) ->
-          identity_keys =
-            RadioBeam.put_nested(
-              device.identity_keys,
-              ["signatures", user.id, device.id],
-              key_params_with_new_signature["signatures"][user.id][device.id]
-            )
+      Polyjuice.Util.JSON.signed?(key_params_with_new_signature, user_id, verify_key) ->
+        identity_keys =
+          RadioBeam.put_nested(
+            device.identity_keys,
+            ["signatures", user_id, device.id],
+            key_params_with_new_signature["signatures"][user_id][device.id]
+          )
 
-          {:ok, put_in(user.device_map[device_id].identity_keys, identity_keys)}
+        {:ok, put_in(device.identity_keys, identity_keys)}
 
-        :else ->
-          {:error, :invalid_signature}
-      end
+      :else ->
+        {:error, :invalid_signature}
     end
   end
 
@@ -164,22 +133,15 @@ defmodule RadioBeam.User.Device do
          Map.get(identity_keys, "user_id", user_id) == user_id)
   end
 
-  def claim_otks(user_device_algo_map) do
-    Map.new(user_device_algo_map, fn {%User{} = user, device_algo_map} ->
-      Enum.reduce(device_algo_map, {user, %{}}, fn {device_id, algo}, {%User{} = user, device_key_map} ->
-        with {:ok, %__MODULE__{} = device} <- get(user, device_id),
-             {:ok, {key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algo) do
-          user = put_in(user.device_map[device_id].one_time_key_ring, otk_ring)
-          {key_id, key} = Map.pop!(key, "id")
-          {user, Map.put(device_key_map, device_id, %{"#{algo}:#{key_id}" => key})}
-        else
-          _error -> {user, device_key_map}
-        end
-      end)
-    end)
+  def claim_otk(%__MODULE__{} = device, algorithm) do
+    with {:ok, {key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algorithm) do
+      device = put_in(device.one_time_key_ring, otk_ring)
+      {key_id, key} = Map.pop!(key, "id")
+      {:ok, {device, %{"#{algorithm}:#{key_id}" => key}}}
+    end
   end
 
   def generate_id, do: Ecto.UUID.generate()
-  def generate_token(user_id, device_id), do: "#{user_id}:#{device_id}:#{Ecto.UUID.generate()}"
+  def generate_token(), do: 32 |> :crypto.strong_rand_bytes() |> Base.encode64()
   def default_device_name, do: "New Device (added #{Date.to_string(Date.utc_today())})"
 end

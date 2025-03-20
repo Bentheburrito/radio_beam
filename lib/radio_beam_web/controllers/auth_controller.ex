@@ -9,23 +9,74 @@ defmodule RadioBeamWeb.AuthController do
 
   require Logger
 
-  plug :ensure_registration_enabled when action == :register
-  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Auth] when action in [:register, :refresh]
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Auth] when action in [:register, :login, :refresh]
   plug RadioBeamWeb.Plugs.Authenticate when action == :whoami
 
-  def register(conn, params) do
-    %{"username" => {_version, localpart}, "password" => pwd} = conn.assigns.request
+  def register(%{params: %{"kind" => "guest"}} = conn, _params),
+    do: conn |> put_status(403) |> json(Errors.unrecognized("This homeserver does not support guest users."))
 
-    with {:ok, %User{} = user} <- new_user(conn, localpart, pwd) do
-      if Map.get(params, "inhibit_login", false) do
-        json(conn, %{user_id: user.id})
-      else
-        device_id = Map.get_lazy(params, "device_id", &Device.generate_id/0)
-        display_name = Map.get_lazy(params, "initial_device_display_name", &Device.default_device_name/0)
+  def register(%{params: %{"kind" => kind}} = conn, _params) when kind != "user",
+    do: conn |> put_status(403) |> json(Errors.bad_json("Expected 'user' or 'guest' as the kind, got '#{kind}'"))
 
-        auth_info = Auth.upsert_device_session(user, device_id, display_name)
-        json(conn, Map.merge(auth_info, %{device_id: device_id, user_id: user.id}))
+  def register(conn, _params) do
+    %{"username" => {_version, localpart}, "password" => pwd, "inhibit_login" => inhibit_login?} = conn.assigns.request
+
+    case Auth.register(localpart, pwd) do
+      {:ok, %User{} = user} ->
+        if inhibit_login? do
+          json(conn, %{user_id: user.id})
+        else
+          %{"device_id" => device_id, "initial_device_display_name" => display_name} = conn.assigns.request
+
+          {:ok, user, device} = Auth.password_login(user.id, pwd, device_id, display_name)
+          json(conn, Auth.session_info(user, device))
+        end
+
+      {:error, :already_exists} ->
+        conn
+        |> put_status(400)
+        |> json(Errors.endpoint_error(:user_in_use, "That username is already taken."))
+
+      {:error, :registration_disabled} ->
+        conn
+        |> put_status(403)
+        |> json(Errors.forbidden("Registration is not enabled on this homeserver."))
+        |> halt()
+
+      {:error, %{errors: [id: {error_message, _}]}} ->
+        conn
+        |> put_status(400)
+        |> json(Errors.endpoint_error(:invalid_username, error_message))
+
+      {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
+        conn
+        |> put_status(400)
+        |> json(Errors.endpoint_error(:weak_password, Credentials.weak_password_message()))
+
+      {:error, changeset} ->
+        Logger.error("Error creating a user during registration: #{inspect(changeset.errors)}")
+
+        conn
+        |> put_status(500)
+        |> json(Errors.unknown())
+    end
+  end
+
+  def login(conn, _params) do
+    user_id =
+      case conn.assigns.request["identifier"]["user"] do
+        {_version, localpart} -> "@#{localpart}:#{RadioBeam.server_name()}"
+        "@" <> _ = user_id -> user_id
       end
+
+    %{"device_id" => device_id, "initial_device_display_name" => display_name, "password" => pwd} = conn.assigns.request
+
+    case Auth.password_login(user_id, pwd, device_id, display_name) do
+      {:ok, user, device} ->
+        json(conn, Auth.session_info(user, device))
+
+      {:error, :unknown_user_or_pwd} ->
+        conn |> put_status(403) |> json(Errors.forbidden("Unknown username or password"))
     end
   end
 
@@ -33,8 +84,12 @@ defmodule RadioBeamWeb.AuthController do
     %{"refresh_token" => refresh_token} = conn.assigns.request
 
     case Auth.refresh(refresh_token) do
-      {:ok, auth_info} ->
-        json(conn, auth_info)
+      {:ok, %Device{} = device} ->
+        json(conn, %{
+          access_token: device.access_token,
+          refresh_token: device.refresh_token,
+          expires_in_ms: DateTime.diff(device.expires_at, DateTime.utc_now(), :millisecond)
+        })
 
       {:error, :not_found} ->
         conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false))
@@ -63,65 +118,5 @@ defmodule RadioBeamWeb.AuthController do
       is_guest: false,
       user_id: conn.assigns.user.id
     })
-  end
-
-  defp ensure_registration_enabled(conn, _) do
-    if Application.get_env(:radio_beam, :registration_enabled, false) do
-      case Map.get(conn.params, "kind", "user") do
-        "user" ->
-          conn
-
-        "guest" ->
-          conn
-          |> put_status(403)
-          |> json(Errors.unrecognized("This homeserver does not support guest registration at this time."))
-          |> halt()
-
-        other ->
-          Logger.info("unknown `kind` provided by client during registration: #{inspect(other)}")
-
-          conn
-          |> put_status(403)
-          |> json(Errors.bad_json("Expected 'user' or 'guest' as the kind, got '#{other}'"))
-          |> halt()
-      end
-    else
-      conn
-      |> put_status(403)
-      |> json(Errors.forbidden("Registration is not enabled on this homeserver"))
-      |> halt()
-    end
-  end
-
-  defp new_user(conn, localpart, password) do
-    server_name = Application.fetch_env!(:radio_beam, :server_name)
-    user_id = "@#{localpart}:#{server_name}"
-
-    with {:ok, user} <- User.new(user_id, password),
-         :ok <- User.put_new(user) do
-      {:ok, user}
-    else
-      {:error, :already_exists} ->
-        conn
-        |> put_status(400)
-        |> json(Errors.endpoint_error(:user_in_use, "That username is already taken."))
-
-      {:error, %{errors: [id: {error_message, _}]}} ->
-        conn
-        |> put_status(400)
-        |> json(Errors.endpoint_error(:invalid_username, error_message))
-
-      {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
-        conn
-        |> put_status(400)
-        |> json(Errors.endpoint_error(:weak_password, Credentials.weak_password_message()))
-
-      {:error, changeset} ->
-        Logger.error("Error creating a user during registration: #{inspect(changeset.errors)}")
-
-        conn
-        |> put_status(500)
-        |> json(Errors.unknown())
-    end
   end
 end

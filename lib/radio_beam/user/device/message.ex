@@ -51,7 +51,7 @@ defmodule RadioBeam.User.Device.Message do
   def take_unsent(user_id, device_id, since_token, mark_as_read \\ nil) do
     Repo.one_shot(fn ->
       {:ok, %User{} = user} = User.get(user_id, lock: :write)
-      {:ok, %Device{messages: messages}} = Device.get(user, device_id)
+      {:ok, %Device{messages: messages}} = User.get_device(user, device_id)
 
       # TOIMPL: only take first 100 msgs
       case Map.pop(messages, :unsent, :none) do
@@ -66,12 +66,12 @@ defmodule RadioBeam.User.Device.Message do
     end)
   end
 
-  def expand_device_id(user, "*"), do: user |> Device.get_all() |> Enum.map(& &1.id)
+  def expand_device_id(user, "*"), do: user |> User.get_all_devices() |> Enum.map(& &1.id)
   def expand_device_id(_user, device_id), do: [device_id]
 
   defp persist(user_id, device_id, %__MODULE__{} = message) do
     with {:ok, user} <- User.get(user_id, lock: :write),
-         {:ok, %Device{} = device} <- Device.get(user, device_id) do
+         {:ok, %Device{} = device} <- User.get_device(user, device_id) do
       messages = Map.update(device.messages, :unsent, [message], &[message | &1])
       {:ok, Memento.Query.write(put_in(user.device_map[device.id].messages, messages))}
     end

@@ -23,6 +23,7 @@ defmodule RadioBeam.User do
   alias RadioBeam.Credentials
   alias RadioBeam.Repo
   alias RadioBeam.User.CrossSigningKeyRing
+  alias RadioBeam.User.Device
 
   require Logger
 
@@ -74,16 +75,12 @@ defmodule RadioBeam.User do
   @doc """
   Persists a User to the DB, unless a record with the same ID already exists.
   """
-  @spec put_new(t()) :: :ok | {:error, :already_exists | any()}
+  @spec put_new(t()) :: {:ok, t()} | {:error, :already_exists | any()}
   def put_new(%__MODULE__{} = user) do
     Repo.one_shot(fn ->
       case get(user.id, lock: :write) do
-        {:ok, %__MODULE__{}} ->
-          {:error, :already_exists}
-
-        {:error, :not_found} ->
-          Memento.Query.write(user)
-          :ok
+        {:ok, %__MODULE__{}} -> {:error, :already_exists}
+        {:error, :not_found} -> {:ok, Memento.Query.write(user)}
       end
     end)
   end
@@ -148,6 +145,40 @@ defmodule RadioBeam.User do
       else
         [pwd_hash: "password is too weak"]
       end
+    end)
+  end
+
+  ### DEVICE ###
+
+  @doc "Puts a device for the given User, overriding any existing entry."
+  @spec put_device(t(), Device.t()) :: t()
+  def put_device(%__MODULE__{} = user, %Device{} = device), do: put_in(user.device_map[device.id], device)
+
+  @doc "Gets a User's device"
+  @spec get_device(t(), Device.id()) :: {:ok, Device.t()} | {:error, :not_found}
+  def get_device(%__MODULE__{} = user, device_id) do
+    with :error <- Map.fetch(user.device_map, device_id), do: {:error, :not_found}
+  end
+
+  @doc "Gets all of a User's devices"
+  @spec get_all_devices(t()) :: [Device.t()]
+  def get_all_devices(%__MODULE__{} = user), do: Map.values(user.device_map)
+
+  @doc """
+  Claims one-time keys from a set of user's devices. This function expects a
+  map like `%{%User{} => %{device_id => algorithm_name}}`.
+  """
+  @spec claim_device_otks(%{required(t()) => %{required(Device.id()) => algorithm :: String.t()}}) :: map()
+  def claim_device_otks(user_device_algo_map) do
+    Map.new(user_device_algo_map, fn {%__MODULE__{} = user, device_algo_map} ->
+      Enum.reduce(device_algo_map, {user, %{}}, fn {device_id, algo}, {%__MODULE__{} = user, device_key_map} ->
+        with {:ok, %Device{} = device} <- get_device(user, device_id),
+             {:ok, {%Device{} = device, one_time_key}} <- Device.claim_otk(device, algo) do
+          {put_device(user, device), Map.put(device_key_map, device.id, one_time_key)}
+        else
+          _error -> {user, device_key_map}
+        end
+      end)
     end)
   end
 end

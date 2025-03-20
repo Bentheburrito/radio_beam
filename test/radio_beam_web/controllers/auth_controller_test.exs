@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.AuthControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.User.Auth
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
@@ -20,7 +21,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
                json_response(conn, 200)
 
       {:ok, user} = User.get(user_id)
-      assert {:ok, %Device{display_name: ^device_display_name}} = Device.get(user, device_id)
+      assert {:ok, %Device{display_name: ^device_display_name}} = User.get_device(user, device_id)
       assert ^user_id = "@#{username}:localhost"
     end
 
@@ -101,34 +102,172 @@ defmodule RadioBeamWeb.AuthControllerTest do
     end
   end
 
+  describe "login/2 - valid user password login requests succeed" do
+    setup do
+      {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
+
+      %{user: user, password: Fixtures.strong_password(), access_token: device.access_token, device_id: device.id}
+    end
+
+    test "with a valid user_id/password pair", %{conn: conn, user: %{id: user_id}, password: password} do
+      conn = login_request(conn, user_id, password)
+
+      assert %{
+               "access_token" => _,
+               "refresh_token" => _,
+               "expires_in_ms" => _,
+               "device_id" => _,
+               "user_id" => ^user_id
+             } = json_response(conn, 200)
+    end
+
+    test "with a valid localpart/password pair", %{conn: conn, user: %{id: user_id}, password: password} do
+      ["@" <> localpart, _rest] = String.split(user_id, ":")
+
+      conn = login_request(conn, localpart, password)
+
+      assert %{
+               "access_token" => _,
+               "refresh_token" => _,
+               "expires_in_ms" => _,
+               "device_id" => _,
+               "user_id" => ^user_id
+             } = json_response(conn, 200)
+    end
+
+    test "with provided device parameters", %{conn: conn, user: %{id: user_id}, password: password} do
+      device_id = "coolgadget"
+
+      add_params = %{
+        "device_id" => device_id,
+        "display_name" => "iPhone 23X-9000"
+      }
+
+      conn = login_request(conn, user_id, password, add_params)
+
+      assert %{
+               "access_token" => _,
+               "refresh_token" => _,
+               "expires_in_ms" => _,
+               "device_id" => ^device_id,
+               "user_id" => ^user_id
+             } = json_response(conn, 200)
+    end
+
+    test "with provided device parameters for an existing device", %{
+      conn: conn,
+      user: %{id: user_id} = user,
+      password: password,
+      device_id: device_id
+    } do
+      conn =
+        login_request(conn, user_id, password, %{
+          "device_id" => device_id,
+          "initial_device_display_name" => "this should be ignored"
+        })
+
+      assert %{
+               "access_token" => _,
+               "refresh_token" => _,
+               "expires_in_ms" => _,
+               "device_id" => ^device_id,
+               "user_id" => ^user_id
+             } = json_response(conn, 200)
+
+      {:ok, user} = User.get(user.id)
+      {:ok, %Device{display_name: display_name}} = User.get_device(user, device_id)
+      assert display_name != "this should be ignored"
+    end
+  end
+
+  describe "login/2 - invalid user password login requests fail" do
+    setup do
+      {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
+
+      %{user: user, password: Fixtures.strong_password(), access_token: device.access_token, device_id: device.id}
+    end
+
+    test "with M_BAD_JSON when an unknown login type is provided", %{
+      conn: conn,
+      user: %{id: user_id},
+      password: password
+    } do
+      device_id = "dont insert me duh"
+      conn = login_request(conn, user_id, password, %{"type" => "m.wtf.are.you.high", "device_id" => device_id})
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => _} = json_response(conn, 400)
+      {:ok, user} = User.get(user_id)
+      assert {:error, :not_found} = User.get_device(user, device_id)
+    end
+
+    test "with M_FORBIDDEN when the username is incorrect", %{conn: conn, user: %{id: user_id}, password: password} do
+      device_id = "dont insert me duh"
+      conn = login_request(conn, "@prisonmike:localhost", password, %{"device_id" => device_id})
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
+      {:ok, user} = User.get(user_id)
+      assert {:error, :not_found} = User.get_device(user, device_id)
+    end
+
+    test "with M_FORBIDDEN when the password is incorrect", %{conn: conn, user: %{id: user_id}} do
+      device_id = "dont insert me duh"
+      conn = login_request(conn, user_id, "justguessinghere", %{"device_id" => device_id})
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
+      {:ok, user} = User.get(user_id)
+      assert {:error, :not_found} = User.get_device(user, device_id)
+    end
+
+    test "with M_BAD_JSON when an unknown identifier is provided", %{
+      conn: conn,
+      user: %{id: user_id},
+      password: password
+    } do
+      device_id = "dont insert me derp"
+
+      conn =
+        login_request(conn, user_id, password, %{
+          "identifier" => %{"type" => "m.wtf.are.you.drunk", "param" => "blah"},
+          "device_id" => device_id
+        })
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => "identifier.type needs to be one of m.id.user." <> _rest} =
+               json_response(conn, 400)
+
+      {:ok, user} = User.get(user_id)
+      assert {:error, :not_found} = User.get_device(user, device_id)
+    end
+  end
+
   describe "refresh/2" do
     setup do
       {user, device} = Fixtures.device(Fixtures.user())
       %{user: user, device: device}
     end
 
-    test "successfully refreshes a user's session/access token", %{conn: conn, device: device} do
-      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
+    test "successfully refreshes a user's session/access token", %{conn: conn, user: user, device: device} do
+      %{access_token: access_token, refresh_token: refresh_token} = Auth.session_info(user, device)
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
       assert %{"access_token" => at, "refresh_token" => rt, "expires_in_ms" => expires_in} = json_response(conn, 200)
-      assert at != device.access_token
-      assert rt != device.refresh_token
-      assert is_integer(expires_in)
+      assert at != access_token
+      assert rt != refresh_token
+      assert is_integer(expires_in) and expires_in > 0
     end
 
-    # TODO: unskip after auth is reworked
-    @tag :skip
     test "successfully repeats a refresh if the client did not apparently record the first attempt", %{
       conn: conn,
+      user: user,
       device: device
     } do
-      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
+      %{access_token: access_token, refresh_token: refresh_token} = Auth.session_info(user, device)
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
       assert %{"access_token" => at, "refresh_token" => rt} = json_response(conn, 200)
-      assert at != device.access_token
-      assert rt != device.refresh_token
+      assert at != access_token
+      assert rt != refresh_token
 
-      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
       assert %{"access_token" => ^at, "refresh_token" => ^rt} = json_response(conn, 200)
     end
@@ -139,14 +278,18 @@ defmodule RadioBeamWeb.AuthControllerTest do
       assert %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => false} = json_response(conn, 401)
     end
 
-    test "errors with M_UNKNOWN_TOKEN (401) if the refresh token has expired", %{conn: conn, user: user, device: device} do
-      {:ok, device} = Device.get(user, device.id)
-      {:ok, user} = Device.expire(user, device.id)
-      Memento.transaction!(fn -> Memento.Query.write(user) end)
+    test "successfully refreshes a user's session/access token if the access token has expired", %{
+      conn: conn,
+      user: user,
+      device: device
+    } do
+      device = Device.expire(device)
+      user = Memento.transaction!(fn -> user |> User.put_device(device) |> Memento.Query.write() end)
+      %{refresh_token: refresh_token} = Auth.session_info(user, device)
 
-      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => device.refresh_token})
+      conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
-      assert %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => true} = json_response(conn, 401)
+      assert %{"access_token" => _, "refresh_token" => _} = json_response(conn, 200)
     end
   end
 
@@ -159,9 +302,11 @@ defmodule RadioBeamWeb.AuthControllerTest do
     test "successfully gets a known users's info", %{
       conn: conn,
       device: %{id: device_id} = device,
-      user: %{id: user_id}
+      user: %{id: user_id} = user
     } do
-      conn = get(conn, ~p"/_matrix/client/v3/account/whoami?access_token=#{device.access_token}", %{})
+      %{access_token: token} = Auth.session_info(user, device)
+
+      conn = get(conn, ~p"/_matrix/client/v3/account/whoami?access_token=#{token}", %{})
 
       assert %{"device_id" => ^device_id, "user_id" => ^user_id} = json_response(conn, 200)
     end
@@ -190,5 +335,19 @@ defmodule RadioBeamWeb.AuthControllerTest do
       )
 
     post(conn, ~p"/_matrix/client/v3/register", req_body)
+  end
+
+  defp login_request(conn, user_id, password, add_params \\ %{}) do
+    req_body =
+      Map.merge(
+        %{
+          "identifier" => %{"type" => "m.id.user", "user" => user_id},
+          "type" => "m.login.password",
+          "password" => password
+        },
+        add_params
+      )
+
+    post(conn, ~p"/_matrix/client/v3/login", req_body)
   end
 end

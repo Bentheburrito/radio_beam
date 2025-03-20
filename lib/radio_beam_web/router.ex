@@ -9,7 +9,6 @@ defmodule RadioBeamWeb.Router do
     FilterController,
     HomeserverInfoController,
     KeysController,
-    LoginController,
     RelationsController,
     RoomController,
     SyncController
@@ -56,7 +55,7 @@ defmodule RadioBeamWeb.Router do
       scope "/v3" do
         get "/capabilities", HomeserverInfoController, :capabilities
         get "/login", HomeserverInfoController, :login_types
-        post "/login", LoginController, :login
+        post "/login", AuthController, :login
         post "/register", AuthController, :register
         post "/refresh", AuthController, :refresh
         ### TOIMPL:

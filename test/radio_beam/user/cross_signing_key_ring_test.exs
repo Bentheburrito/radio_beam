@@ -5,11 +5,10 @@ defmodule RadioBeam.User.CrossSigningKeyRingTest do
 
   describe "put/2" do
     setup do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{user: user, device: device}
+      %{user: Fixtures.user()}
     end
 
-    test "adds the given master_key to the device", %{user: user, device: device} do
+    test "adds the given master_key to the device", %{user: user} do
       {:ok, user} =
         CrossSigningKeyRing.put(user.id,
           master_key: %{
@@ -23,7 +22,7 @@ defmodule RadioBeam.User.CrossSigningKeyRingTest do
       assert "ed25519" = user.cross_signing_key_ring.master.algorithm
     end
 
-    test "errors if the user ID on the key doesn't match the device's owner", %{user: user, device: device} do
+    test "errors if the user ID on the key doesn't match the device's owner", %{user: user} do
       assert {:error, :user_ids_do_not_match} =
                CrossSigningKeyRing.put(user.id,
                  master_key: %{
@@ -35,7 +34,7 @@ defmodule RadioBeam.User.CrossSigningKeyRingTest do
     end
 
     test "adds all the given cross-signing keys to the device, as long as the user/self keys were signed by the master key",
-         %{user: user, device: device} do
+         %{user: user} do
       master_key_id = "base64masterpublickey"
       {master_pubkey, master_privkey} = :crypto.generate_key(:eddsa, :ed25519)
 
@@ -88,7 +87,7 @@ defmodule RadioBeam.User.CrossSigningKeyRingTest do
     end
 
     test "errors with :missing_master_key when trying to put a self-/user-signing key without previously supplying a master key",
-         %{user: user, device: device} do
+         %{user: user} do
       master_key_id = "base64masterpublickey"
       {_master_pubkey, master_privkey} = :crypto.generate_key(:eddsa, :ed25519)
 
@@ -131,7 +130,7 @@ defmodule RadioBeam.User.CrossSigningKeyRingTest do
     end
 
     test "errors with :missing_or_invalid_master_key_signatures when a signature is missing on the self/user keys",
-         %{user: user, device: device} do
+         %{user: user} do
       master_key_id = "base64masterpublickey"
       {master_pubkey, _master_privkey} = :crypto.generate_key(:eddsa, :ed25519)
 
@@ -174,8 +173,9 @@ defmodule RadioBeam.User.CrossSigningKeyRingTest do
         )
     end
 
-    test "errors with :missing_or_invalid_master_key_signatures when a bad signature is on the self/user keys",
-         %{user: user, device: device} do
+    test "errors with :missing_or_invalid_master_key_signatures when a bad signature is on the self/user keys", %{
+      user: user
+    } do
       master_key_id = "base64masterpublickey"
       {_master_pubkey, master_privkey} = :crypto.generate_key(:eddsa, :ed25519)
       {master_pubkey, _master_privkey} = :crypto.generate_key(:eddsa, :ed25519)

@@ -2,6 +2,8 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
   use ExUnit.Case, async: true
   use Plug.Test
 
+  alias RadioBeam.User
+  alias RadioBeam.User.Auth
   alias RadioBeam.User.Device
   alias RadioBeamWeb.Plugs.Authenticate
 
@@ -13,9 +15,11 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
     end
 
     test "returns the conn with a :user assign when given a valid access token", %{device: device, user: user} do
+      %{access_token: access_token} = Auth.session_info(user, device)
+
       conn =
         :post
-        |> conn("/_matrix/v3/some_endpoint?access_token=#{device.access_token}")
+        |> conn("/_matrix/v3/some_endpoint?access_token=#{access_token}")
         |> Authenticate.call([])
 
       assert %{user: ^user} = conn.assigns
@@ -42,17 +46,18 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
     end
 
     test "returns an unknown token (401) error when an otherwise valid token has expired", %{user: user, device: device} do
-      {:ok, user} = Device.expire(user, device.id)
+      user = User.put_device(user, Device.expire(device))
       Memento.transaction!(fn -> Memento.Query.write(user) end)
-      {:ok, device} = Device.get(user, device.id)
+      {:ok, device} = User.get_device(user, device.id)
+      %{access_token: access_token} = Auth.session_info(user, device)
 
       conn =
         :post
-        |> conn("/_matrix/v3/some_endpoint?access_token=#{device.access_token}")
+        |> conn("/_matrix/v3/some_endpoint?access_token=#{access_token}")
         |> Authenticate.call([])
 
       assert {401, _headers, body} = sent_resp(conn)
-      assert body =~ "M_UNKNOWN_TOKEN"
+      %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => true} = JSON.decode!(body)
     end
   end
 end

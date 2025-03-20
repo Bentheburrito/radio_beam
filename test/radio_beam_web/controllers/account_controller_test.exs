@@ -3,11 +3,13 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
   alias RadioBeam.Room
   alias RadioBeam.User
+  alias RadioBeam.User.Auth
 
   setup %{conn: conn} do
     {user, device} = Fixtures.device(Fixtures.user())
+    %{access_token: token} = Auth.session_info(user, device)
 
-    %{conn: put_req_header(conn, "authorization", "Bearer #{device.access_token}"), user: user}
+    %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
   end
 
   describe "put_config/2" do
