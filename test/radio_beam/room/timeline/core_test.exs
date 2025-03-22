@@ -1,12 +1,12 @@
 defmodule RadioBeam.Room.Timeline.CoreTest do
   use ExUnit.Case, async: true
   alias RadioBeam.Room.Timeline.Core
-  alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.User.EventFilter
   doctest Core
 
   describe "passes_filter?/2" do
     setup do
-      %{default_filter: Filter.parse(%{}).timeline}
+      %{default_filter: EventFilter.new(%{}).timeline}
     end
 
     test "correctly applies the `contains_url` filter", %{default_filter: f} do

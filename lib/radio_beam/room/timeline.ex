@@ -7,14 +7,14 @@ defmodule RadioBeam.Room.Timeline do
   require Logger
 
   alias Phoenix.PubSub
+  alias RadioBeam.PDU
+  alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room.EventGraph
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline.Core
-  alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias RadioBeam.PDU
-  alias RadioBeam.PubSub, as: PS
   alias RadioBeam.Room
+  alias RadioBeam.User.EventFilter
 
   @attrs ~w|events sync|a
   @enforce_keys @attrs
@@ -61,8 +61,8 @@ defmodule RadioBeam.Room.Timeline do
     filter =
       Keyword.get_lazy(opts, :filter, fn ->
         case Keyword.get(opts, :limit, :none) do
-          :none -> Filter.parse(%{})
-          limit -> Filter.parse(%{"room" => %{"timeline" => %{"limit" => limit}}})
+          :none -> EventFilter.new(%{})
+          limit -> EventFilter.new(%{"room" => %{"timeline" => %{"limit" => limit}}})
         end
       end)
 
@@ -133,13 +133,9 @@ defmodule RadioBeam.Room.Timeline do
     Map.put(response, :state, members)
   end
 
-  def max_events(type) when type in [:timeline, :state] do
-    Application.get_env(:radio_beam, :max_events)[type]
-  end
-
   @init_rooms_acc {%{join: %{}, invite: %{}, knock: %{}, leave: %{}}, _config_map = %{}, _latest_pdus = []}
   def sync(room_ids, user_id, device_id, opts \\ []) do
-    filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
+    filter = Keyword.get_lazy(opts, :filter, fn -> EventFilter.new(%{}) end)
 
     room_ids =
       case filter.rooms do
@@ -198,7 +194,7 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   defp sync_one(room_id, user_id, last_sync_pdus, known_memberships, opts) do
-    filter = Keyword.get_lazy(opts, :filter, fn -> Filter.parse(%{}) end)
+    filter = Keyword.get_lazy(opts, :filter, fn -> EventFilter.new(%{}) end)
 
     membership =
       case Room.get_membership(room_id, user_id) do

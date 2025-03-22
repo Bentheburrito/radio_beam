@@ -1,37 +1,24 @@
-defmodule RadioBeam.Room.Timeline.Filter do
+defmodule RadioBeam.User.EventFilter do
   @moduledoc """
-  A client-defined filter describing what kinds of events to include in an
-  event timeline.
+  A client-defined filter describing what kinds of events to include in
+  responses to certain API calls, and how to format those events.
   """
-  @types [id: :string, user_id: :string, definition: :map]
+  @types [
+    fields: :map,
+    format: :map,
+    id: :string,
+    include_leave?: :boolean,
+    raw_definition: :map,
+    rooms: :map,
+    state: :map,
+    timeline: :map
+  ]
   @attrs Keyword.keys(@types)
+  @enforce_keys @attrs
+  defstruct @attrs
 
-  use Memento.Table,
-    attributes: @attrs,
-    type: :set
-
-  import Kernel, except: [apply: 2]
-
-  alias RadioBeam.Repo
-  alias RadioBeam.Room.Timeline
-
-  def put(user_id, definition) do
-    id = Ecto.UUID.generate()
-
-    Repo.one_shot(fn ->
-      Memento.Query.write(%__MODULE__{id: id, user_id: user_id, definition: definition})
-      {:ok, id}
-    end)
-  end
-
-  def get(filter_id) do
-    Repo.one_shot(fn ->
-      case Memento.Query.read(__MODULE__, filter_id) do
-        nil -> {:error, :not_found}
-        filter -> {:ok, filter}
-      end
-    end)
-  end
+  @type t() :: %__MODULE__{}
+  @type id() :: Ecto.UUID.t()
 
   @doc """
   Strips the given event of any fields not in `event_fields`. Supports 
@@ -39,7 +26,7 @@ defmodule RadioBeam.Room.Timeline.Filter do
   event unmodified.
     
     iex> event = %{"state_key" => "@test:localhost", "content" => %{"my_key" => 123, "other_key" => 321}}
-    iex> RadioBeam.Room.Timeline.Filter.take_fields(event, ~w|state_key content.my_key|)
+    iex> RadioBeam.User.EventFilter.take_fields(event, ~w|state_key content.my_key|)
     %{"state_key" => "@test:localhost", "content" => %{"my_key" => 123}}
   """
   def take_fields(%{} = event, nil), do: event
@@ -53,38 +40,34 @@ defmodule RadioBeam.Room.Timeline.Filter do
   end
 
   @doc """
-  Parses a raw filter definition into a nicer-to-use map (atom keys, all keys
-  are guaranteed to be present with at least default values, the weird "rooms"
-  and "not_rooms" and similar fields are parsed into {:allowlist, allowlist} 
-  and {:denylist, denylist} tuples.
+  Creates a new event filter, parsing the given filter definition as defined in
+  the C-S spec. 
 
-  TOIMPL include_redundant_members, lazy_load_members, unread_thread_notifications
+  TOIMPL unread_thread_notifications
   """
-  def parse(%__MODULE__{definition: definition}), do: parse(definition)
-
-  def parse(definition) when is_map(definition) do
+  def new(%{} = definition) when is_map(definition) do
     room_def = Map.get(definition, "room", %{})
-    timeline = room_def |> Map.get("timeline", %{}) |> parse_event_filter(:timeline)
-    state = room_def |> Map.get("state", %{}) |> parse_event_filter(:state)
+    timeline = room_def |> Map.get("timeline", %{}) |> parse_event_filter(RadioBeam.max_timeline_events())
+    state = room_def |> Map.get("state", %{}) |> parse_event_filter(RadioBeam.max_state_events())
     format = Map.get(definition, "event_format", "client")
     format = if format in ["client", "federation"], do: format, else: "client"
     fields = Map.get(definition, "event_fields")
 
     global_rooms = merge_filter_list(room_def, "rooms", "not_rooms")
 
-    %{
-      timeline: timeline,
-      state: state,
-      format: format,
+    %__MODULE__{
       fields: fields,
+      format: format,
+      id: Ecto.UUID.generate(),
+      include_leave?: Map.get(room_def, "include_leave", false) == true,
+      raw_definition: definition,
       rooms: global_rooms,
-      include_leave?: Map.get(room_def, "include_leave", false) == true
+      state: state,
+      timeline: timeline
     }
   end
 
-  defp parse_event_filter(filter, event_kind) do
-    max_events = Timeline.max_events(event_kind)
-
+  defp parse_event_filter(filter, max_events) do
     for allowlist_key <- ["senders", "types", "rooms"], into: %{} do
       denylist_key = "not_#{allowlist_key}"
 

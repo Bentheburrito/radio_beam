@@ -142,6 +142,6 @@ defmodule RadioBeam.User.Device do
   end
 
   def generate_id, do: Ecto.UUID.generate()
-  def generate_token(), do: 32 |> :crypto.strong_rand_bytes() |> Base.encode64()
+  def generate_token(), do: 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
   def default_device_name, do: "New Device (added #{Date.to_string(Date.utc_today())})"
 end

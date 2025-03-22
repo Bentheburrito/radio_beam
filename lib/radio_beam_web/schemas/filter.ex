@@ -4,7 +4,6 @@ defmodule RadioBeamWeb.Schemas.Filter do
   import RadioBeamWeb.Schemas, only: [user_id: 1, room_id: 1]
 
   alias Polyjuice.Util.Schema
-  alias RadioBeam.Room.Timeline
 
   def filter do
     %{
@@ -46,7 +45,7 @@ defmodule RadioBeamWeb.Schemas.Filter do
     }
   end
 
-  defp room_event_filter(max_events \\ Timeline.max_events(:timeline)) do
+  defp room_event_filter(max_events \\ RadioBeam.max_timeline_events()) do
     %{
       "contains_url" => optional(:boolean),
       "include_redundant_members" => [:boolean, default: false],
@@ -63,9 +62,9 @@ defmodule RadioBeamWeb.Schemas.Filter do
   end
 
   # idk why these 2 identical schemas have distinct names in the spec
-  defp state_filter, do: room_event_filter(Timeline.max_events(:state))
+  defp state_filter, do: room_event_filter(RadioBeam.max_state_events())
 
-  def limit(value, max_events \\ Timeline.max_events(:timeline))
+  def limit(value, max_events \\ RadioBeam.max_timeline_events())
 
   def limit(value, max_events) when is_binary(value) do
     case Integer.parse(value) do

@@ -7,10 +7,10 @@ defmodule RadioBeamWeb.SyncController do
 
   alias RadioBeam.User
   alias RadioBeam.User.Device
+  alias RadioBeam.User.EventFilter
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline
-  alias RadioBeam.Room.Timeline.Filter
 
   plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Sync
@@ -25,7 +25,8 @@ defmodule RadioBeamWeb.SyncController do
         {"since", since_token}, opts -> Keyword.put(opts, :since, since_token)
         {"timeout", timeout}, opts -> Keyword.put(opts, :timeout, timeout)
         {"full_state", full_state?}, opts -> Keyword.put(opts, :full_state?, full_state?)
-        {"filter", filter}, opts -> Keyword.put(opts, :filter, Filter.parse(filter))
+        {"filter", %{} = filter}, opts -> Keyword.put(opts, :filter, EventFilter.new(filter))
+        {"filter", filter_id}, opts -> Keyword.put(opts, :filter, get_user_event_filter(user, filter_id))
         _, opts -> opts
       end)
 
@@ -58,7 +59,8 @@ defmodule RadioBeamWeb.SyncController do
       request
       |> Map.take(["filter", "limit"])
       |> Enum.reduce([], fn
-        {"filter", filter}, opts -> Keyword.put(opts, :filter, Filter.parse(filter))
+        {"filter", %{} = filter}, opts -> Keyword.put(opts, :filter, EventFilter.new(filter))
+        {"filter", filter_id}, opts -> Keyword.put(opts, :filter, get_user_event_filter(user, filter_id))
         {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
       end)
 
@@ -90,6 +92,13 @@ defmodule RadioBeamWeb.SyncController do
       error ->
         Logger.error("error when fetching unsent device messages: #{inspect(error)}")
         response
+    end
+  end
+
+  defp get_user_event_filter(%User{} = user, filter_id) do
+    case User.get_event_filter(user, filter_id) do
+      {:ok, filter} -> filter
+      {:error, :not_found} -> EventFilter.new(%{})
     end
   end
 end

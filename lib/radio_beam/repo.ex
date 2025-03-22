@@ -9,7 +9,6 @@ defmodule RadioBeam.Repo do
   alias RadioBeam.Job
   alias RadioBeam.PDU
   alias RadioBeam.Room
-  alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.User
 
   @doc """
@@ -21,12 +20,8 @@ defmodule RadioBeam.Repo do
     # Create the schema
     Memento.stop()
 
-    case Memento.Schema.create(nodes) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.info("init_mnesia(#{inspect(nodes)}): Failed to create schema: #{inspect(reason)}")
+    with {:error, reason} <- Memento.Schema.create(nodes) do
+      Logger.info("init_mnesia(#{inspect(nodes)}): Failed to create schema: #{inspect(reason)}")
     end
 
     Memento.start()
@@ -34,7 +29,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, PDU.Table, Room, Room.Alias, Filter, Upload, Job]
+  @tables [User, PDU.Table, Room, Room.Alias, Upload, Job]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =
@@ -49,12 +44,8 @@ defmodule RadioBeam.Repo do
   end
 
   defp create_table(table_mod, opts) when is_atom(table_mod) and is_list(opts) do
-    case Memento.Table.create(table_mod, opts) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.info("create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}")
+    with {:error, reason} <- Memento.Table.create(table_mod, opts) do
+      Logger.info("create_table(#{table_mod}, #{inspect(opts)}): Failed to create table: #{inspect(reason)}")
     end
   end
 

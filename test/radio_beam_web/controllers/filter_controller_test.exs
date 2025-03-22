@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.FilterControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.User
   alias RadioBeam.User.Auth
 
   setup %{conn: conn} do
@@ -23,7 +23,8 @@ defmodule RadioBeamWeb.FilterControllerTest do
 
       assert %{"filter_id" => filter_id} = json_response(conn, 200)
 
-      assert {:ok, %{user_id: ^user_id, definition: definition}} = Filter.get(filter_id)
+      {:ok, user} = User.get(user_id)
+      assert {:ok, %{raw_definition: definition}} = User.get_event_filter(user, filter_id)
 
       assert %{
                "event_fields" => ["type", "content", "sender"],
@@ -48,7 +49,7 @@ defmodule RadioBeamWeb.FilterControllerTest do
   describe "get/1" do
     setup %{user: %{id: user_id}} do
       {:ok, filter_id} =
-        Filter.put(user_id, %{
+        User.Account.upload_filter(user_id, %{
           "event_fields" => ["type", "content", "sender"],
           "event_format" => "client",
           "room" => %{"timeline" => %{"not_senders" => ["@spam:localhost"]}}

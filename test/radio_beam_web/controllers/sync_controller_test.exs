@@ -4,7 +4,6 @@ defmodule RadioBeamWeb.SyncControllerTest do
   alias RadioBeam.User
   alias RadioBeam.User.Auth
   alias RadioBeam.User.Device
-  alias RadioBeam.Room.Timeline.Filter
   alias RadioBeam.Room
 
   setup %{conn: conn} do
@@ -122,7 +121,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
         Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "this place is so cool"})
 
       filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
-      {:ok, filter_id} = Filter.put(creator.id, filter)
+      {:ok, filter_id} = User.Account.upload_filter(creator.id, filter)
 
       query_params = %{
         filter: filter_id,

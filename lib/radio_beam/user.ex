@@ -8,7 +8,8 @@ defmodule RadioBeam.User do
     pwd_hash: :string,
     registered_at: :utc_datetime,
     cross_signing_key_ring: :map,
-    device_map: :map
+    device_map: :map,
+    filter_map: :map
   ]
   @attrs Keyword.keys(@types)
 
@@ -24,6 +25,7 @@ defmodule RadioBeam.User do
   alias RadioBeam.Repo
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
+  alias RadioBeam.User.EventFilter
 
   require Logger
 
@@ -36,7 +38,8 @@ defmodule RadioBeam.User do
       registered_at: DateTime.utc_now(),
       account_data: %{},
       cross_signing_key_ring: CrossSigningKeyRing.new(),
-      device_map: %{}
+      device_map: %{},
+      filter_map: %{}
     }
 
     {%__MODULE__{}, Map.new(@types)}
@@ -180,5 +183,19 @@ defmodule RadioBeam.User do
         end
       end)
     end)
+  end
+
+  ### FILTER ###
+
+  @doc "Saves an event filter for the given User, overriding any existing entry."
+  @spec put_event_filter(t(), EventFilter.t()) :: t()
+  def put_event_filter(%__MODULE__{} = user, %EventFilter{} = filter) do
+    put_in(user.filter_map[filter.id], filter)
+  end
+
+  @doc "Gets an event filter previously uploaded by the given User"
+  @spec get_event_filter(t(), EventFilter.id()) :: {:ok, EventFilter.t()} | {:error, :not_found}
+  def get_event_filter(%__MODULE__{} = user, filter_id) do
+    with :error <- Map.fetch(user.filter_map, filter_id), do: {:error, :not_found}
   end
 end

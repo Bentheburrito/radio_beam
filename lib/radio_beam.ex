@@ -26,6 +26,9 @@ defmodule RadioBeam do
     end
   end
 
+  def max_timeline_events, do: Application.get_env(:radio_beam, :max_events)[:timeline]
+  def max_state_events, do: Application.get_env(:radio_beam, :max_events)[:state]
+
   @doc """
   Similar to `put_in/3`, but will create keys in `path` if they do not exist.
   """

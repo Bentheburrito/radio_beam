@@ -3,14 +3,13 @@ defmodule RadioBeamWeb.Schemas.Relations do
 
   alias Polyjuice.Util.Schema
   alias RadioBeam.Room.EventGraph.PaginationToken
-  alias RadioBeam.Room.Timeline
   alias RadioBeamWeb.Schemas.Filter
 
   def get_children do
     %{
       "dir" => [Schema.enum(%{"f" => :forward, "b" => :backward}, &String.downcase/1), default: :backward],
       "from" => optional(&pagination_token/1),
-      "limit" => [&Filter.limit/1, default: Timeline.max_events(:timeline)],
+      "limit" => [&Filter.limit/1, default: RadioBeam.max_timeline_events()],
       "to" => optional(&pagination_token/1),
       "recurse" => [:boolean, default: false]
     }

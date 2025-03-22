@@ -6,7 +6,7 @@ defmodule RadioBeam.Room.Timeline.Core do
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline
-  alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.User.EventFilter
 
   def sync_timeline(timeline, state_delta_pdus, user_id, config) do
     tl_start_event = List.first(timeline.events)
@@ -33,7 +33,7 @@ defmodule RadioBeam.Room.Timeline.Core do
 
   def format(timeline, filter, room_version) do
     format = String.to_existing_atom(filter.format)
-    Enum.map(timeline, &(&1 |> PDU.to_event(room_version, :atoms, format) |> Filter.take_fields(filter.fields)))
+    Enum.map(timeline, &(&1 |> PDU.to_event(room_version, :atoms, format) |> EventFilter.take_fields(filter.fields)))
   end
 
   def all_sender_ids(%{timeline: %Timeline{} = tl}, opts), do: all_sender_ids(tl, opts)

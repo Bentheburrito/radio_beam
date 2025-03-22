@@ -6,7 +6,7 @@ defmodule RadioBeam.Room.TimelineTest do
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline
-  alias RadioBeam.Room.Timeline.Filter
+  alias RadioBeam.User.EventFilter
 
   setup do
     creator = Fixtures.user()
@@ -115,7 +115,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id1, user.id)
 
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 5}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 5}}})
 
       assert %{
                rooms: %{
@@ -254,7 +254,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.leave(room_id1, user.id, "byeeeeeeeeeeeeeee")
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "alright user is gone let's party!!!!!!!!")
 
-      filter = Filter.parse(%{"room" => %{"include_leave" => true}})
+      filter = EventFilter.new(%{"room" => %{"include_leave" => true}})
 
       assert %{
                rooms: %{
@@ -336,7 +336,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "First name update")
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "Second name update")
 
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 2}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
       assert %{
                rooms: %{
@@ -425,7 +425,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.set_name(room_id2, creator.id, "General Chat")
 
       event_filter = %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}
-      filter = Filter.parse(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
 
       assert %{
                rooms: %{
@@ -465,7 +465,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       {:ok, _event_id} = Room.set_name(room_id2, creator.id, "General Chat")
 
-      filter = Filter.parse(%{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}})
+      filter = EventFilter.new(%{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}})
 
       assert %{
                rooms: %{
@@ -508,7 +508,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = send_msg.(room_id1, user2.id, "hi")
       {:ok, _event_id} = send_msg.(room_id1, user3.id, "yo")
 
-      filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
+      filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
       {user3, %{id: user3_device_id}} = Fixtures.device(user3)
 
       assert %{
@@ -565,7 +565,7 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = send_msg.(room_id1, user2.id, "hi")
       {:ok, _event_id} = send_msg.(room_id1, user3.id, "yo")
 
-      filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
+      filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
       {user, device} = Fixtures.device(user)
 
       assert %{
@@ -605,7 +605,7 @@ defmodule RadioBeam.Room.TimelineTest do
       # adjust filter to request redundant memberships
 
       redundant_filter =
-        Filter.parse(%{
+        EventFilter.new(%{
           "room" => %{
             "state" => %{"lazy_load_members" => true, "include_redundant_members" => true},
             "timeline" => %{"limit" => 2}
@@ -761,7 +761,7 @@ defmodule RadioBeam.Room.TimelineTest do
       time_before_wait = :os.system_time(:millisecond)
 
       event_filter = %{"not_senders" => [creator.id]}
-      filter = Filter.parse(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
 
       sync_task =
         Task.async(fn -> Timeline.sync([room_id], user.id, device.id, filter: filter, timeout: 1000, since: since) end)
@@ -846,7 +846,7 @@ defmodule RadioBeam.Room.TimelineTest do
       creator: %{id: creator_id} = creator,
       user: %{id: user_id}
     } do
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
       {creator, device} = Fixtures.device(creator)
 
@@ -886,7 +886,7 @@ defmodule RadioBeam.Room.TimelineTest do
                %{type: "m.room.message", content: %{"body" => "wait yes I do"}}
              ] = chunk
 
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 30}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 30}}})
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2} = response} =
                Timeline.get_messages(room_id, creator.id, device.id, {next2, :backward}, :limit, filter: filter)
@@ -902,7 +902,7 @@ defmodule RadioBeam.Room.TimelineTest do
       creator: %{id: creator_id} = creator,
       user: %{id: user_id}
     } do
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       {creator, device} = Fixtures.device(creator)
 
       %{rooms: %{join: %{^room_id => %{timeline: timeline}}}} =
@@ -948,7 +948,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "can successfully paginate forward from the beginning of a room", %{room_id: room_id, creator: creator} do
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       {creator, device} = Fixtures.device(creator)
 
       {:ok, root} = EventGraph.root(room_id)
@@ -999,7 +999,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "can successfully paginate backward from the end of a room", %{room_id: room_id, creator: creator} do
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 10}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       {creator, device} = Fixtures.device(creator)
 
       {:ok, tip} = EventGraph.tip(room_id)
@@ -1050,7 +1050,7 @@ defmodule RadioBeam.Room.TimelineTest do
     end
 
     test "can successfully paginate in either direction froma prev_batch_token", %{room_id: room_id, creator: creator} do
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 3}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       {creator, device} = Fixtures.device(creator)
 
       %{rooms: %{join: %{^room_id => %{timeline: %{sync: prev_batch}}}}} =
@@ -1128,7 +1128,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       Room.send(room_id, user2.id, "m.room.message", %{"msgtype" => "m.text", "body" => "true"})
 
-      filter = Filter.parse(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
+      filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
       {user2, user2_device_id} = Fixtures.device(user2)
 
@@ -1148,7 +1148,7 @@ defmodule RadioBeam.Room.TimelineTest do
       rel = %{"m.relates_to" => %{"event_id" => parent_id, "rel_type" => "m.thread"}}
       {:ok, child_id} = Fixtures.send_text_msg(room_id, creator.id, "we're talkin'", rel)
 
-      filter = Filter.parse(%{"room" => %{"timeline" => %{"limit" => 2}}})
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
       {creator, creator_device_id} = Fixtures.device(creator)
 
