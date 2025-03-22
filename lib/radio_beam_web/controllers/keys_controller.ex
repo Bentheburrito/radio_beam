@@ -54,7 +54,9 @@ defmodule RadioBeamWeb.KeysController do
     device_id = conn.assigns.device.id
 
     opts =
-      Keyword.new(conn.assigns.request, fn
+      conn.assigns.request
+      |> Stream.filter(&(elem(&1, 0) in ~w|master_key self_signing_key user_signing_key|))
+      |> Keyword.new(fn
         {"master_key", master_key} -> {:master_key, master_key}
         {"self_signing_key", self_signing_key} -> {:self_signing_key, self_signing_key}
         {"user_signing_key", user_signing_key} -> {:user_signing_key, user_signing_key}
