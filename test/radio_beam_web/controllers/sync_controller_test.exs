@@ -41,7 +41,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       assert %{
                "account_data" => account_data,
-               "to_device" => [%{"hello" => "world"}],
+               "to_device" => %{"events" => [%{"content" => %{"hello" => "world"}}]},
                "rooms" => %{
                  "join" => join_map,
                  "invite" => %{^room_id1 => %{"invite_state" => %{"events" => invite_state}}},
@@ -66,6 +66,9 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       # ---
 
+      {creator, creator_device} = Fixtures.device(creator)
+      {creator, _} = Fixtures.create_and_put_device_keys(creator, creator_device)
+
       {:ok, _event_id} = Room.join(room_id1, user.id)
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "yo")
 
@@ -75,11 +78,16 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       {:ok, filter} = Jason.encode(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
+      creator_id = creator.id
+
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}&filter=#{filter}", %{})
 
       assert %{
                "account_data" => account_data,
-               "to_device" => [%{"hello" => "world"}, %{"hello2" => "world"}],
+               "to_device" => %{
+                 "events" => [%{"content" => %{"hello" => "world"}}, %{"content" => %{"hello2" => "world"}}]
+               },
+               "device_lists" => %{"changed" => [^creator_id], "left" => []},
                "rooms" => %{
                  "join" => %{
                    ^room_id1 => %{

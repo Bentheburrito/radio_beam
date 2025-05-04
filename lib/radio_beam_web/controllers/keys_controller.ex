@@ -20,6 +20,18 @@ defmodule RadioBeamWeb.KeysController do
 
   @creds_dont_match_msg "The user/device ID specified in 'device_keys' do not match your session."
 
+  def changes(conn, _params) do
+    %{user: user, request: request} = conn.assigns
+
+    changed_map =
+      user
+      |> Keys.all_changed_since(request["from"])
+      |> Map.update!(:changed, &MapSet.to_list/1)
+      |> Map.update!(:left, &MapSet.to_list/1)
+
+    json(conn, changed_map)
+  end
+
   def upload(conn, _params) do
     user = conn.assigns.user
     device_id = conn.assigns.device.id

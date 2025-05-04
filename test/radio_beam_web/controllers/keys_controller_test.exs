@@ -16,6 +16,25 @@ defmodule RadioBeamWeb.KeysControllerTest do
     }
   end
 
+  describe "changes/2" do
+    test "returns users who have made changes to their keys", %{conn: conn, user: user} do
+      {user, user_device} = Fixtures.device(user)
+      {someone, device} = Fixtures.device(Fixtures.user())
+      {:ok, room_id} = RadioBeam.Room.create(someone)
+      %{next_batch: since} = RadioBeam.Room.Timeline.sync([room_id], user.id, user_device.id)
+
+      {:ok, _} = RadioBeam.Room.invite(room_id, someone.id, user.id)
+      {:ok, _} = RadioBeam.Room.join(room_id, user.id)
+      {someone, _device} = Fixtures.create_and_put_device_keys(someone, device)
+
+      since_encoded = RadioBeam.Room.EventGraph.PaginationToken.encode(since)
+      conn = get(conn, ~p"/_matrix/client/v3/keys/changes?from=#{since_encoded}", %{})
+
+      someone_id = someone.id
+      assert %{"changed" => [^someone_id], "left" => []} = json_response(conn, 200)
+    end
+  end
+
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
       "key" => "key1",

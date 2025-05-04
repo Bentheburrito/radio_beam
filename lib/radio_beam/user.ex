@@ -8,6 +8,7 @@ defmodule RadioBeam.User do
     pwd_hash: :string,
     registered_at: :utc_datetime,
     cross_signing_key_ring: :map,
+    last_cross_signing_change_at: :integer,
     device_map: :map,
     filter_map: :map
   ]
@@ -38,6 +39,7 @@ defmodule RadioBeam.User do
       registered_at: DateTime.utc_now(),
       account_data: %{},
       cross_signing_key_ring: CrossSigningKeyRing.new(),
+      last_cross_signing_change_at: 0,
       device_map: %{},
       filter_map: %{}
     }
@@ -153,9 +155,30 @@ defmodule RadioBeam.User do
 
   ### DEVICE ###
 
+  @order_params if Mix.env() == :test, do: [:monotonic], else: []
   @doc "Puts a device for the given User, overriding any existing entry."
   @spec put_device(t(), Device.t()) :: t()
-  def put_device(%__MODULE__{} = user, %Device{} = device), do: put_in(user.device_map[device.id], device)
+  def put_device(%__MODULE__{} = user, %Device{identity_keys: identity_keys} = device) do
+    if match?(%{identity_keys: ^identity_keys}, user.device_map[device.id]) do
+      put_in(user.device_map[device.id], device)
+    else
+      struct!(user,
+        device_map: Map.put(user.device_map, device.id, device),
+        last_cross_signing_change_at: {:os.system_time(:millisecond), :erlang.unique_integer(@order_params)}
+      )
+    end
+  end
+
+  @doc "Deletes a User's device by ID. No-op if the device doesn't exist."
+  @spec delete_device(t(), Device.id()) :: t()
+  def delete_device(%__MODULE__{} = user, device_id) when is_map_key(user.device_map, device_id) do
+    struct!(user,
+      device_map: Map.delete(user.device_map, device_id),
+      last_cross_signing_change_at: {:os.system_time(:millisecond), :erlang.unique_integer(@order_params)}
+    )
+  end
+
+  def delete_device(%__MODULE__{} = user, _device_id), do: user
 
   @doc "Gets a User's device"
   @spec get_device(t(), Device.id()) :: {:ok, Device.t()} | {:error, :not_found}

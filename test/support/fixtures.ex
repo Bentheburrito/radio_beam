@@ -136,4 +136,11 @@ defmodule Fixtures do
 
     {signed_key_obj, signingkey}
   end
+
+  def create_and_put_device_keys(user, device) do
+    {key, _} = device_keys(device.id, user.id)
+    {:ok, device} = Device.put_keys(device, user.id, identity_keys: key)
+    user = Memento.transaction!(fn -> user |> User.put_device(device) |> Memento.Query.write() end)
+    {user, device}
+  end
 end

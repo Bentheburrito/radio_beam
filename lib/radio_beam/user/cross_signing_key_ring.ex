@@ -51,7 +51,13 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
                 user: user_signing_key
               }
 
-              {:ok, Memento.Query.write(put_in(user.cross_signing_key_ring, key_ring))}
+              user =
+                struct!(user,
+                  cross_signing_key_ring: key_ring,
+                  last_cross_signing_change_at: :os.system_time(:millisecond)
+                )
+
+              {:ok, Memento.Query.write(user)}
           end
         end
       end

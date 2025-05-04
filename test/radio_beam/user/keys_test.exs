@@ -5,6 +5,7 @@ defmodule RadioBeam.User.KeysTest do
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.Device
   alias RadioBeam.User.Keys
+  alias RadioBeam.Room
 
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
@@ -94,6 +95,249 @@ defmodule RadioBeam.User.KeysTest do
         assert {:error, :invalid_identity_keys} =
                  Keys.put_device_keys(user, device.id, identity_keys: device_key)
       end
+    end
+  end
+
+  describe "all_changed_since/2" do
+    defp since_now, do: {:os.system_time(:millisecond), :erlang.unique_integer([:monotonic])}
+
+    setup do
+      creator = Fixtures.user()
+      user1 = Fixtures.user()
+      user2 = Fixtures.user()
+
+      {user1, user1_device} = Fixtures.device(user1)
+      {user2, user2_device} = Fixtures.device(user2)
+
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _} = Room.invite(room_id, creator.id, user1.id)
+      {:ok, _} = Room.invite(room_id, creator.id, user2.id)
+
+      %{
+        room_id: room_id,
+        creator: creator,
+        user1: user1,
+        user2: user2,
+        user1_device: user1_device,
+        user2_device: user2_device
+      }
+    end
+
+    @empty MapSet.new()
+    test "returns an empty changed/left lists if the user is in no/empty rooms" do
+      user = Fixtures.user()
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user, since_now())
+      {:ok, _room_id} = Room.create(user)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user, since_now())
+    end
+
+    test "does not include user's own key updates in changed" do
+      before_update = since_now()
+
+      user = Fixtures.user()
+      {user, device} = Fixtures.device(user)
+      {:ok, _room_id} = Room.create(user)
+
+      {user, _device} = Fixtures.create_and_put_device_keys(user, device)
+
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user, before_update)
+    end
+
+    test "returns changed users who have added device identity keys since the given timestamp", %{
+      room_id: room_id,
+      creator: creator,
+      user1: %{id: user1_id} = user1,
+      user2: %{id: user2_id} = user2,
+      user1_device: user1_device,
+      user2_device: user2_device
+    } do
+      {:ok, _} = Room.join(room_id, user1.id)
+      {:ok, _} = Room.join(room_id, user2.id)
+
+      before_user1_change = since_now()
+
+      Fixtures.create_and_put_device_keys(user1, user1_device)
+      after_user1_change = since_now()
+
+      expected = MapSet.new([user1_id])
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_change)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_change)
+
+      Fixtures.create_and_put_device_keys(user2, user2_device)
+      after_user2_change = since_now()
+
+      expected = MapSet.new([user1_id, user2_id])
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_change)
+      expected = MapSet.new([user2_id])
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, after_user1_change)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user2_change)
+    end
+
+    test "returns changed users who have joined the room since the given timestamp", %{
+      room_id: room_id,
+      creator: creator,
+      user1: %{id: user1_id} = user1,
+      user2: %{id: user2_id} = user2,
+      user1_device: user1_device,
+      user2_device: user2_device
+    } do
+      Fixtures.create_and_put_device_keys(user1, user1_device)
+      Fixtures.create_and_put_device_keys(user2, user2_device)
+
+      before_user1_join = since_now()
+
+      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
+      Process.sleep(2)
+      {:ok, _} = Room.join(room_id, user1.id)
+
+      Process.sleep(2)
+      after_user1_join = since_now()
+
+      expected = MapSet.new([user1_id])
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_join)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_join)
+
+      Process.sleep(2)
+      {:ok, _} = Room.join(room_id, user2.id)
+
+      Process.sleep(2)
+      after_user2_join = since_now()
+
+      expected = MapSet.new([user1_id, user2_id])
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_join)
+      expected = MapSet.new([user2_id])
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, after_user1_join)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user2_join)
+    end
+
+    test "does not return users for which we do not share a room", %{
+      room_id: room_id,
+      user1: user1,
+      user2: user2,
+      user1_device: user1_device
+    } do
+      before_user1_change = since_now()
+
+      {:ok, _} = Room.join(room_id, user1.id)
+      # user2 not joining!
+      # {:ok, _} = Room.join(room_id, user2.id)
+
+      Fixtures.create_and_put_device_keys(user1, user1_device)
+
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2, before_user1_change)
+
+      {:ok, _} = Room.leave(room_id, user1.id)
+
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2, before_user1_change)
+    end
+
+    test "includes users in :left when they leave the last shared room", %{
+      room_id: room_id,
+      creator: creator,
+      user1: %{id: user1_id} = user1,
+      user2: %{id: user2_id} = user2,
+      user1_device: user1_device,
+      user2_device: user2_device
+    } do
+      Fixtures.create_and_put_device_keys(user1, user1_device)
+      Fixtures.create_and_put_device_keys(user2, user2_device)
+
+      {:ok, _} = Room.join(room_id, user1.id)
+      {:ok, _} = Room.join(room_id, user2.id)
+
+      before_user1_leave = since_now()
+
+      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
+      Process.sleep(2)
+
+      {:ok, _} = Room.leave(room_id, user1.id)
+
+      Process.sleep(2)
+      after_user1_leave = since_now()
+
+      expected = MapSet.new([user1_id])
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_user1_leave)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_leave)
+
+      Process.sleep(2)
+      {:ok, _} = Room.leave(room_id, user2.id)
+
+      Process.sleep(2)
+      after_user2_leave = since_now()
+
+      expected = MapSet.new([user1_id, user2_id])
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_user1_leave)
+      expected = MapSet.new([user2_id])
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, after_user1_leave)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user2_leave)
+    end
+
+    test "does not include a user in :left if they still share other rooms", %{
+      room_id: room_id,
+      creator: creator,
+      user1: %{id: user1_id} = user1,
+      user2: %{id: user2_id} = user2,
+      user1_device: user1_device,
+      user2_device: user2_device
+    } do
+      Fixtures.create_and_put_device_keys(user1, user1_device)
+      Fixtures.create_and_put_device_keys(user2, user2_device)
+
+      {:ok, _} = Room.join(room_id, user1.id)
+      {:ok, _} = Room.join(room_id, user2.id)
+
+      {:ok, room_id2} = Room.create(creator)
+      {:ok, _} = Room.invite(room_id2, creator.id, user1.id)
+      {:ok, _} = Room.join(room_id2, user1.id)
+
+      before_leave = since_now()
+
+      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
+      Process.sleep(2)
+
+      {:ok, _} = Room.leave(room_id, user1.id)
+      {:ok, _} = Room.leave(room_id, user2.id)
+
+      Process.sleep(2)
+      after_leave = since_now()
+
+      expected = MapSet.new([user2_id])
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_leave)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_leave)
+
+      before_leave2 = since_now()
+      Process.sleep(2)
+      {:ok, _} = Room.leave(room_id2, user1.id)
+
+      expected = MapSet.new([user1_id])
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_leave2)
+    end
+
+    test "does not include a user in :changed if joined a room but previously shared another room", %{
+      room_id: room_id,
+      creator: creator,
+      user1: user1,
+      user1_device: user1_device
+    } do
+      Fixtures.create_and_put_device_keys(user1, user1_device)
+
+      {:ok, room_id2} = Room.create(creator)
+      {:ok, _} = Room.invite(room_id2, creator.id, user1.id)
+      {:ok, _} = Room.join(room_id2, user1.id)
+
+      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
+      Process.sleep(2)
+
+      before_user1_join = since_now()
+
+      Process.sleep(2)
+      {:ok, _} = Room.join(room_id, user1.id)
+
+      Process.sleep(2)
+      after_user1_join = since_now()
+
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, before_user1_join)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_join)
     end
   end
 

@@ -4,6 +4,11 @@ defmodule RadioBeamWeb.Schemas.Keys do
   import RadioBeamWeb.Schemas, only: [user_id: 1]
 
   alias Polyjuice.Util.Schema
+  alias RadioBeam.Room.EventGraph.PaginationToken
+
+  def changes, do: %{"from" => &pagination_token/1}
+
+  defp pagination_token(token), do: PaginationToken.parse(token)
 
   def upload do
     %{

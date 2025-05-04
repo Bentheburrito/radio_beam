@@ -8,6 +8,7 @@ defmodule RadioBeamWeb.SyncController do
   alias RadioBeam.User
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.Keys
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline
@@ -30,12 +31,15 @@ defmodule RadioBeamWeb.SyncController do
         _, opts -> opts
       end)
 
+    maybe_since_token = Keyword.get(opts, :since)
+
     response =
       user.id
       |> Room.all_where_has_membership()
       |> Timeline.sync(user.id, device.id, opts)
       |> put_account_data(user)
-      |> put_to_device_messages(user.id, device.id, Keyword.get(opts, :since))
+      |> put_to_device_messages(user.id, device.id, maybe_since_token)
+      |> put_device_key_changes(user, maybe_since_token)
 
     json(conn, response)
   end
@@ -84,7 +88,7 @@ defmodule RadioBeamWeb.SyncController do
   defp put_to_device_messages(response, user_id, device_id, mark_as_read) do
     case Device.Message.take_unsent(user_id, device_id, response.next_batch, mark_as_read) do
       {:ok, unsent_messages} ->
-        Map.put(response, :to_device, Enum.map(unsent_messages, & &1.content))
+        RadioBeam.put_nested(response, [:to_device, :events], unsent_messages)
 
       :none ->
         response
@@ -93,6 +97,18 @@ defmodule RadioBeamWeb.SyncController do
         Logger.error("error when fetching unsent device messages: #{inspect(error)}")
         response
     end
+  end
+
+  defp put_device_key_changes(response, _user, nil), do: response
+
+  defp put_device_key_changes(response, user, since) do
+    changed_map =
+      user
+      |> Keys.all_changed_since(since)
+      |> Map.update!(:changed, &MapSet.to_list/1)
+      |> Map.update!(:left, &MapSet.to_list/1)
+
+    Map.put(response, :device_lists, changed_map)
   end
 
   defp get_user_event_filter(%User{} = user, filter_id) do

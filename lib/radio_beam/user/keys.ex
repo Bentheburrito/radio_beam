@@ -3,6 +3,7 @@ defmodule RadioBeam.User.Keys do
   Query a User's Device and CrossSigningKeys
   """
   alias RadioBeam.Repo
+  alias RadioBeam.Room
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.CrossSigningKeyRing
@@ -34,6 +35,54 @@ defmodule RadioBeam.User.Keys do
         {updated_user.id, device_key_map}
       end)
     end)
+  end
+
+  def all_changed_since(%User{} = user, %Room.EventGraph.PaginationToken{arrival_key: since_token}),
+    do: all_changed_since(user, since_token)
+
+  def all_changed_since(%User{} = user, since_token) do
+    shared_memberships_by_user =
+      Repo.one_shot(fn ->
+        user.id
+        |> Room.joined()
+        |> Stream.flat_map(fn room_id ->
+          case Room.get_members(room_id, user.id, :current, &(&1 in ~w|join leave|)) do
+            {:ok, member_events} -> member_events
+            _ -> []
+          end
+        end)
+        |> Stream.reject(&(&1["state_key"] == user.id))
+        |> Stream.map(&zip_with_user/1)
+        |> Stream.reject(fn {maybe_user, _} -> is_nil(maybe_user) end)
+        |> Enum.group_by(fn {user, _} -> user end, fn {_, member_event} -> member_event end)
+      end)
+
+    Enum.reduce(shared_memberships_by_user, %{changed: MapSet.new(), left: MapSet.new()}, fn
+      {%{id: user_id, last_cross_signing_change_at: lcsca}, _}, acc when lcsca > since_token ->
+        Map.update!(acc, :changed, &MapSet.put(&1, user_id))
+
+      {user, member_events}, acc ->
+        join_events = Stream.filter(member_events, &(&1["content"]["membership"] == "join"))
+        leave_events = Stream.filter(member_events, &(&1["content"]["membership"] == "leave"))
+
+        cond do
+          not Enum.empty?(join_events) and Enum.all?(join_events, &(&1["origin_server_ts"] > elem(since_token, 0))) ->
+            Map.update!(acc, :changed, &MapSet.put(&1, user.id))
+
+          Enum.empty?(join_events) and Enum.any?(leave_events, &(&1["origin_server_ts"] > elem(since_token, 0))) ->
+            Map.update!(acc, :left, &MapSet.put(&1, user.id))
+
+          :else ->
+            acc
+        end
+    end)
+  end
+
+  defp zip_with_user(member_event) do
+    case User.get(member_event["state_key"]) do
+      {:ok, user} -> {user, member_event}
+      {:error, :not_found} -> {nil, member_event}
+    end
   end
 
   @doc """
