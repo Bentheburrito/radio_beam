@@ -24,7 +24,7 @@ defmodule RadioBeam.Room.Impl do
       Enum.reduce_while(events, {room, [], latest_pdus}, fn event, {%Room{} = room, pdus, parents} ->
         with {:ok, event} <- Core.authorize(room, event),
              {:ok, pdu} <- EventGraph.append(room, parents, event) do
-          room = room |> Core.update_state(PDU.to_event(pdu, room.version, :strings)) |> Core.put_tip([pdu.event_id])
+          room = room |> Core.update_state(pdu) |> Core.put_tip([pdu.event_id])
           {:cont, {room, [pdu | pdus], [pdu]}}
         else
           error -> {:halt, error}

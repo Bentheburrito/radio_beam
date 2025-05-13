@@ -216,7 +216,7 @@ defmodule RadioBeamWeb.RoomController do
   def get_joined_members(conn, %{"room_id" => room_id}) do
     case Room.get_members(room_id, conn.assigns.user.id, :current, &(&1 == "join")) do
       {:ok, members} ->
-        json(conn, %{joined: Map.new(members, &{&1["state_key"], Map.take(&1["content"], @room_member_keys)})})
+        json(conn, %{joined: Map.new(members, &{&1.state_key, Map.take(&1.content, @room_member_keys)})})
 
       {:error, error} ->
         handle_common_error(conn, error)
@@ -262,7 +262,7 @@ defmodule RadioBeamWeb.RoomController do
     state_key = Map.get(params, "state_key", "")
 
     case Room.get_state(room_id, conn.assigns.user.id, type, state_key) do
-      {:ok, event} -> json(conn, Map.get(event, "content", %{}))
+      {:ok, event} -> json(conn, event.content)
       {:error, error} -> handle_common_error(conn, error)
     end
   end

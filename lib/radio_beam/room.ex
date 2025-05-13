@@ -136,7 +136,7 @@ defmodule RadioBeam.Room do
     match_head = __MODULE__.__info__().query_base
 
     joined_guard =
-      {:==, "join", {:map_get, "membership", {:map_get, "content", {:map_get, {{"m.room.member", user_id}}, @state}}}}
+      {:==, "join", {:map_get, "membership", {:map_get, :content, {:map_get, {{"m.room.member", user_id}}, @state}}}}
 
     match_spec = [{match_head, [joined_guard], [:"$1"]}]
 
@@ -235,7 +235,7 @@ defmodule RadioBeam.Room do
 
   def member?(room_id, user_id) do
     case get(room_id) do
-      {:ok, %{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "join"}}}}} -> true
+      {:ok, %{state: %{{"m.room.member", ^user_id} => %{content: %{"membership" => "join"}}}}} -> true
       _else -> false
     end
   end
@@ -257,14 +257,10 @@ defmodule RadioBeam.Room do
   end
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    with {:ok, pdu} <- PDU.get(at_event_id),
+    with {:ok, %{room_id: ^room_id} = pdu} <- PDU.get(at_event_id),
          true <- Timeline.authz_to_view?(pdu, user_id),
          {:ok, state_events} <- PDU.all(pdu.state_events) do
-      {:ok, %{version: version}} = get(room_id)
-
-      state_events
-      |> Stream.map(&PDU.to_event(&1, version, :strings))
-      |> get_members_from_state(membership_filter)
+      get_members_from_state(state_events, membership_filter)
     else
       _ -> {:error, :unauthorized}
     end
@@ -273,7 +269,7 @@ defmodule RadioBeam.Room do
   defp get_members_from_state(state, membership_filter) do
     members =
       Enum.filter(state, fn
-        %{"type" => "m.room.member"} = event -> event |> get_in(["content", "membership"]) |> membership_filter.()
+        %{type: "m.room.member"} = event -> membership_filter.(get_in(event.content["membership"]))
         _ -> false
       end)
 
@@ -282,17 +278,15 @@ defmodule RadioBeam.Room do
 
   def get_state(room_id, user_id) do
     case get(room_id) do
-      {:ok, %{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "join"}}} = state}} ->
+      {:ok, %{state: %{{"m.room.member", ^user_id} => %{content: %{"membership" => "join"}}} = state}} ->
         {:ok, state}
 
-      {:ok, %{state: %{{"m.room.member", ^user_id} => %{"content" => %{"membership" => "leave"}} = membership}}} ->
-        event_id = Map.fetch!(membership, "event_id")
-        {:ok, pdu} = PDU.get(event_id)
+      {:ok, %{state: %{{"m.room.member", ^user_id} => %{content: %{"membership" => "leave"}} = membership}}} ->
+        {:ok, pdu} = PDU.get(membership.event_id)
 
         case PDU.all(pdu.state_events) do
           {:ok, state_events} ->
-            {:ok, %{version: version}} = get(room_id)
-            {:ok, Map.new(state_events, &{{&1.type, &1.state_key}, PDU.to_event(&1, version, :strings)})}
+            {:ok, Map.new(state_events, &{{&1.type, &1.state_key}, &1})}
 
           _ ->
             {:error, :unauthorized}
@@ -350,12 +344,12 @@ defmodule RadioBeam.Room do
   def stripped_state_types, do: @stripped_state_types
 
   @stripped_state_keys Enum.map(@stripped_state_types, &{&1, ""})
-  @stripped_keys ["content", "sender", "state_key", "type"]
+  @stripped_keys ~w|content sender state_key type|a
   @doc "Returns the stripped state of the given room."
   def stripped_state(room, user_id) do
     # we additionally include the calling user's membership event
     stripped_state_keys = @stripped_state_keys ++ [{"m.room.member", user_id}]
-    room.state |> Map.take(stripped_state_keys) |> Enum.map(fn {_, event} -> Map.take(event, @stripped_keys) end)
+    room.state |> Map.take(stripped_state_keys) |> Enum.map(fn {_, pdu} -> Map.take(pdu, @stripped_keys) end)
   end
 
   def apply_redaction(room_id, event_id) do

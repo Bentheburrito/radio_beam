@@ -5,6 +5,7 @@ defmodule RadioBeam.Room.Core do
   """
 
   alias Polyjuice.Util.RoomVersion
+  alias RadioBeam.PDU
   alias RadioBeam.Room
 
   @doc """
@@ -29,18 +30,14 @@ defmodule RadioBeam.Room.Core do
     auth_events = select_auth_events(event, room.state)
 
     if authorized?(room, event, auth_events) do
-      {:ok, Map.put(event, "auth_events", Enum.map(auth_events, & &1["event_id"]))}
+      {:ok, Map.put(event, "auth_events", Enum.map(auth_events, & &1.event_id))}
     else
       {:error, :unauthorized}
     end
   end
 
-  def update_state(%Room{} = room, event) do
-    if is_map_key(event, "state_key") do
-      %Room{room | state: Map.put(room.state, {event["type"], event["state_key"]}, event)}
-    else
-      room
-    end
+  def update_state(%Room{} = room, %PDU{} = pdu) do
+    if not is_nil(pdu.state_key), do: put_in(room.state[{pdu.type, pdu.state_key}], pdu), else: room
   end
 
   def put_tip(%Room{} = room, latest_event_ids), do: Map.replace!(room, :latest_event_ids, latest_event_ids)

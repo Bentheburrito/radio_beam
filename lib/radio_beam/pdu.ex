@@ -165,4 +165,116 @@ defmodule RadioBeam.PDU do
   end
 
   defp adjust_redacts_key(event, _room_version), do: event
+
+  defimpl Polyjuice.Util.RoomEvent do
+    alias RadioBeam.PDU
+
+    def get_content(%PDU{} = pdu), do: pdu.content
+    def get_type(%PDU{} = pdu), do: pdu.type
+    def get_sender(%PDU{} = pdu), do: pdu.sender
+    def get_state_key(%PDU{} = pdu), do: pdu.state_key
+    def get_prev_events(%PDU{} = pdu), do: pdu.prev_events
+    def get_room_id(%PDU{} = pdu), do: pdu.room_id
+    def get_event_id(%PDU{} = pdu), do: pdu.event_id
+
+    def get_redacts(%PDU{type: "m.room.redaction"} = pdu), do: pdu.content["redacts"]
+    def get_redacts(%PDU{}), do: nil
+
+    def to_map(%PDU{} = pdu, room_version), do: PDU.to_event(pdu, room_version, :strings, :federation)
+
+    @supported_versions Polyjuice.Util.RoomVersion.supported_versions()
+    defguardp is_supported(version) when version in @supported_versions
+
+    @spec compute_content_hash(pdu :: PDU.t(), room_version :: String.t()) ::
+            {:ok, binary} | :error
+    def compute_content_hash(pdu, room_version) when is_supported(room_version) do
+      try do
+        {:ok, event_json_bytes} =
+          pdu
+          |> to_map(room_version)
+          |> Map.drop(~w(signatures unsigned hashes))
+          |> Polyjuice.Util.JSON.canonical_json()
+
+        {:ok, :crypto.hash(:sha256, event_json_bytes)}
+      rescue
+        _ -> :error
+      end
+    end
+
+    def compute_reference_hash(pdu, room_version) when is_supported(room_version) do
+      with {:ok, redacted} <- redact(pdu, room_version),
+           {:ok, event_json_bytes} <-
+             redacted
+             |> to_map(room_version)
+             |> Map.drop(~w(signatures age_ts unsigned))
+             |> Polyjuice.Util.JSON.canonical_json() do
+        {:ok, :crypto.hash(:sha256, event_json_bytes)}
+      else
+        _ -> :error
+      end
+    end
+
+    @default_power_levels_keys ~w|ban events events_default kick redact state_default users users_default|
+
+    def redact(pdu, room_version) when is_supported(room_version) do
+      content_keys_to_keep =
+        case pdu.type do
+          "m.room.member" ->
+            cond do
+              room_version in ~w|1 2 3 4 5 6 7 8| ->
+                ~w|membership|
+
+              room_version in ~w|9 10| ->
+                ~w|membership join_authorised_via_users_server|
+
+              room_version == "11" ->
+                ~w|membership join_authorised_via_users_server third_party_invite.signed|
+            end
+
+          "m.room.create" ->
+            if room_version in ~w|1 2 3 4 5 6 7 8 9 10|, do: ~w|creator|, else: :all
+
+          "m.room.join_rules" ->
+            if room_version in ~w|1 2 3 4 5 6 7|, do: ~w|join_rule|, else: ~w|join_rule allow|
+
+          "m.room.power_levels" ->
+            if room_version in ~w|1 2 3 4 5 6 7 8 9 10|,
+              do: @default_power_levels_keys,
+              else: ["invite" | @default_power_levels_keys]
+
+          "m.room.aliases" ->
+            if room_version in ~w|1 2 3 4 5|, do: ~w|aliases|, else: []
+
+          "m.room.history_visibility" ->
+            ~w|history_visibility|
+
+          "m.room.redaction" ->
+            if room_version in ~w|1 2 3 4 5 6 7 8 9 10|, do: [], else: ~w|redacts|
+
+          _ ->
+            []
+        end
+
+      if content_keys_to_keep == :all do
+        {:ok, put_in(pdu.unsigned, %{})}
+      else
+        # since Map.take doesn't support nested keys, we parse them and
+        # rebuild the content manually
+        new_content =
+          content_keys_to_keep
+          |> Stream.map(&String.split(&1, "."))
+          |> Enum.reduce(%{}, fn path, new_content ->
+            put_in(
+              new_content,
+              Enum.map(path, &Access.key(&1, %{})),
+              get_in(pdu.content, path)
+            )
+          end)
+
+        {:ok, %PDU{pdu | unsigned: %{}, content: new_content}}
+      end
+    end
+
+    def redact(_unknown_version, _event), do: :error
+  end
 end

@@ -49,10 +49,10 @@ defmodule RadioBeam.Room.TimelineTest do
                timeline
 
       assert 4 = length(invite_state.events)
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.create"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.join_rules"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.name"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.create"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.join_rules"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.name"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.member", state_key: ^user_id}, &1))
 
       refute is_map_key(timeline, :prev_batch)
     end
@@ -152,9 +152,9 @@ defmodule RadioBeam.Room.TimelineTest do
       user_id = user.id
 
       assert 3 = length(invite_state.events)
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.create"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.join_rules"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.create"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.join_rules"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.member", state_key: ^user_id}, &1))
     end
   end
 
@@ -220,10 +220,10 @@ defmodule RadioBeam.Room.TimelineTest do
       user_id = user.id
 
       assert 4 = length(invite_state.events)
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.create"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.join_rules"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.name"}, &1))
-      assert Enum.any?(invite_state.events, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.create"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.join_rules"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.name"}, &1))
+      assert Enum.any?(invite_state.events, &match?(%{type: "m.room.member", state_key: ^user_id}, &1))
 
       # ---
 
@@ -270,8 +270,8 @@ defmodule RadioBeam.Room.TimelineTest do
       assert 0 = map_size(invite_map)
 
       refute state
-             |> Stream.filter(&(&1["type"] == "m.room.name"))
-             |> Enum.any?(&(&1["content"]["name"] =~ "let's party!"))
+             |> Stream.filter(&(&1.type == "m.room.name"))
+             |> Enum.any?(&(&1.content["name"] =~ "let's party!"))
 
       creator_id = creator.id
 
@@ -866,7 +866,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch, end: next}} =
                Timeline.get_messages(room_id, creator.id, device.id, {prev_batch, :backward}, :limit, filter: filter)
 
-      assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
+      assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state)
 
       assert [
@@ -921,7 +921,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %{chunk: chunk, state: state, start: ^prev_batch} = response} =
                Timeline.get_messages(room_id, creator.id, device.id, {prev_batch, :forward}, :limit)
 
-      assert [%{"type" => "m.room.member", "sender" => ^creator_id}, %{"type" => "m.room.member", "sender" => ^user_id}] =
+      assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state)
 
       refute is_map_key(response, :end)
@@ -1136,11 +1136,11 @@ defmodule RadioBeam.Room.TimelineTest do
                Timeline.get_messages(room_id, user2.id, user2_device_id, :tip, :limit, filter: filter)
 
       for id <- [user.id, user2.id] do
-        assert Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^id}, &1))
+        assert Enum.any?(state, &match?(%{type: "m.room.member", sender: ^id}, &1))
       end
 
       creator_id = creator.id
-      refute Enum.any?(state, &match?(%{"type" => "m.room.member", "sender" => ^creator_id}, &1))
+      refute Enum.any?(state, &match?(%{type: "m.room.member", sender: ^creator_id}, &1))
     end
 
     test "returned events have bundled aggregations", %{room_id: room_id, creator: creator} do

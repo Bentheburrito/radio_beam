@@ -198,7 +198,7 @@ defmodule RadioBeam.Room.Timeline do
 
     membership =
       case Room.get_membership(room_id, user_id) do
-        %{"content" => %{"membership" => membership}} -> membership
+        %{content: %{"membership" => membership}} -> membership
         :not_found -> :not_found
       end
 
@@ -269,7 +269,7 @@ defmodule RadioBeam.Room.Timeline do
 
       membership when membership in ~w|ban leave| ->
         {:ok, room} = Room.get(room_id)
-        user_leave_event_id = room.state[{"m.room.member", user_id}]["event_id"]
+        user_leave_event_id = room.state[{"m.room.member", user_id}].event_id
         {:ok, user_leave_pdu} = PDU.get(user_leave_event_id)
 
         Map.merge(init_config, %{

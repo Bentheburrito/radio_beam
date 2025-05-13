@@ -66,14 +66,14 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert {:ok, %Room{id: ^room_id, version: ^version, state: state}} = Room.get(room_id)
 
-      assert %{"join_rule" => "public"} = get_in(state, [{"m.room.join_rules", ""}, "content"])
+      assert %{"join_rule" => "public"} = get_in(state[{"m.room.join_rules", ""}].content)
 
       alias = "#aqua:#{server_name}"
-      assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
+      assert %{"alias" => ^alias} = get_in(state[{"m.room.canonical_alias", ""}].content)
       assert {:ok, ^room_id} = Room.Alias.get_room_id(alias)
 
       assert %{"membership" => "invite"} =
-               get_in(state, [{"m.room.member", "@bwyatt:#{server_name}"}, "content"])
+               get_in(state[{"m.room.member", "@bwyatt:#{server_name}"}].content)
     end
 
     @tag :capture_log
@@ -176,8 +176,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{} = json_response(conn, 200)
       {:ok, %Room{state: state}} = Room.get(room_id)
-      assert "invite" = get_in(state, [{"m.room.member", invitee_id}, "content", "membership"])
-      assert "join us :)" = get_in(state, [{"m.room.member", invitee_id}, "content", "reason"])
+      assert "invite" = get_in(state[{"m.room.member", invitee_id}].content["membership"])
+      assert "join us :)" = get_in(state[{"m.room.member", invitee_id}].content["reason"])
     end
 
     test "rejects if inviter isn't in the room", %{conn: conn} do
@@ -253,7 +253,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{"room_id" => ^room_id} = json_response(conn, 200)
       {:ok, %Room{state: state}} = Room.get(room_id)
-      assert "you gotta give" = get_in(state, [{"m.room.member", user.id}, "content", "reason"])
+      assert "you gotta give" = get_in(state[{"m.room.member", user.id}].content["reason"])
     end
 
     test "fails to joins an invite-only room without an invite", %{conn: conn} do

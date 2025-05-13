@@ -186,21 +186,16 @@ defmodule RadioBeam.User.KeysTest do
 
       before_user1_join = since_now()
 
-      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
-      Process.sleep(2)
       {:ok, _} = Room.join(room_id, user1.id)
 
-      Process.sleep(2)
       after_user1_join = since_now()
 
       expected = MapSet.new([user1_id])
       assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_join)
       assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_join)
 
-      Process.sleep(2)
       {:ok, _} = Room.join(room_id, user2.id)
 
-      Process.sleep(2)
       after_user2_join = since_now()
 
       expected = MapSet.new([user1_id, user2_id])
@@ -247,22 +242,16 @@ defmodule RadioBeam.User.KeysTest do
 
       before_user1_leave = since_now()
 
-      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
-      Process.sleep(2)
-
       {:ok, _} = Room.leave(room_id, user1.id)
 
-      Process.sleep(2)
       after_user1_leave = since_now()
 
       expected = MapSet.new([user1_id])
       assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_user1_leave)
       assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_leave)
 
-      Process.sleep(2)
       {:ok, _} = Room.leave(room_id, user2.id)
 
-      Process.sleep(2)
       after_user2_leave = since_now()
 
       expected = MapSet.new([user1_id, user2_id])
@@ -292,13 +281,9 @@ defmodule RadioBeam.User.KeysTest do
 
       before_leave = since_now()
 
-      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
-      Process.sleep(2)
-
       {:ok, _} = Room.leave(room_id, user1.id)
       {:ok, _} = Room.leave(room_id, user2.id)
 
-      Process.sleep(2)
       after_leave = since_now()
 
       expected = MapSet.new([user2_id])
@@ -306,7 +291,7 @@ defmodule RadioBeam.User.KeysTest do
       assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_leave)
 
       before_leave2 = since_now()
-      Process.sleep(2)
+
       {:ok, _} = Room.leave(room_id2, user1.id)
 
       expected = MapSet.new([user1_id])
@@ -325,15 +310,10 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, _} = Room.invite(room_id2, creator.id, user1.id)
       {:ok, _} = Room.join(room_id2, user1.id)
 
-      # need to have PDUs on the room state so we have the arrival_order tie-breaker...
-      Process.sleep(2)
-
       before_user1_join = since_now()
 
-      Process.sleep(2)
       {:ok, _} = Room.join(room_id, user1.id)
 
-      Process.sleep(2)
       after_user1_join = since_now()
 
       assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, before_user1_join)

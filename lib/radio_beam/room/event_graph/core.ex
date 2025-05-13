@@ -54,10 +54,10 @@ defmodule RadioBeam.Room.EventGraph.Core do
     event_params
     |> Map.put_new("arrival_time", arrival_time)
     |> Map.put_new_lazy("arrival_order", fn -> :erlang.unique_integer(@order_params) end)
-    |> Map.put("state_events", Enum.map(current_room_state, &elem(&1, 1)["event_id"]))
+    |> Map.put("state_events", Enum.map(current_room_state, &elem(&1, 1).event_id))
     |> Map.put(
       "current_visibility",
-      get_in(current_room_state[{"m.room.history_visibility", ""}]["content"]["history_visibility"]) || "shared"
+      get_in(current_room_state[{"m.room.history_visibility", ""}].content["history_visibility"]) || "shared"
     )
     |> Map.put_new("origin_server_ts", origin_server_ts)
     # TOIMPL

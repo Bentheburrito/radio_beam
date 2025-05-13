@@ -51,7 +51,7 @@ defmodule RadioBeam.User.Keys do
             _ -> []
           end
         end)
-        |> Stream.reject(&(&1["state_key"] == user.id))
+        |> Stream.reject(&(&1.state_key == user.id))
         |> Stream.map(&zip_with_user/1)
         |> Stream.reject(fn {maybe_user, _} -> is_nil(maybe_user) end)
         |> Enum.group_by(fn {user, _} -> user end, fn {_, member_event} -> member_event end)
@@ -62,14 +62,14 @@ defmodule RadioBeam.User.Keys do
         Map.update!(acc, :changed, &MapSet.put(&1, user_id))
 
       {user, member_events}, acc ->
-        join_events = Stream.filter(member_events, &(&1["content"]["membership"] == "join"))
-        leave_events = Stream.filter(member_events, &(&1["content"]["membership"] == "leave"))
+        join_events = Stream.filter(member_events, &(&1.content["membership"] == "join"))
+        leave_events = Stream.filter(member_events, &(&1.content["membership"] == "leave"))
 
         cond do
-          not Enum.empty?(join_events) and Enum.all?(join_events, &(&1["origin_server_ts"] > elem(since_token, 0))) ->
+          not Enum.empty?(join_events) and Enum.all?(join_events, &({&1.arrival_time, &1.arrival_order} > since_token)) ->
             Map.update!(acc, :changed, &MapSet.put(&1, user.id))
 
-          Enum.empty?(join_events) and Enum.any?(leave_events, &(&1["origin_server_ts"] > elem(since_token, 0))) ->
+          Enum.empty?(join_events) and Enum.any?(leave_events, &({&1.arrival_time, &1.arrival_order} > since_token)) ->
             Map.update!(acc, :left, &MapSet.put(&1, user.id))
 
           :else ->
@@ -79,7 +79,7 @@ defmodule RadioBeam.User.Keys do
   end
 
   defp zip_with_user(member_event) do
-    case User.get(member_event["state_key"]) do
+    case User.get(member_event.state_key) do
       {:ok, user} -> {user, member_event}
       {:error, :not_found} -> {nil, member_event}
     end

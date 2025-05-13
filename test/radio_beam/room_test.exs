@@ -25,7 +25,7 @@ defmodule RadioBeam.RoomTest do
         assert is_pid(pid)
 
         assert {:ok, %Room{id: ^room_id, version: ^room_version, state: state}} = Room.get(room_id)
-        assert %{"membership" => "join"} = get_in(state, [{"m.room.member", creator.id}, "content"])
+        assert %{"membership" => "join"} = get_in(state[{"m.room.member", creator.id}].content)
       end
     end
 
@@ -64,26 +64,26 @@ defmodule RadioBeam.RoomTest do
         assert is_pid(pid)
 
         assert {:ok, %Room{id: ^room_id, version: ^room_version, state: state}} = Room.get(room_id)
-        assert %{"membership" => "join"} = get_in(state, [{"m.room.member", creator.id}, "content"])
+        assert %{"membership" => "join"} = get_in(state[{"m.room.member", creator.id}].content)
 
         pl_content = Map.merge(Room.Events.default_power_level_content(creator.id), power_levels_content)
 
-        assert ^pl_content = get_in(state, [{"m.room.power_levels", ""}, "content"])
+        assert ^pl_content = get_in(state[{"m.room.power_levels", ""}].content)
 
         # preset trusted_private_chat sets join_rule to "invite", but we override with "knock"
-        assert %{"join_rule" => "knock"} = get_in(state, [{"m.room.join_rules", ""}, "content"])
-        assert %{"history_visibility" => "shared"} = get_in(state, [{"m.room.history_visibility", ""}, "content"])
-        assert %{"guest_access" => "can_join"} = get_in(state, [{"m.room.guest_access", ""}, "content"])
+        assert %{"join_rule" => "knock"} = get_in(state[{"m.room.join_rules", ""}].content)
+        assert %{"history_visibility" => "shared"} = get_in(state[{"m.room.history_visibility", ""}].content)
+        assert %{"guest_access" => "can_join"} = get_in(state[{"m.room.guest_access", ""}].content)
 
         alias = "##{alias_localpart}:#{server_name}"
-        assert %{"alias" => ^alias} = get_in(state, [{"m.room.canonical_alias", ""}, "content"])
+        assert %{"alias" => ^alias} = get_in(state[{"m.room.canonical_alias", ""}].content)
         assert {:ok, ^room_id} = Room.Alias.get_room_id(alias)
 
-        assert %{"name" => "The Computer Room"} = get_in(state, [{"m.room.name", ""}, "content"])
-        assert %{"topic" => "this one's for the nerds"} = get_in(state, [{"m.room.topic", ""}, "content"])
+        assert %{"name" => "The Computer Room"} = get_in(state[{"m.room.name", ""}].content)
+        assert %{"topic" => "this one's for the nerds"} = get_in(state[{"m.room.topic", ""}].content)
 
         assert %{"membership" => "invite", "is_direct" => true} =
-                 get_in(state, [{"m.room.member", invitee.id}, "content"])
+                 get_in(state[{"m.room.member", invitee.id}].content)
 
         # TODO: assert invite_3pid, and visibility
       end
@@ -132,7 +132,7 @@ defmodule RadioBeam.RoomTest do
       assert {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
 
       {:ok, %Room{state: state}} = Room.get(room_id)
-      assert "invite" = get_in(state, [{"m.room.member", user2.id}, "content", "membership"])
+      assert "invite" = get_in(state[{"m.room.member", user2.id}].content["membership"])
     end
 
     test "fails with :unauthorized when the inviter does not have a high enough PL", %{user1: user1, user2: user2} do
@@ -163,8 +163,8 @@ defmodule RadioBeam.RoomTest do
       assert {:ok, _event_id} = Room.join(room_id, user2.id, reason)
 
       {:ok, %Room{state: state}} = Room.get(room_id)
-      assert "join" = get_in(state, [{"m.room.member", user2.id}, "content", "membership"])
-      assert ^reason = get_in(state, [{"m.room.member", user2.id}, "content", "reason"])
+      assert "join" = get_in(state[{"m.room.member", user2.id}].content["membership"])
+      assert ^reason = get_in(state[{"m.room.member", user2.id}].content["reason"])
     end
 
     test "fails with :unauthorized when the joiner has not been invited", %{user1: user1, user2: user2} do
@@ -591,7 +591,7 @@ defmodule RadioBeam.RoomTest do
     test "returns state content when the requester is in the room", %{user1: creator} do
       {:ok, room_id} = Room.create(creator)
 
-      assert {:ok, %{"content" => %{"membership" => "join"}}} =
+      assert {:ok, %{content: %{"membership" => "join"}}} =
                Room.get_state(room_id, creator.id, "m.room.member", creator.id)
     end
 
@@ -619,7 +619,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
       {:ok, _event_id} = Room.join(room_id, user2.id)
 
-      assert {:ok, %{"content" => %{"topic" => ^topic}} = event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
+      assert {:ok, %{content: %{"topic" => ^topic}} = event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
       assert {:error, :not_found} = Room.get_state(room_id, user2.id, "m.room.name", "")
 
       {:ok, _event_id} = Room.leave(room_id, user2.id)
