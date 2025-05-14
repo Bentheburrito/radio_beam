@@ -127,7 +127,7 @@ defmodule RadioBeam.ContentRepo do
   def create(%User{} = reserver) do
     %{max_reserved: max_reserved, max_files: max_files} = user_upload_limits()
 
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       user_upload_counts = Upload.user_upload_counts(reserver.id)
       reserved_count = Map.get(user_upload_counts, :reserved, 0)
       total_count = Map.get(user_upload_counts, :uploaded, 0) + reserved_count
@@ -147,7 +147,7 @@ defmodule RadioBeam.ContentRepo do
   @spec upload(Upload.t(), FileInfo.t(), Path.t()) ::
           {:ok, Upload.t()} | {:error, :too_large | {:quota_reached, :max_bytes} | File.posix()}
   def upload(%Upload{file: :reserved} = upload, %FileInfo{} = file_info, tmp_upload_path, repo_path \\ path()) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       with :ok <- validate_upload_size(upload.uploaded_by_id, file_info.byte_size),
            {:ok, %Upload{} = upload} <- upload |> Upload.put_file(file_info) |> Upload.put(),
            :ok <- copy_upload_if_no_exists(tmp_upload_path, upload_file_path(upload, repo_path)) do

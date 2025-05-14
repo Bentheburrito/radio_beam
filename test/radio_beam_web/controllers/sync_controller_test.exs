@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.User.Account
   alias RadioBeam.User
   alias RadioBeam.User.Auth
   alias RadioBeam.User.Device
@@ -32,8 +33,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       {:ok, room_id1} = Room.create(creator, name: "name one")
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      :ok = User.put_account_data(user.id, :global, "m.some_config", %{"hello" => "world"})
-      :ok = User.put_account_data(user.id, room_id1, "m.some_config", %{"hello" => "room"})
+      {:ok, user} = Account.put(user.id, :global, "m.some_config", %{"hello" => "world"})
+      {:ok, user} = Account.put(user.id, room_id1, "m.some_config", %{"hello" => "room"})
       message = Device.Message.new(%{"hello" => "world"}, "@hello:world", "com.spectrum.corncobtv.new_release")
       Device.Message.put(user.id, device.id, message)
 

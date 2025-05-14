@@ -49,8 +49,8 @@ defmodule RadioBeam.User.Device.Message do
   messages that are assumed to be delivered successfully at this point.
   """
   def take_unsent(user_id, device_id, since_token, mark_as_read \\ nil) do
-    Repo.one_shot(fn ->
-      {:ok, %User{} = user} = User.get(user_id, lock: :write)
+    Repo.transaction(fn ->
+      {:ok, %User{} = user} = Repo.fetch(User, user_id, lock: :write)
       {:ok, %Device{messages: messages}} = User.get_device(user, device_id)
 
       # TOIMPL: only take first 100 msgs
@@ -70,7 +70,7 @@ defmodule RadioBeam.User.Device.Message do
   def expand_device_id(_user, device_id), do: [device_id]
 
   defp persist(user_id, device_id, %__MODULE__{} = message) do
-    with {:ok, user} <- User.get(user_id, lock: :write),
+    with {:ok, user} <- Repo.fetch(User, user_id, lock: :write),
          {:ok, %Device{} = device} <- User.get_device(user, device_id) do
       messages = Map.update(device.messages, :unsent, [message], &[message | &1])
       {:ok, Memento.Query.write(put_in(user.device_map[device.id].messages, messages))}

@@ -21,7 +21,7 @@ defmodule RadioBeam.Room.Alias do
   `:alias_in_use`.
   """
   def put(room_alias, room_id) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case {Memento.Query.read(__MODULE__, room_alias), Room.get(room_id)} do
         {_, {:error, :not_found}} ->
           {:error, :room_does_not_exist}
@@ -36,7 +36,7 @@ defmodule RadioBeam.Room.Alias do
   end
 
   def get_room_id(room_alias) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case Memento.Query.read(__MODULE__, room_alias) do
         nil -> {:error, :not_found}
         %__MODULE__{room_id: room_id} -> {:ok, room_id}

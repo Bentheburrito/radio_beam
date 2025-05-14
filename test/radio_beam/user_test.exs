@@ -32,16 +32,36 @@ defmodule RadioBeam.UserTest do
     end
   end
 
-  describe "put_new/1" do
-    test "successfully puts a new user" do
-      {:ok, user} = User.new("@danflashestshirts:localhost", "Test!234")
-      assert {:ok, ^user} = User.put_new(user)
+  describe "strong_password?/1" do
+    @special_chars ~w|! @ # $ % ^ & * ( ) _ - + = { [ } ] \| \ : ; " ' < , > . ? /|
+    @digits ~w|1 2 3 4 5 6 7 8 9 0|
+    @letters ~w|a b c d e f g h i j k l m n o p q r s t u v w x y z|
+    @upper_letters Enum.map(@letters, &String.upcase/1)
+
+    test "returns true for passwords that satisfy the regex" do
+      for _ <- 1..100, sets <- [Enum.shuffle([@special_chars, @digits, @letters, @upper_letters])] do
+        password =
+          for set <- sets, character <- Enum.take_random(set, Enum.random(2..6)), into: "" do
+            character
+          end
+
+        assert {_, true} = {password, User.strong_password?(password)}
+      end
     end
 
-    test "errors if a user with the same ID already exists" do
-      user = Fixtures.user()
-      assert {:error, :already_exists} = User.put_new(user)
+    test "returns false for passwords that don't satisfy the regex" do
+      for _ <- 1..100, sets <- [Enum.shuffle([@special_chars, @digits, @letters, @upper_letters])] do
+        password =
+          for set <- Enum.take(sets, 3), character <- Enum.take_random(set, Enum.random(3..6)), into: "" do
+            character
+          end
+
+        assert {_, false} = {password, User.strong_password?(password)}
+      end
     end
+
+    # too short
+    refute User.strong_password?("t00SML!")
   end
 
   describe "put_account_data" do
@@ -50,37 +70,23 @@ defmodule RadioBeam.UserTest do
     end
 
     test "successfully puts global account data", %{user: user} do
-      assert :ok = User.put_account_data(user.id, :global, "m.some_config", %{"key" => "value"})
-      assert {:ok, %User{account_data: %{global: %{"m.some_config" => %{"key" => "value"}}}}} = User.get(user.id)
+      assert {:ok, %User{account_data: %{global: %{"m.some_config" => %{"key" => "value"}}}}} =
+               User.put_account_data(user, :global, "m.some_config", %{"key" => "value"})
     end
 
     test "successfully puts room account data", %{user: user} do
-      {:ok, room_id} = Room.create(user)
-      assert :ok = User.put_account_data(user.id, room_id, "m.some_config", %{"other" => "value"})
-      assert {:ok, %User{account_data: %{^room_id => %{"m.some_config" => %{"other" => "value"}}}}} = User.get(user.id)
+      room_id = Room.generate_id()
+
+      assert {:ok, %User{account_data: %{^room_id => %{"m.some_config" => %{"other" => "value"}}}}} =
+               User.put_account_data(user, room_id, "m.some_config", %{"other" => "value"})
     end
 
     test "cannot put m.fully_read or m.push_rules for any scope", %{user: user} do
-      assert {:error, :invalid_type} = User.put_account_data(user.id, :global, "m.fully_read", %{"key" => "value"})
-      assert {:error, :invalid_type} = User.put_account_data(user.id, :global, "m.push_rules", %{"key" => "value"})
-      {:ok, room_id} = Room.create(user)
-      assert {:error, :invalid_type} = User.put_account_data(user.id, room_id, "m.fully_read", %{"other" => "value"})
-      assert {:error, :invalid_type} = User.put_account_data(user.id, room_id, "m.push_rules", %{"other" => "value"})
-    end
-
-    test "cannot put room account data under a room that doesn't exist", %{user: user} do
-      assert {:error, :invalid_room_id} =
-               User.put_account_data(user.id, "!huh@localhost", "m.some_config", %{"other" => "value"})
-    end
-
-    test "cannot put any account data for an unknown user", %{user: user} do
-      assert {:error, :not_found} =
-               User.put_account_data("@hellooo:localhost", :global, "m.some_config", %{"key" => "value"})
-
-      {:ok, room_id} = Room.create(user)
-
-      assert {:error, :not_found} =
-               User.put_account_data("@hellooo:localhost", room_id, "m.some_config", %{"other" => "value"})
+      assert {:error, :invalid_type} = User.put_account_data(user, :global, "m.fully_read", %{"key" => "value"})
+      assert {:error, :invalid_type} = User.put_account_data(user, :global, "m.push_rules", %{"key" => "value"})
+      room_id = Room.generate_id()
+      assert {:error, :invalid_type} = User.put_account_data(user, room_id, "m.fully_read", %{"other" => "value"})
+      assert {:error, :invalid_type} = User.put_account_data(user, room_id, "m.push_rules", %{"other" => "value"})
     end
   end
 

@@ -53,8 +53,8 @@ defmodule RadioBeam.Repo do
   Execute the given function inside a `Memento`/`:mnesia` transaction if one
   has not been started already.
   """
-  @spec one_shot(function()) :: any()
-  def one_shot(fxn) do
+  @spec transaction(function()) :: any()
+  def transaction(fxn) do
     if Memento.Transaction.inside?() do
       fxn.()
     else
@@ -62,18 +62,51 @@ defmodule RadioBeam.Repo do
         :ok -> :ok
         {:ok, result} -> result
         {:error, {:transaction_aborted, error}} -> {:error, error}
-        {:error, error} -> raise "Repo.one_shot error: #{Exception.format(:error, error)}"
+        {:error, error} -> raise "Repo.transaction error: #{Exception.format(:error, error)}"
       end
     end
   end
 
-  @doc "Same as one_shot/1, except raises on error"
-  @spec one_shot!(function()) :: any()
-  def one_shot!(fxn) do
-    case one_shot(fxn) do
+  @doc "Same as transaction/1, except raises on error"
+  @spec transaction!(function()) :: any()
+  def transaction!(fxn) do
+    case transaction(fxn) do
       {:ok, result} -> result
       {:error, error} -> raise error
       result -> result
     end
+  end
+
+  def fetch(table, id, opts \\ []) when table in @tables do
+    transaction(fn ->
+      case Memento.Query.read(table, id, opts) do
+        nil -> {:error, :not_found}
+        data -> {:ok, data}
+      end
+    end)
+  end
+
+  def get_all(table, ids, opts \\ []) when table in @tables do
+    transaction(fn ->
+      Enum.reduce(ids, [], fn id, acc ->
+        case fetch(table, id, opts) do
+          {:error, :not_found} -> acc
+          {:ok, data} -> [data | acc]
+        end
+      end)
+    end)
+  end
+
+  def insert(%table{} = data) when table in @tables do
+    transaction(fn -> {:ok, Memento.Query.write(data)} end)
+  end
+
+  def insert_new(%table{} = data) when table in @tables do
+    transaction(fn ->
+      case fetch(table, data.id, lock: :write) do
+        {:ok, %^table{}} -> {:error, :already_exists}
+        {:error, :not_found} -> {:ok, Memento.Query.write(data)}
+      end
+    end)
   end
 end

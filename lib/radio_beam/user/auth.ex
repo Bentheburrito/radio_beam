@@ -22,7 +22,7 @@ defmodule RadioBeam.User.Auth do
   def register(localpart, server_name \\ RadioBeam.server_name(), password) do
     if Application.get_env(:radio_beam, :registration_enabled, false) do
       with {:ok, %User{} = user} <- User.new("@#{localpart}:#{server_name}", password) do
-        User.put_new(user)
+        Repo.insert_new(user)
       end
     else
       {:error, :registration_disabled}
@@ -62,9 +62,9 @@ defmodule RadioBeam.User.Auth do
   @spec verify_access_token(Device.auth_token()) ::
           {:ok, User.t(), Device.t()} | {:error, :expired | :unknown_token | any()}
   def verify_access_token(token) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       with {:ok, user_id, device_id, token} <- parse_auth_token(token),
-           {:ok, %User{} = user} <- User.get(user_id),
+           {:ok, %User{} = user} <- Repo.fetch(User, user_id),
            {:ok, %User{} = user, %Device{} = device} <- verify_access_token(user, device_id, token) do
         {:ok, Memento.Query.write(user), device}
       else
@@ -102,8 +102,8 @@ defmodule RadioBeam.User.Auth do
   @spec password_login(User.id(), String.t(), Device.id(), String.t()) ::
           {:ok, User.t(), Device.t()} | {:error, :unknown_user_or_pwd}
   def password_login(user_id, pwd, device_id, display_name) do
-    Repo.one_shot(fn ->
-      with {:ok, %User{} = user} <- User.get(user_id),
+    Repo.transaction(fn ->
+      with {:ok, %User{} = user} <- Repo.fetch(User, user_id),
            true <- Argon2.verify_pass(pwd, user.pwd_hash) do
         device =
           case User.get_device(user, device_id) do
@@ -125,10 +125,10 @@ defmodule RadioBeam.User.Auth do
   @spec refresh(Device.auth_token()) :: {:ok, Device.t()} | {:error, any()}
   def refresh(refresh_token) do
     with {:ok, user_id, device_id, token} <- parse_auth_token(refresh_token),
-         {:ok, %User{} = user} <- User.get(user_id),
+         {:ok, %User{} = user} <- Repo.fetch(User, user_id),
          {:ok, %Device{} = device} <- User.get_device(user, device_id),
          {:ok, %User{} = user} <- refresh(user, device, token),
-         {:ok, %User{} = user} <- Repo.one_shot(fn -> {:ok, Memento.Query.write(user)} end) do
+         {:ok, %User{} = user} <- Repo.transaction(fn -> {:ok, Memento.Query.write(user)} end) do
       User.get_device(user, device.id)
     else
       {:error, error} ->
@@ -148,5 +148,17 @@ defmodule RadioBeam.User.Auth do
       prev_refresh_match? -> {:ok, user}
       :else -> {:error, :unknown_token}
     end
+  end
+
+  def weak_password_message do
+    """
+    Please include a password with at least:
+
+    - 1 uppercase letter
+    - 1 lowercase letter
+    - 1 special character of the following: !@#$%^&*()_-+={[}]|\:;"'<,>.?/
+    - 1 number
+    - 8 characters total
+    """
   end
 end

@@ -2,6 +2,7 @@ defmodule RadioBeam.User.Device.MessageTest do
   use ExUnit.Case, async: true
   doctest RadioBeam.User.Device.Message
 
+  alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.Device
   alias RadioBeam.User.Device.Message
@@ -21,7 +22,7 @@ defmodule RadioBeam.User.Device.MessageTest do
         end
 
       assert {:ok, 2} = Message.put_many(entries)
-      {:ok, user} = User.get(user.id)
+      {:ok, user} = Repo.fetch(User, user.id)
       assert {:ok, %Device{messages: %{unsent: [%Message{type: "org.msg.type"}]}}} = User.get_device(user, device1.id)
     end
   end
@@ -36,10 +37,10 @@ defmodule RadioBeam.User.Device.MessageTest do
       Message.put(user.id, device.id, message1)
       message2 = Message.new(%{"hola" => "mundo"}, "@yo:hello", "com.msg.type")
       Message.put(user.id, device.id, message2)
-      {:ok, user} = User.get(user.id)
+      {:ok, user} = Repo.fetch(User, user.id)
 
       assert {:ok, [^message1, ^message2]} = Message.take_unsent(user.id, device.id, "abc")
-      {:ok, user} = User.get(user.id)
+      {:ok, user} = Repo.fetch(User, user.id)
       assert {:ok, %Device{messages: %{"abc" => [^message2, ^message1]}}} = User.get_device(user, device.id)
     end
 
@@ -55,7 +56,7 @@ defmodule RadioBeam.User.Device.MessageTest do
       Message.put(user.id, device.id, message3)
 
       assert {:ok, [^message3]} = Message.take_unsent(user.id, device.id, "xyz", "abc")
-      {:ok, user} = User.get(user.id)
+      {:ok, user} = Repo.fetch(User, user.id)
       assert {:ok, %Device{messages: messages}} = User.get_device(user, device.id)
       refute is_map_key(messages, "abc")
       assert %{"xyz" => [^message3]} = messages

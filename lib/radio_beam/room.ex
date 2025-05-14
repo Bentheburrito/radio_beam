@@ -140,7 +140,7 @@ defmodule RadioBeam.Room do
 
     match_spec = [{match_head, [joined_guard], [:"$1"]}]
 
-    Repo.one_shot(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
+    Repo.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
   end
 
   @doc """
@@ -152,7 +152,7 @@ defmodule RadioBeam.Room do
     has_membership_guard = {:is_map_key, {{"m.room.member", user_id}}, @state}
     match_spec = [{match_head, [has_membership_guard], [:"$1"]}]
 
-    Repo.one_shot(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
+    Repo.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
   end
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
@@ -309,7 +309,7 @@ defmodule RadioBeam.Room do
 
   @default_cutoff :timer.hours(24)
   def get_nearest_event(room_id, user_id, dir, timestamp, cutoff_ms \\ @default_cutoff) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       room_id
       |> EventGraph.get_nearest_event(dir, timestamp, cutoff_ms)
       |> get_nearest_event(user_id)
@@ -332,7 +332,7 @@ defmodule RadioBeam.Room do
   Gets the %Room{} under the given room_id
   """
   def get(id) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case Memento.Query.read(__MODULE__, id) do
         nil -> {:error, :not_found}
         room -> {:ok, room}
@@ -361,4 +361,6 @@ defmodule RadioBeam.Room do
       _ -> :error
     end
   end
+
+  def generate_id(domain \\ RadioBeam.server_name()), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
 end

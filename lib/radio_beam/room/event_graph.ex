@@ -262,7 +262,7 @@ defmodule RadioBeam.Room.EventGraph do
   defp do_traverse(match_spec_or_cont, chunk, dir, limit, pdus_acc) do
     root_chunk? = chunk == 0
 
-    RadioBeam.Repo.one_shot(fn ->
+    RadioBeam.Repo.transaction(fn ->
       case PDU.Table.all_matching(match_spec_or_cont, dir, limit: limit) do
         {:ok, pdus, :end} when dir == :forward and root_chunk? -> {:ok, pdus_acc ++ pdus, :tip}
         {:ok, pdus, :end} when dir == :backward and root_chunk? -> {:ok, pdus_acc ++ pdus, :root}

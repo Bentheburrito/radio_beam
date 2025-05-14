@@ -1,7 +1,6 @@
 defmodule RadioBeamWeb.AuthController do
   use RadioBeamWeb, :controller
 
-  alias RadioBeam.Credentials
   alias RadioBeam.Errors
   alias RadioBeam.User
   alias RadioBeam.User.Auth
@@ -51,7 +50,7 @@ defmodule RadioBeamWeb.AuthController do
       {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
         conn
         |> put_status(400)
-        |> json(Errors.endpoint_error(:weak_password, Credentials.weak_password_message()))
+        |> json(Errors.endpoint_error(:weak_password, Auth.weak_password_message()))
 
       {:error, changeset} ->
         Logger.error("Error creating a user during registration: #{inspect(changeset.errors)}")

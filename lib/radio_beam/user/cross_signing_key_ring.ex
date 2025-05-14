@@ -27,8 +27,8 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
           | {:error, :not_found | :missing_master_key | :missing_or_invalid_master_key_signatures}
           | CrossSigningKey.parse_error()
   def put(user_id, opts) do
-    Repo.one_shot(fn ->
-      with {:ok, %User{} = user} <- User.get(user_id, lock: :write) do
+    Repo.transaction(fn ->
+      with {:ok, %User{} = user} <- Repo.fetch(User, user_id, lock: :write) do
         master_key = Keyword.get(opts, :master_key, user.cross_signing_key_ring.master)
         self_signing_key = Keyword.get(opts, :self_signing_key, user.cross_signing_key_ring.self)
         user_signing_key = Keyword.get(opts, :user_signing_key, user.cross_signing_key_ring.user)

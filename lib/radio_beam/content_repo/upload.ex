@@ -45,12 +45,12 @@ defmodule RadioBeam.ContentRepo.Upload do
   end
 
   def put(%__MODULE__{file: nil} = upload),
-    do: Repo.one_shot(fn -> {:ok, Memento.Query.write(%__MODULE__{upload | file: :reserved})} end)
+    do: Repo.transaction(fn -> {:ok, Memento.Query.write(%__MODULE__{upload | file: :reserved})} end)
 
-  def put(%__MODULE__{} = upload), do: Repo.one_shot(fn -> {:ok, Memento.Query.write(upload)} end)
+  def put(%__MODULE__{} = upload), do: Repo.transaction(fn -> {:ok, Memento.Query.write(upload)} end)
 
   def get(%MatrixContentURI{} = mxc, opts \\ []) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case Memento.Query.read(__MODULE__, mxc, opts) do
         nil -> {:error, :not_found}
         upload -> {:ok, upload}

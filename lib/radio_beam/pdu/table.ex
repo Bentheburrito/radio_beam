@@ -45,7 +45,7 @@ defmodule RadioBeam.PDU.Table do
         Map.from_struct(pdu)
       )
 
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case Memento.Query.write(record) do
         %__MODULE__{} -> {:ok, pdu}
       end
@@ -59,7 +59,7 @@ defmodule RadioBeam.PDU.Table do
   """
   @spec get(String.t()) :: {:ok, PDU.t()} | {:error, any()}
   def get(event_id) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case Memento.Query.select(__MODULE__, {:==, :event_id, event_id}, limit: 1, coerce: false) do
         {[record], _cont} -> {:ok, to_pdu(record)}
         {[], _cont} -> {:error, :not_found}
@@ -93,7 +93,7 @@ defmodule RadioBeam.PDU.Table do
   def all_matching(match_spec, dir \\ :forward, opts \\ [])
 
   def all_matching(match_spec, :forward, opts) when is_list(match_spec) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case Memento.Query.select_raw(__MODULE__, match_spec, Keyword.put(opts, :coerce, false)) do
         :"$end_of_table" -> {:ok, [], :end}
         {[], continuation} -> {:ok, [], continuation}
@@ -107,7 +107,7 @@ defmodule RadioBeam.PDU.Table do
   def all_matching(match_spec, :backward, opts) when is_list(match_spec) do
     limit = Keyword.get(opts, :limit, 10)
 
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case :mnesia.ets(fn -> :ets.select_reverse(__MODULE__, match_spec, limit) end) do
         :"$end_of_table" -> {:ok, [], :end}
         {[], continuation} -> {:ok, [], continuation}
@@ -118,7 +118,7 @@ defmodule RadioBeam.PDU.Table do
   end
 
   def all_matching(continuation, _dir, opts) when elem(continuation, 0) == :mnesia_select do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case Memento.Query.select_continue(continuation, Keyword.put(opts, :coerce, false)) do
         :"$end_of_table" -> {:ok, [], :end}
         {[], continuation} -> {:ok, [], continuation}
@@ -131,7 +131,7 @@ defmodule RadioBeam.PDU.Table do
   # temp: just need this to manage the :mnesia.ets call until mnesia supports
   # select_reverse directly
   def all_matching(continuation, _dir, _opts) do
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       case :mnesia.ets(fn -> :ets.select_reverse(continuation) end) do
         :"$end_of_table" -> {:ok, [], :end}
         {[], continuation} -> {:ok, [], continuation}
@@ -148,7 +148,7 @@ defmodule RadioBeam.PDU.Table do
     match_head = put_elem(__MODULE__.__info__().query_base, 1, {room_id, :_, :_, :_, :_})
     match_spec = for id <- ids, do: {put_elem(match_head, 9, id), [], [:"$_"]}
 
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       pdus =
         __MODULE__
         |> Memento.Query.select_raw(match_spec, coerce: false)
@@ -171,7 +171,7 @@ defmodule RadioBeam.PDU.Table do
     guards = [{:==, event_id, {:map_get, "redacts", @content}}]
     match_spec = {match_head, guards, [:"$_"]}
 
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       __MODULE__
       |> Memento.Query.select_raw(match_spec, coerce: false)
       |> Enum.map(&to_pdu/1)

@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.FilterControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.Auth
 
@@ -23,7 +24,7 @@ defmodule RadioBeamWeb.FilterControllerTest do
 
       assert %{"filter_id" => filter_id} = json_response(conn, 200)
 
-      {:ok, user} = User.get(user_id)
+      {:ok, user} = Repo.fetch(User, user_id)
       assert {:ok, %{raw_definition: definition}} = User.get_event_filter(user, filter_id)
 
       assert %{

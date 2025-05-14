@@ -17,13 +17,14 @@ defmodule RadioBeam.User.Keys do
     with {:ok, %Device{} = device} <- User.get_device(user, device_id),
          {:ok, %Device{} = device} <- Device.put_keys(device, user.id, opts) do
       user = User.put_device(user, device)
-      Repo.one_shot(fn -> {:ok, Memento.Query.write(user)} end)
+      Repo.transaction(fn -> {:ok, Memento.Query.write(user)} end)
     end
   end
 
   def claim_otks(user_device_algo_map) do
-    Repo.one_shot(fn ->
-      user_map = user_device_algo_map |> Map.keys() |> User.all() |> Map.new(&{&1.id, &1})
+    Repo.transaction(fn ->
+      user_ids = Map.keys(user_device_algo_map)
+      user_map = User |> Repo.get_all(user_ids) |> Map.new(&{&1.id, &1})
 
       user_device_key_map =
         user_device_algo_map
@@ -42,7 +43,7 @@ defmodule RadioBeam.User.Keys do
 
   def all_changed_since(%User{} = user, since_token) do
     shared_memberships_by_user =
-      Repo.one_shot(fn ->
+      Repo.transaction(fn ->
         user.id
         |> Room.joined()
         |> Stream.flat_map(fn room_id ->
@@ -79,7 +80,7 @@ defmodule RadioBeam.User.Keys do
   end
 
   defp zip_with_user(member_event) do
-    case User.get(member_event.state_key) do
+    case Repo.fetch(User, member_event.state_key) do
       {:ok, user} -> {user, member_event}
       {:error, :not_found} -> {nil, member_event}
     end
@@ -91,14 +92,14 @@ defmodule RadioBeam.User.Keys do
   """
   @spec query_all(%{User.id() => [Device.id()]}, User.id()) :: map()
   def query_all(query_map, querying_user_id) do
-    Repo.one_shot(fn ->
-      with {:ok, querying_user} <- User.get(querying_user_id) do
+    Repo.transaction(fn ->
+      with {:ok, querying_user} <- Repo.fetch(User, querying_user_id) do
         Enum.reduce(query_map, %{}, fn
           {^querying_user_id, device_ids}, key_results ->
             add_authz_keys(key_results, querying_user, querying_user, device_ids)
 
           {user_id, device_ids}, key_results ->
-            case User.get(user_id) do
+            case Repo.fetch(User, user_id) do
               {:error, :not_found} -> key_results
               {:ok, user} -> add_authz_keys(key_results, user, device_ids)
             end
@@ -142,9 +143,9 @@ defmodule RadioBeam.User.Keys do
   def put_signatures(signer_user_id, user_key_map) do
     {self_signatures, others_signatures} = Map.pop(user_key_map, signer_user_id)
 
-    Repo.one_shot(fn ->
+    Repo.transaction(fn ->
       with {:ok, signer} when map_size(others_signatures) == 0 or not is_nil(signer.cross_signing_key_ring.user) <-
-             User.get(signer_user_id) do
+             Repo.fetch(User, signer_user_id) do
         case Map.merge(put_self_signatures(self_signatures, signer), put_others_signatures(others_signatures, signer)) do
           failures when map_size(failures) == 0 -> :ok
           failures -> {:error, failures}
@@ -201,7 +202,8 @@ defmodule RadioBeam.User.Keys do
   end
 
   defp put_others_signatures(others_signatures, signer) do
-    user_map = others_signatures |> Map.keys() |> User.all() |> Map.new(&{&1.id, &1})
+    user_ids = Map.keys(others_signatures)
+    user_map = User |> Repo.get_all(user_ids) |> Map.new(&{&1.id, &1})
 
     others_signatures
     |> Stream.flat_map(fn {user_id, key_map} ->

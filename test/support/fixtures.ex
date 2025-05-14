@@ -15,7 +15,7 @@ defmodule Fixtures do
 
   def user(user_id \\ "localhost" |> UserIdentifier.generate() |> to_string()) do
     {:ok, user} = User.new(user_id, strong_password())
-    {:ok, user} = User.put_new(user)
+    {:ok, user} = RadioBeam.Repo.insert(user)
     user
   end
 

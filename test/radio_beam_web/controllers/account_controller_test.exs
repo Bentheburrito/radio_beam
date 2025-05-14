@@ -2,7 +2,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.User
+  alias RadioBeam.User.Account
   alias RadioBeam.User.Auth
 
   setup %{conn: conn} do
@@ -93,9 +93,9 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
   describe "get_config/2" do
     setup %{user: %{id: user_id} = user} do
-      User.put_account_data(user_id, :global, "m.some_config", %{"key" => "value"})
+      Account.put(user_id, :global, "m.some_config", %{"key" => "value"})
       {:ok, room_id} = Room.create(user)
-      User.put_account_data(user_id, room_id, "m.some_config", %{"other" => "value"})
+      Account.put(user_id, room_id, "m.some_config", %{"other" => "value"})
 
       %{room_id: room_id}
     end

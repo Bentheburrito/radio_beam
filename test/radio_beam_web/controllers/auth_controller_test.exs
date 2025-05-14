@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.AuthControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.Repo
   alias RadioBeam.User.Auth
   alias RadioBeam.User
   alias RadioBeam.User.Device
@@ -20,7 +21,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       assert %{"access_token" => _, "device_id" => ^device_id, "expires_in_ms" => _, "user_id" => user_id} =
                json_response(conn, 200)
 
-      {:ok, user} = User.get(user_id)
+      {:ok, user} = Repo.fetch(User, user_id)
       assert {:ok, %Device{display_name: ^device_display_name}} = User.get_device(user, device_id)
       assert ^user_id = "@#{username}:localhost"
     end
@@ -174,7 +175,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
                "user_id" => ^user_id
              } = json_response(conn, 200)
 
-      {:ok, user} = User.get(user.id)
+      {:ok, user} = Repo.fetch(User, user.id)
       {:ok, %Device{display_name: display_name}} = User.get_device(user, device_id)
       assert display_name != "this should be ignored"
     end
@@ -196,7 +197,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       conn = login_request(conn, user_id, password, %{"type" => "m.wtf.are.you.high", "device_id" => device_id})
 
       assert %{"errcode" => "M_BAD_JSON", "error" => _} = json_response(conn, 400)
-      {:ok, user} = User.get(user_id)
+      {:ok, user} = Repo.fetch(User, user_id)
       assert {:error, :not_found} = User.get_device(user, device_id)
     end
 
@@ -205,7 +206,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       conn = login_request(conn, "@prisonmike:localhost", password, %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      {:ok, user} = User.get(user_id)
+      {:ok, user} = Repo.fetch(User, user_id)
       assert {:error, :not_found} = User.get_device(user, device_id)
     end
 
@@ -214,7 +215,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       conn = login_request(conn, user_id, "justguessinghere", %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      {:ok, user} = User.get(user_id)
+      {:ok, user} = Repo.fetch(User, user_id)
       assert {:error, :not_found} = User.get_device(user, device_id)
     end
 
@@ -234,7 +235,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       assert %{"errcode" => "M_BAD_JSON", "error" => "identifier.type needs to be one of m.id.user." <> _rest} =
                json_response(conn, 400)
 
-      {:ok, user} = User.get(user_id)
+      {:ok, user} = Repo.fetch(User, user_id)
       assert {:error, :not_found} = User.get_device(user, device_id)
     end
   end

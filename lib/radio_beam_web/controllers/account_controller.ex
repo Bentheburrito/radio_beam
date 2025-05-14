@@ -4,8 +4,8 @@ defmodule RadioBeamWeb.AccountController do
   require Logger
 
   alias RadioBeam.Errors
-  alias RadioBeam.User
   alias RadioBeam.Room
+  alias RadioBeam.User.Account
 
   plug RadioBeamWeb.Plugs.Authenticate
 
@@ -30,7 +30,7 @@ defmodule RadioBeamWeb.AccountController do
 
   def put_config(%{assigns: %{user: %{id: user_id}}} = conn, %{"user_id" => user_id, "type" => type} = params) do
     with content when is_map(content) <- conn.body_params,
-         :ok <- User.put_account_data(user_id, Map.get(params, "room_id", :global), type, content) do
+         {:ok, _} <- Account.put(user_id, Map.get(params, "room_id", :global), type, content) do
       json(conn, %{})
     else
       {:error, :invalid_room_id} ->
