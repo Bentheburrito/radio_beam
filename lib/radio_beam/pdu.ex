@@ -7,8 +7,6 @@ defmodule RadioBeam.PDU do
 
   alias RadioBeam.PDU.Table
 
-  require Logger
-
   @schema %{
     arrival_time: :integer,
     arrival_order: :integer,

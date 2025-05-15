@@ -56,7 +56,7 @@ defmodule RadioBeam.ContentRepo do
     timeout = Keyword.get_lazy(opts, :timeout, &max_wait_for_download_ms/0)
     PubSub.subscribe(PS, PS.file_uploaded(mxc))
 
-    case Upload.get(mxc) do
+    case Repo.fetch(Upload, mxc) do
       {:ok, %Upload{file: %FileInfo{byte_size: byte_size}}} when byte_size > max_size_bytes -> {:error, :too_large}
       {:ok, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload}
       {:ok, %Upload{file: :reserved}} -> await_upload(timeout)

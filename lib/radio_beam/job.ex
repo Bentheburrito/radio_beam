@@ -32,7 +32,7 @@ defmodule RadioBeam.Job do
       on_failure: Keyword.get(opts, :on_failure)
     }
 
-    Repo.transaction!(fn -> Memento.Query.write(job) end)
+    Repo.insert!(job)
 
     send_run_job_message(Processor.worker_name(worker), job.key)
     :ok
@@ -150,7 +150,8 @@ defmodule RadioBeam.Job do
   end
 
   defp get(key) do
-    Repo.transaction!(fn -> Memento.Query.read(__MODULE__, key) end)
+    {:ok, job} = Repo.fetch(__MODULE__, key)
+    job
   end
 
   defp reschedule(job, at) do
@@ -158,8 +159,8 @@ defmodule RadioBeam.Job do
 
     %{key: new_key} =
       Repo.transaction!(fn ->
-        Memento.Query.delete(__MODULE__, job.key)
-        Memento.Query.write(%__MODULE__{job | key: {worker, at, id}, attempt: job.attempt + 1})
+        Repo.delete(job)
+        Repo.insert!(%__MODULE__{job | key: {worker, at, id}, attempt: job.attempt + 1})
       end)
 
     send_run_job_message(Processor.worker_name(worker), new_key)
@@ -167,7 +168,7 @@ defmodule RadioBeam.Job do
 
   defp delete(key) do
     Logger.info("Job completed successfully, deleting: #{inspect(key)}")
-    Repo.transaction!(fn -> Memento.Query.delete(__MODULE__, key) end)
+    Repo.delete(__MODULE__, key)
   end
 
   defp next_backoff(attempt), do: :timer.seconds(2 ** attempt)

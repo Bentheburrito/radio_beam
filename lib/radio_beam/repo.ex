@@ -77,6 +77,7 @@ defmodule RadioBeam.Repo do
     end
   end
 
+  @spec fetch(table :: module(), id :: any(), opts :: Keyword.t()) :: {:ok, struct()} | {:error, :not_found}
   def fetch(table, id, opts \\ []) when table in @tables do
     transaction(fn ->
       case Memento.Query.read(table, id, opts) do
@@ -101,6 +102,10 @@ defmodule RadioBeam.Repo do
     transaction(fn -> {:ok, Memento.Query.write(data)} end)
   end
 
+  def insert!(data) do
+    transaction!(fn -> Memento.Query.write(data) end)
+  end
+
   def insert_new(%table{} = data) when table in @tables do
     transaction(fn ->
       case fetch(table, data.id, lock: :write) do
@@ -108,5 +113,13 @@ defmodule RadioBeam.Repo do
         {:error, :not_found} -> {:ok, Memento.Query.write(data)}
       end
     end)
+  end
+
+  def delete(table, key) when table in @tables do
+    transaction(fn -> Memento.Query.delete(table, key) end)
+  end
+
+  def delete(%table{} = data) when table in @tables do
+    transaction(fn -> Memento.Query.delete_record(data) end)
   end
 end

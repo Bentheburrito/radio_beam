@@ -17,7 +17,7 @@ defmodule RadioBeam.User.Keys do
     with {:ok, %Device{} = device} <- User.get_device(user, device_id),
          {:ok, %Device{} = device} <- Device.put_keys(device, user.id, opts) do
       user = User.put_device(user, device)
-      Repo.transaction(fn -> {:ok, Memento.Query.write(user)} end)
+      Repo.insert(user)
     end
   end
 
@@ -32,7 +32,7 @@ defmodule RadioBeam.User.Keys do
         |> User.claim_device_otks()
 
       Map.new(user_device_key_map, fn {%User{} = updated_user, device_key_map} ->
-        Memento.Query.write(updated_user)
+        Repo.insert(updated_user)
         {updated_user.id, device_key_map}
       end)
     end)
@@ -170,7 +170,7 @@ defmodule RadioBeam.User.Keys do
       end)
       |> Enum.reduce(failures, fn
         {:ok, %User{} = user}, failures ->
-          Memento.Query.write(user)
+          Repo.insert(user)
           failures
 
         {:error, error}, failures ->
@@ -212,7 +212,7 @@ defmodule RadioBeam.User.Keys do
     |> Stream.map(&put_others_signature(&1, signer, user_map))
     |> Enum.reduce(_failures = %{}, fn
       {:ok, %User{} = user}, failures ->
-        Memento.Query.write(user)
+        Repo.insert(user)
         failures
 
       {:error, {user_id, keyb64, error}}, failures ->

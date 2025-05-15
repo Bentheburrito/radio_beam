@@ -76,7 +76,7 @@ defmodule RadioBeam.Room.Impl do
   end
 
   defp persist(room, pdus) do
-    init_txn = Transaction.add_fxn(Transaction.new(), :room, fn -> {:ok, Memento.Query.write(room)} end)
+    init_txn = Transaction.add_fxn(Transaction.new(), :room, fn -> RadioBeam.Repo.insert(room) end)
 
     txn_result =
       pdus

@@ -26,8 +26,6 @@ defmodule RadioBeam.User do
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
 
-  require Logger
-
   @type t() :: %__MODULE__{}
 
   @hash_pwd_opts [t_cost: 3, m_cost: 12, parallelism: 1]

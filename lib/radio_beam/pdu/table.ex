@@ -45,11 +45,9 @@ defmodule RadioBeam.PDU.Table do
         Map.from_struct(pdu)
       )
 
-    Repo.transaction(fn ->
-      case Memento.Query.write(record) do
-        %__MODULE__{} -> {:ok, pdu}
-      end
-    end)
+    with {:ok, %__MODULE__{}} <- Repo.insert(record) do
+      {:ok, pdu}
+    end
   end
 
   ### MISC HELPERS / GETTERS ###

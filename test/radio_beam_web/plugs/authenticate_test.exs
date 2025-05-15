@@ -2,6 +2,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
   use ExUnit.Case, async: true
   use Plug.Test
 
+  alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.Auth
   alias RadioBeam.User.Device
@@ -47,7 +48,7 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
 
     test "returns an unknown token (401) error when an otherwise valid token has expired", %{user: user, device: device} do
       user = User.put_device(user, Device.expire(device))
-      Memento.transaction!(fn -> Memento.Query.write(user) end)
+      Repo.insert(user)
       {:ok, device} = User.get_device(user, device.id)
       %{access_token: access_token} = Auth.session_info(user, device)
 

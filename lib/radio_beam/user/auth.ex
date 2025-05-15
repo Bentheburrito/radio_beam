@@ -65,8 +65,9 @@ defmodule RadioBeam.User.Auth do
     Repo.transaction(fn ->
       with {:ok, user_id, device_id, token} <- parse_auth_token(token),
            {:ok, %User{} = user} <- Repo.fetch(User, user_id),
-           {:ok, %User{} = user, %Device{} = device} <- verify_access_token(user, device_id, token) do
-        {:ok, Memento.Query.write(user), device}
+           {:ok, %User{} = user, %Device{} = device} <- verify_access_token(user, device_id, token),
+           {:ok, user} <- Repo.insert(user) do
+        {:ok, user, device}
       else
         {:error, :expired} -> {:error, :expired}
         _ -> {:error, :unknown_token}
@@ -111,8 +112,8 @@ defmodule RadioBeam.User.Auth do
             {:ok, %Device{} = device} -> Device.refresh(device)
           end
 
-        user = User.put_device(user, device)
-        {:ok, Memento.Query.write(user), device}
+        user = user |> User.put_device(device) |> Repo.insert!()
+        {:ok, user, device}
       else
         _ -> {:error, :unknown_user_or_pwd}
       end
@@ -128,7 +129,7 @@ defmodule RadioBeam.User.Auth do
          {:ok, %User{} = user} <- Repo.fetch(User, user_id),
          {:ok, %Device{} = device} <- User.get_device(user, device_id),
          {:ok, %User{} = user} <- refresh(user, device, token),
-         {:ok, %User{} = user} <- Repo.transaction(fn -> {:ok, Memento.Query.write(user)} end) do
+         {:ok, %User{} = user} <- Repo.insert(user) do
       User.get_device(user, device.id)
     else
       {:error, error} ->

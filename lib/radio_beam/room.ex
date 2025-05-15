@@ -331,14 +331,7 @@ defmodule RadioBeam.Room do
   @doc """
   Gets the %Room{} under the given room_id
   """
-  def get(id) do
-    Repo.transaction(fn ->
-      case Memento.Query.read(__MODULE__, id) do
-        nil -> {:error, :not_found}
-        room -> {:ok, room}
-      end
-    end)
-  end
+  def get(id), do: Repo.fetch(__MODULE__, id)
 
   @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
   def stripped_state_types, do: @stripped_state_types

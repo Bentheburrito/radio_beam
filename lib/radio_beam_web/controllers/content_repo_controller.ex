@@ -131,7 +131,8 @@ defmodule RadioBeamWeb.ContentRepoController do
     %User{id: uploader_id} = conn.assigns.user
 
     with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
-         {:ok, %Upload{id: ^mxc, file: :reserved, uploaded_by_id: ^uploader_id} = upload} <- Upload.get(mxc) do
+         {:ok, %Upload{id: ^mxc, file: :reserved, uploaded_by_id: ^uploader_id} = upload} <-
+           RadioBeam.Repo.fetch(Upload, mxc) do
       assign(conn, :upload, upload)
     else
       {:error, :not_found} ->

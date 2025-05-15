@@ -285,7 +285,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       device: device
     } do
       device = Device.expire(device)
-      user = Memento.transaction!(fn -> user |> User.put_device(device) |> Memento.Query.write() end)
+      {:ok, user} = user |> User.put_device(device) |> Repo.insert()
       %{refresh_token: refresh_token} = Auth.session_info(user, device)
 
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})

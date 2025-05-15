@@ -60,7 +60,7 @@ defmodule RadioBeam.User.Device.Message do
 
         {unsent, messages} ->
           messages = messages |> Map.put(since_token, unsent) |> mark_as_read(mark_as_read)
-          Memento.Query.write(put_in(user.device_map[device_id].messages, messages))
+          Repo.insert!(put_in(user.device_map[device_id].messages, messages))
           {:ok, Enum.reverse(unsent)}
       end
     end)
@@ -73,7 +73,7 @@ defmodule RadioBeam.User.Device.Message do
     with {:ok, user} <- Repo.fetch(User, user_id, lock: :write),
          {:ok, %Device{} = device} <- User.get_device(user, device_id) do
       messages = Map.update(device.messages, :unsent, [message], &[message | &1])
-      {:ok, Memento.Query.write(put_in(user.device_map[device.id].messages, messages))}
+      Repo.insert(put_in(user.device_map[device.id].messages, messages))
     end
   end
 

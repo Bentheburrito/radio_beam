@@ -3,8 +3,9 @@ defmodule Fixtures do
   Test fixtures
   """
 
-  alias RadioBeam.Room
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
+  alias RadioBeam.Repo
+  alias RadioBeam.Room
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo
   alias RadioBeam.User
@@ -140,7 +141,7 @@ defmodule Fixtures do
   def create_and_put_device_keys(user, device) do
     {key, _} = device_keys(device.id, user.id)
     {:ok, device} = Device.put_keys(device, user.id, identity_keys: key)
-    user = Memento.transaction!(fn -> user |> User.put_device(device) |> Memento.Query.write() end)
+    {:ok, user} = user |> User.put_device(device) |> Repo.insert()
     {user, device}
   end
 end

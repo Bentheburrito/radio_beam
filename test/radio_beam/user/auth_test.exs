@@ -3,6 +3,7 @@ defmodule RadioBeam.User.AuthTest do
 
   import ExUnit.CaptureLog, only: [capture_log: 1]
 
+  alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.Auth
   alias RadioBeam.User.Device
@@ -50,7 +51,7 @@ defmodule RadioBeam.User.AuthTest do
     test "fails to refresh if the device does not have a refresh token", %{user: user} do
       device_id = Device.generate_id()
       user = User.put_device(user, Device.new(refreshable?: false, id: device_id))
-      Memento.transaction!(fn -> Memento.Query.write(user) end)
+      Repo.insert(user)
 
       refresh_token = Device.generate_token()
 

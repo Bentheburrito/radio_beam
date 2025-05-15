@@ -18,7 +18,7 @@ defmodule RadioBeam.User.Account do
 
     Repo.transaction(fn ->
       with {:ok, %User{} = user} <- Repo.fetch(User, user_id, lock: :write) do
-        user |> User.put_event_filter(filter) |> Memento.Query.write()
+        user |> User.put_event_filter(filter) |> Repo.insert!()
         {:ok, filter.id}
       end
     end)
