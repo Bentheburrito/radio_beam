@@ -1,7 +1,9 @@
 defmodule RadioBeam.PDUTest do
   use ExUnit.Case, async: true
 
+  alias RadioBeam.Repo
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventGraph
   alias RadioBeam.PDU
 
   describe "get_children/2" do
@@ -11,8 +13,8 @@ defmodule RadioBeam.PDUTest do
       {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
 
       assert Room.member?(room_id, user.id)
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
-      assert {:ok, []} = PDU.get_children(parent_pdu)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
+      assert {:ok, []} = EventGraph.get_children(parent_pdu)
     end
 
     test "Return an event's single child event" do
@@ -26,8 +28,8 @@ defmodule RadioBeam.PDUTest do
       {:ok, child_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is another msg", relation)
 
       assert Room.member?(room_id, user.id)
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
-      assert {:ok, [%{event_id: ^child_event_id}]} = PDU.get_children(parent_pdu)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
+      assert {:ok, [%{event_id: ^child_event_id}]} = EventGraph.get_children(parent_pdu)
     end
 
     test "Return an event's two child events" do
@@ -42,12 +44,12 @@ defmodule RadioBeam.PDUTest do
       {:ok, child_event_id2} = Fixtures.send_text_msg(room_id, user.id, "And a 3rd msg", relation)
 
       assert Room.member?(room_id, user.id)
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
 
-      {:ok, children} = PDU.get_children(parent_pdu)
+      {:ok, children} = EventGraph.get_children(parent_pdu)
       assert children |> Stream.map(& &1.event_id) |> Enum.sort() == Enum.sort([child_event_id1, child_event_id2])
       # assert {:ok, [%{event_id: ^child_event_id1}, %{event_id: ^child_event_id2}]} =
-      # PDU.get_children(parent_pdu)
+      # EventGraph.get_children(parent_pdu)
     end
 
     test "Return an event's child and grandchild if the max_recurse level allows" do
@@ -66,10 +68,10 @@ defmodule RadioBeam.PDUTest do
       {:ok, grandchild_event_id} = Fixtures.send_text_msg(room_id, user.id, "And a 3rd msg", relation)
 
       assert Room.member?(room_id, user.id)
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
 
       assert {:ok, [%{event_id: ^child_event_id}, %{event_id: ^grandchild_event_id}]} =
-               PDU.get_children(parent_pdu, 3)
+               EventGraph.get_children(parent_pdu, 3)
     end
 
     test "Returns an event's child and grandchildren, up until max_recurse" do
@@ -92,9 +94,9 @@ defmodule RadioBeam.PDUTest do
       expected_ids = ids |> Enum.reverse() |> Enum.take(recurse_max)
 
       assert Room.member?(room_id, user.id)
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
 
-      {:ok, events} = PDU.get_children(parent_pdu, recurse_max)
+      {:ok, events} = EventGraph.get_children(parent_pdu, recurse_max)
       actual_ids = Enum.map(events, & &1.event_id)
       assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
     end
@@ -139,9 +141,9 @@ defmodule RadioBeam.PDUTest do
       [_would_need_to_recurse_to_4_for_this | expected_ids] = ids
 
       assert Room.member?(room_id, user.id)
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
 
-      {:ok, events} = PDU.get_children(parent_pdu, recurse_max)
+      {:ok, events} = EventGraph.get_children(parent_pdu, recurse_max)
       actual_ids = Enum.map(events, & &1.event_id)
       assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
     end
@@ -158,8 +160,8 @@ defmodule RadioBeam.PDUTest do
       {:ok, _child_event_id} = Fixtures.send_text_msg(room_id2, user.id, "This is another msg", relation)
 
       assert Room.member?(room_id, user.id)
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
-      assert {:ok, []} = PDU.get_children(parent_pdu)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
+      assert {:ok, []} = EventGraph.get_children(parent_pdu)
     end
   end
 
@@ -167,7 +169,7 @@ defmodule RadioBeam.PDUTest do
     user = Fixtures.user()
     {:ok, room_id} = Room.create(user)
     {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
-    {:ok, pdu} = PDU.get(event_id)
+    {:ok, pdu} = Repo.fetch(PDU, event_id)
 
     assert PDU.fetch(pdu, :event_id) == Map.fetch(pdu, :event_id)
     assert PDU.get(pdu, :event_id, :default) == Map.get(pdu, :event_id, :default)

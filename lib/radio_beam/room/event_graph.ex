@@ -10,7 +10,9 @@ defmodule RadioBeam.Room.EventGraph do
   - https://github.com/matrix-org/matrix-spec/issues/852
   """
 
+  alias RadioBeam.Repo.MatchSpecs
   alias RadioBeam.PDU
+  alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph.Core
   alias RadioBeam.Room.EventGraph.PaginationToken
@@ -22,35 +24,22 @@ defmodule RadioBeam.Room.EventGraph do
   defdelegate append(room, parents, event_params), to: Core
   defdelegate redact_pdu(pdu, redaction_pdu, room_version), to: Core
 
-  # TODO: merge chunks if this PDU fills in a gap!
-  def persist_pdu(%PDU{} = pdu), do: PDU.Table.persist(pdu)
-
   ### READ DAG ###
 
   def root(room_id) do
-    match_head = put_elem(PDU.Table.__info__().query_base, 1, {room_id, 0, 1, :_, :_})
-    match_spec = [{match_head, [], [:"$_"]}]
-
-    case PDU.Table.all_matching(match_spec, :forward, limit: 1) do
+    case Repo.select(PDU, MatchSpecs.PDU.root(room_id), limit: 1) do
       {:ok, [%PDU{type: "m.room.create"} = root], _cont} -> {:ok, root}
       _ -> {:error, :not_found}
     end
   end
 
   def tip(room_id) do
-    match_head = put_elem(PDU.Table.__info__().query_base, 1, {room_id, :_, :_, :_, :_})
-    match_spec = [{match_head, [], [:"$_"]}]
-
-    case PDU.Table.all_matching(match_spec, :backward) do
+    case Repo.select(PDU, MatchSpecs.PDU.tip(room_id), dir: :backward, limit: 1) do
       {:ok, [%PDU{} = tip | _], _cont} -> {:ok, tip}
       _ -> {:error, :not_found}
     end
   end
 
-  @chunk :"$100"
-  @depth :"$101"
-  @arrival_time :"$102"
-  @content :"$103"
   def user_joined_after?(user_id, room_id, %PDU{} = pdu) do
     case Room.get_membership(room_id, user_id) do
       :not_found ->
@@ -60,7 +49,7 @@ defmodule RadioBeam.Room.EventGraph do
         true
 
       _not_joined_membership ->
-        {:ok, state_events} = PDU.all(pdu.state_events)
+        {:ok, state_events} = Repo.get_all(PDU, pdu.state_events)
         join_event? = &(&1.type == "m.room.member" and &1.state_key == user_id and &1.content["membership"] == "join")
 
         non_join_event? =
@@ -72,22 +61,9 @@ defmodule RadioBeam.Room.EventGraph do
         # elseif it's any other pdu and its prev_state contains the user's join event, true
         # else query table
         if non_join_event?.(pdu) or (not join_event?.(pdu) and state_events |> Enum.find(join_event?) |> is_nil()) do
-          match_head =
-            PDU.Table.__info__().query_base
-            |> put_elem(1, {room_id, @chunk, @depth, @arrival_time, :_})
-            |> put_elem(5, @content)
-            |> put_elem(14, user_id)
+          match_spec = MatchSpecs.PDU.next_join_after(pdu, room_id, user_id)
 
-          guards = [
-            {:>=, @chunk, pdu.chunk},
-            {:>=, @depth, pdu.depth},
-            {:>=, @arrival_time, pdu.arrival_time},
-            {:==, "join", {:map_get, "membership", @content}}
-          ]
-
-          match_spec = [{match_head, guards, [:"$_"]}]
-
-          case PDU.Table.all_matching(match_spec, :forward, limit: 1) do
+          case Repo.select(PDU, match_spec, limit: 1) do
             {:ok, [%PDU{}], _cont} -> true
             _ -> false
           end
@@ -97,22 +73,10 @@ defmodule RadioBeam.Room.EventGraph do
     end
   end
 
-  @origin_server_ts :"$100"
   def get_nearest_event(room_id, dir, timestamp, cutoff_ms) do
-    match_head =
-      PDU.Table.__info__().query_base
-      |> put_elem(1, {room_id, :_, :_, :_, :_})
-      |> put_elem(8, @origin_server_ts)
+    match_spec = MatchSpecs.PDU.nearest_event(room_id, dir, timestamp, cutoff_ms)
 
-    guards =
-      case dir do
-        :forward -> [{:>=, @origin_server_ts, timestamp}, {:"=<", @origin_server_ts, timestamp + cutoff_ms}]
-        :backward -> [{:"=<", @origin_server_ts, timestamp}, {:>=, @origin_server_ts, timestamp - cutoff_ms}]
-      end
-
-    match_spec = [{match_head, guards, [:"$_"]}]
-
-    case PDU.Table.all_matching(match_spec, dir, limit: 1) do
+    case Repo.select(PDU, match_spec, dir: dir, limit: 1) do
       {:ok, [], _cont} -> {:error, :not_found}
       {:ok, [pdu], :end} -> {:ok, pdu}
       {:ok, [pdu], cont} -> {:ok, pdu, cont}
@@ -120,10 +84,47 @@ defmodule RadioBeam.Room.EventGraph do
   end
 
   def get_nearest_event(continuation) do
-    case PDU.Table.all_matching(continuation, _dir_does_not_matter = :forward, limit: 1) do
+    case Repo.select(PDU, continuation, limit: 1) do
       {:ok, [], _cont} -> {:error, :not_found}
       {:ok, [pdu], :end} -> {:ok, pdu}
       {:ok, [pdu], cont} -> {:ok, pdu, cont}
+    end
+  end
+
+  @doc """
+  Returns a list of child PDUs of the given parent PDU. An event A is
+  considered a child of event B if `A.content.["m.relates_to"].event_id == B.event_id`
+  """
+  def get_children(pdu, recurse_max \\ Application.fetch_env!(:radio_beam, :max_event_recurse))
+
+  def get_children(%PDU{} = pdu, recurse_max),
+    do: get_children([pdu.event_id], pdu.room_id, recurse_max, Stream.map([], & &1))
+
+  def get_children([%PDU{room_id: room_id} | _] = pdus, recurse_max) when is_list(pdus),
+    do: get_children(Enum.map(pdus, & &1.event_id), room_id, recurse_max, Stream.map([], & &1))
+
+  # TODO: topological ordering
+  defp get_children(_event_ids, _room_id, recurse, child_event_stream) when recurse <= 0,
+    do: {:ok, Enum.to_list(child_event_stream)}
+
+  defp get_children(event_ids, room_id, recurse, child_event_stream) do
+    case Repo.select(PDU, MatchSpecs.PDU.get_all_children(event_ids, room_id)) do
+      {:ok, [], _cont} ->
+        {:ok, Enum.to_list(child_event_stream)}
+
+      {:ok, child_pdus, _cont} ->
+        more_child_events = Enum.reverse(child_pdus)
+
+        # get the grandchildren
+        get_children(
+          Enum.map(more_child_events, & &1.event_id),
+          room_id,
+          recurse - 1,
+          Stream.concat(child_event_stream, more_child_events)
+        )
+
+      error ->
+        error
     end
   end
 
@@ -136,17 +137,16 @@ defmodule RadioBeam.Room.EventGraph do
   stream order (such as in incremental syncs), sort results by `{:arrival_time, :arrival_order}`.
   """
   def all_since(room_id, %PaginationToken{arrival_key: since} = token, limit \\ max_events(:timeline)) do
-    match_head = put_elem(PDU.Table.__info__().query_base, 1, {room_id, :_, :_, :_, :_})
-    match_spec = [{match_head, [{:>, :"$2", {since}}], [:"$_"]}]
+    match_spec = MatchSpecs.PDU.since(room_id, since)
 
-    with {:ok, pdus, continuation} <- PDU.Table.all_matching(match_spec, :backward, limit: limit) do
+    with {:ok, pdus, continuation} <- Repo.select(PDU, match_spec, dir: :backward, limit: limit) do
       complete? =
         case continuation do
           :end ->
             true
 
           cont ->
-            case PDU.Table.all_matching(cont) do
+            case Repo.select(PDU, cont) do
               {:ok, [], :end} -> true
               _ -> false
             end
@@ -180,8 +180,6 @@ defmodule RadioBeam.Room.EventGraph do
          {:ok, to_pdu_or_limit} <- parse_to(to),
          :ok <- assert_no_gaps(from_pdu, to_pdu_or_limit),
          {:ok, guards} <- Core.build_window_guards(from_pdu, to_pdu_or_limit, dir) do
-      match_head = put_elem(PDU.Table.__info__().query_base, 1, {room_id, from_pdu.chunk, :"$1", :_, :_})
-
       # pagination tokens point to the last known event. We include the 
       # `direction` used when this token was obtained, so they can act more
       # like a delimiter between "pages" of events, rather than blindly
@@ -199,7 +197,7 @@ defmodule RadioBeam.Room.EventGraph do
 
       from_event_id = from_pdu.event_id
 
-      case do_traverse([{match_head, guards, [:"$_"]}], from_pdu.chunk, dir, limit) do
+      case do_traverse(MatchSpecs.PDU.traverse(room_id, from_pdu.chunk, guards), from_pdu.chunk, dir, limit) do
         {:ok, pdus, cont} when from in [:root, :tip] or include_head? -> {:ok, pdus, cont}
         {:ok, [%{event_id: ^from_event_id} | pdus], cont} -> {:ok, pdus, cont}
       end
@@ -208,10 +206,12 @@ defmodule RadioBeam.Room.EventGraph do
 
   defp parse_from(room_id, :root), do: {root(room_id), :forward}
   defp parse_from(room_id, :tip), do: {tip(room_id), :backward}
-  defp parse_from(_room_id, {"$" <> _ = event_id, dir}) when dir in [:backward, :forward], do: {PDU.get(event_id), dir}
+
+  defp parse_from(_room_id, {"$" <> _ = event_id, dir}) when dir in [:backward, :forward],
+    do: {Repo.fetch(PDU, event_id), dir}
 
   defp parse_from(room_id, {%PaginationToken{event_ids: event_ids}, dir}) when dir in [:backward, :forward] do
-    with {:ok, pdus} <- PDU.all(event_ids),
+    with {:ok, pdus} <- Repo.get_all(PDU, event_ids),
          [%PDU{room_id: ^room_id} = pdu] <- Enum.filter(pdus, &(&1.room_id == room_id)) do
       {{:ok, pdu}, dir}
     else
@@ -220,7 +220,7 @@ defmodule RadioBeam.Room.EventGraph do
   end
 
   defp parse_to(:limit), do: {:ok, :limit}
-  defp parse_to("$" <> _ = event_id), do: PDU.get(event_id)
+  defp parse_to("$" <> _ = event_id), do: Repo.fetch(PDU, event_id)
 
   @spec_suggested_default_limit 10
   defp clamp_limit(limit) when is_integer(limit), do: limit |> min(max_events(:timeline)) |> max(0)
@@ -262,8 +262,8 @@ defmodule RadioBeam.Room.EventGraph do
   defp do_traverse(match_spec_or_cont, chunk, dir, limit, pdus_acc) do
     root_chunk? = chunk == 0
 
-    RadioBeam.Repo.transaction(fn ->
-      case PDU.Table.all_matching(match_spec_or_cont, dir, limit: limit) do
+    Repo.transaction(fn ->
+      case Repo.select(PDU, match_spec_or_cont, dir: dir, limit: limit) do
         {:ok, pdus, :end} when dir == :forward and root_chunk? -> {:ok, pdus_acc ++ pdus, :tip}
         {:ok, pdus, :end} when dir == :backward and root_chunk? -> {:ok, pdus_acc ++ pdus, :root}
         {:ok, pdus, :end} -> {:ok, pdus_acc ++ pdus, {:end_of_chunk, next_token(pdus, pdus_acc, dir)}}

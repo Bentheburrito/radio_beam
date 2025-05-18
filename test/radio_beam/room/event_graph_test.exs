@@ -1,10 +1,11 @@
 defmodule RadioBeam.Room.EventGraphTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room.EventGraph.PaginationToken
   alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
   alias RadioBeam.PDU
+  alias RadioBeam.Repo
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.EventGraph
 
@@ -150,11 +151,11 @@ defmodule RadioBeam.Room.EventGraphTest do
       assert EventGraph.user_joined_after?(jimothy.id, room_id, pdu)
 
       {:ok, event_id} = Room.leave(room_id, jimothy.id)
-      {:ok, pdu} = PDU.get(event_id)
+      {:ok, pdu} = Repo.fetch(PDU, event_id)
       refute EventGraph.user_joined_after?(jimothy.id, room_id, pdu)
 
       Fixtures.send_text_msg(room_id, creator.id, "bye?")
-      {:ok, pdu} = PDU.get(event_id)
+      {:ok, pdu} = Repo.fetch(PDU, event_id)
       refute EventGraph.user_joined_after?(jimothy.id, room_id, pdu)
     end
   end
@@ -206,7 +207,7 @@ defmodule RadioBeam.Room.EventGraphTest do
       user: user
     } do
       {:ok, room} = Room.get(room_id)
-      {:ok, parents} = PDU.all(since_pdu.prev_events)
+      {:ok, parents} = Repo.get_all(PDU, since_pdu.prev_events)
 
       event_params =
         room_id
@@ -214,7 +215,7 @@ defmodule RadioBeam.Room.EventGraphTest do
         |> auth_event()
 
       {:ok, e_late} = EventGraph.append(room, parents, event_params)
-      EventGraph.persist_pdu(e_late)
+      Repo.insert(e_late)
 
       assert {:ok, [^e_late, e1, e2], _token, true} = EventGraph.all_since(room_id, since, 5)
 
@@ -364,7 +365,7 @@ defmodule RadioBeam.Room.EventGraphTest do
         pdus ->
           parents = pdus |> List.first() |> List.wrap()
           {:ok, pdu} = EventGraph.append(room, parents, event)
-          {:ok, ^pdu} = EventGraph.persist_pdu(pdu)
+          {:ok, ^pdu} = Repo.insert(pdu)
           [pdu | pdus]
       end
 

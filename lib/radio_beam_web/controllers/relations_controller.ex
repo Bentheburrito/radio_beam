@@ -6,6 +6,7 @@ defmodule RadioBeamWeb.RelationsController do
   alias RadioBeam.Room.Timeline
   alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventGraph
   alias RadioBeam.User
   alias RadioBeamWeb.Schemas.Relations, as: RelationsSchema
 
@@ -22,11 +23,11 @@ defmodule RadioBeamWeb.RelationsController do
       if recurse, do: Application.fetch_env!(:radio_beam, :max_event_recurse), else: 1
 
     # TOIMPL: this endpoint can take a from/to token returned from /messages
-    # and /sync (so a PaginationToken). PDU.get_children does not currently
+    # and /sync (so a PaginationToken). EventGraph.get_children does not currently
     # support this (nor a `limit`), so just returning all children for now -
     # need to come back to do this properly
     with {:ok, %PDU{} = pdu} <- Room.get_event(room_id, user.id, event_id, _bundle_aggregates? = false),
-         {:ok, children} <- PDU.get_children(pdu, recurse_level) do
+         {:ok, children} <- EventGraph.get_children(pdu, recurse_level) do
       rel_type = Map.get(params, "rel_type")
       event_type = Map.get(params, "event_type")
 

@@ -2,8 +2,9 @@ defmodule RadioBeam.Room.TimelineTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.PDU
-  alias RadioBeam.Room.EventGraph
+  alias RadioBeam.Repo
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventGraph
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline
   alias RadioBeam.User.EventFilter
@@ -1078,7 +1079,7 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}}
              ] = chunk
 
-      {:ok, end_page_2_pdu} = PDU.get(event_id2)
+      {:ok, end_page_2_pdu} = Repo.fetch(PDU, event_id2)
       expected_end = PaginationToken.new(end_page_2_pdu, :forward)
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next2, end: ^expected_end}} =
@@ -1092,7 +1093,7 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "there we go"}}
              ] = chunk
 
-      {:ok, end_page_1_pdu} = PDU.get(event_id1)
+      {:ok, end_page_1_pdu} = Repo.fetch(PDU, event_id1)
       expected_end = PaginationToken.new(end_page_1_pdu, :forward)
 
       assert {:ok, %{chunk: chunk, state: state, start: ^next, end: ^expected_end}} =

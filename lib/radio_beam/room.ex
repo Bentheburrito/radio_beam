@@ -219,7 +219,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_event(_room_id, user_id, event_id, bundle_aggregates? \\ true) do
-    with {:ok, pdu} <- PDU.get(event_id),
+    with {:ok, pdu} <- Repo.fetch(PDU, event_id),
          true <- Timeline.authz_to_view?(pdu, user_id) do
       pdu = if bundle_aggregates?, do: Timeline.bundle_aggregations(pdu, user_id), else: pdu
       {:ok, pdu}
@@ -257,9 +257,9 @@ defmodule RadioBeam.Room do
   end
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    with {:ok, %{room_id: ^room_id} = pdu} <- PDU.get(at_event_id),
+    with {:ok, %{room_id: ^room_id} = pdu} <- Repo.fetch(PDU, at_event_id),
          true <- Timeline.authz_to_view?(pdu, user_id),
-         {:ok, state_events} <- PDU.all(pdu.state_events) do
+         {:ok, state_events} <- Repo.get_all(PDU, pdu.state_events) do
       get_members_from_state(state_events, membership_filter)
     else
       _ -> {:error, :unauthorized}
@@ -282,9 +282,9 @@ defmodule RadioBeam.Room do
         {:ok, state}
 
       {:ok, %{state: %{{"m.room.member", ^user_id} => %{content: %{"membership" => "leave"}} = membership}}} ->
-        {:ok, pdu} = PDU.get(membership.event_id)
+        {:ok, pdu} = Repo.fetch(PDU, membership.event_id)
 
-        case PDU.all(pdu.state_events) do
+        case Repo.get_all(PDU, pdu.state_events) do
           {:ok, state_events} ->
             {:ok, Map.new(state_events, &{{&1.type, &1.state_key}, &1})}
 
@@ -346,9 +346,9 @@ defmodule RadioBeam.Room do
   end
 
   def apply_redaction(room_id, event_id) do
-    {:ok, redaction} = PDU.get(event_id)
+    {:ok, redaction} = Repo.fetch(PDU, event_id)
 
-    with {:ok, to_redact} <- PDU.get(redaction.content["redacts"]) do
+    with {:ok, to_redact} <- Repo.fetch(PDU, redaction.content["redacts"]) do
       Room.Server.call(room_id, {:try_redact, to_redact, redaction})
     else
       _ -> :error

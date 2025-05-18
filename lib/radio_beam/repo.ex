@@ -9,6 +9,7 @@ defmodule RadioBeam.Repo do
   alias RadioBeam.Job
   alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Repo.Tables
   alias RadioBeam.User
 
   @doc """
@@ -29,7 +30,10 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, PDU.Table, Room, Room.Alias, Upload, Job]
+  @one_to_one_tables [User, Room, Room.Alias, Upload, Job]
+  @table_map %{PDU => Tables.PDU}
+  @mappable Map.keys(@table_map)
+  @tables @one_to_one_tables ++ Map.values(@table_map)
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =
@@ -78,7 +82,9 @@ defmodule RadioBeam.Repo do
   end
 
   @spec fetch(table :: module(), id :: any(), opts :: Keyword.t()) :: {:ok, struct()} | {:error, :not_found}
-  def fetch(table, id, opts \\ []) when table in @tables do
+  def fetch(table, id, opts \\ [])
+
+  def fetch(table, id, opts) when table in @one_to_one_tables do
     transaction(fn ->
       case Memento.Query.read(table, id, opts) do
         nil -> {:error, :not_found}
@@ -87,7 +93,11 @@ defmodule RadioBeam.Repo do
     end)
   end
 
-  def get_all(table, ids, opts \\ []) when table in @tables do
+  def fetch(table, id, opts) when table in @mappable, do: @table_map[table].fetch(id, opts)
+
+  def get_all(table, ids, opts \\ [])
+
+  def get_all(table, ids, opts) when table in @one_to_one_tables do
     transaction(fn ->
       Enum.reduce(ids, [], fn id, acc ->
         case fetch(table, id, opts) do
@@ -98,9 +108,13 @@ defmodule RadioBeam.Repo do
     end)
   end
 
-  def insert(%table{} = data) when table in @tables do
+  def get_all(table, ids, opts) when table in @mappable, do: @table_map[table].get_all(ids, opts)
+
+  def insert(%table{} = data) when table in @one_to_one_tables do
     transaction(fn -> {:ok, Memento.Query.write(data)} end)
   end
+
+  def insert(%table{} = data) when table in @mappable, do: @table_map[table].insert(data)
 
   def insert!(data) do
     transaction!(fn -> Memento.Query.write(data) end)
@@ -122,4 +136,12 @@ defmodule RadioBeam.Repo do
   def delete(%table{} = data) when table in @tables do
     transaction(fn -> Memento.Query.delete_record(data) end)
   end
+
+  def select(table, match_spec, opts \\ [])
+
+  def select(table, match_spec, opts) when table in @one_to_one_tables do
+    transaction(fn -> Memento.Query.select_raw(table, match_spec, opts) end)
+  end
+
+  def select(table, match_spec, opts) when table in @mappable, do: @table_map[table].select(match_spec, opts)
 end

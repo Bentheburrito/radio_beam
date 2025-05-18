@@ -5,8 +5,6 @@ defmodule RadioBeam.PDU do
   """
   @behaviour Access
 
-  alias RadioBeam.PDU.Table
-
   @schema %{
     arrival_time: :integer,
     arrival_order: :integer,
@@ -63,10 +61,6 @@ defmodule RadioBeam.PDU do
   defdelegate pop(term, key), to: Map
   defdelegate get_and_update(term, key, fun), to: Map
 
-  defdelegate all(event_ids), to: Table
-  defdelegate get(event_id), to: Table
-  defdelegate get_redaction(event_id, room_id), to: Table
-
   @doc """
   Compares 2 PDUs according to their topological ordering. This function will
   raise a FunctionClauseError if the PDUs do not belong to the same room.
@@ -82,43 +76,6 @@ defmodule RadioBeam.PDU do
       pdu1_key == pdu2_key -> :eq
       pdu1_key > pdu2_key -> :gt
       :else -> :lt
-    end
-  end
-
-  @doc """
-  Returns a list of child PDUs of the given parent PDU. An event A is
-  considered a child of event B if `A.content.["m.relates_to"].event_id == B.event_id`
-  """
-  def get_children(pdu, recurse_max \\ Application.fetch_env!(:radio_beam, :max_event_recurse))
-
-  def get_children(%__MODULE__{} = pdu, recurse_max),
-    do: get_children([pdu.event_id], pdu.room_id, recurse_max, Stream.map([], & &1))
-
-  def get_children([%__MODULE__{room_id: room_id} | _] = pdus, recurse_max) when is_list(pdus),
-    do: get_children(Enum.map(pdus, & &1.event_id), room_id, recurse_max, Stream.map([], & &1))
-
-  # TODO: topological ordering
-  defp get_children(_event_ids, _room_id, recurse, child_event_stream) when recurse <= 0,
-    do: {:ok, Enum.to_list(child_event_stream)}
-
-  defp get_children(event_ids, room_id, recurse, child_event_stream) do
-    case Table.all_children(event_ids, room_id) do
-      {:ok, []} ->
-        {:ok, Enum.to_list(child_event_stream)}
-
-      {:ok, child_pdus} ->
-        more_child_events = Enum.reverse(child_pdus)
-
-        # get the grandchildren
-        get_children(
-          Enum.map(more_child_events, & &1.event_id),
-          room_id,
-          recurse - 1,
-          Stream.concat(child_event_stream, more_child_events)
-        )
-
-      error ->
-        error
     end
   end
 

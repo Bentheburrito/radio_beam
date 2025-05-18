@@ -4,6 +4,7 @@ defmodule RadioBeam.RoomTest do
   import ExUnit.CaptureLog, only: [capture_log: 1]
 
   alias RadioBeam.PDU
+  alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.RoomRegistry
 
@@ -191,7 +192,7 @@ defmodule RadioBeam.RoomTest do
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
       assert {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
       assert {:ok, %{latest_event_ids: [^event_id]}} = Room.get(room_id)
-      assert {:ok, %{sender: ^creator_id}} = PDU.get(event_id)
+      assert {:ok, %{sender: ^creator_id}} = Repo.fetch(PDU, event_id)
     end
 
     test "member can put a message in the room if has perms", %{user1: creator, user2: %{id: user_id} = user} do
@@ -202,7 +203,7 @@ defmodule RadioBeam.RoomTest do
       content = %{"msgtype" => "m.text", "body" => "This is another test message"}
       assert {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", content)
       assert {:ok, %{latest_event_ids: [^event_id]}} = Room.get(room_id)
-      assert {:ok, %{sender: ^user_id}} = PDU.get(event_id)
+      assert {:ok, %{sender: ^user_id}} = Repo.fetch(PDU, event_id)
     end
 
     test "member can't put a message in the room without perms", %{user1: creator, user2: user} do
@@ -375,7 +376,7 @@ defmodule RadioBeam.RoomTest do
     test "redacts a message event if the redactor is the creator", %{user: user, room_id: room_id} do
       {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "delete me")
       assert {:ok, redaction_event_id} = Room.redact_event(room_id, user.id, event_id, "meant to be deleted")
-      assert {:ok, %{content: content}} = PDU.get(event_id)
+      assert {:ok, %{content: content}} = Repo.fetch(PDU, event_id)
       assert 0 = map_size(content)
       assert {:ok, %{latest_event_ids: [^redaction_event_id]}} = Room.get(room_id)
     end

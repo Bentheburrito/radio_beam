@@ -9,6 +9,7 @@ defmodule RadioBeam.Room.Timeline do
   alias Phoenix.PubSub
   alias RadioBeam.PDU
   alias RadioBeam.PubSub, as: PS
+  alias RadioBeam.Repo
   alias RadioBeam.Room.EventGraph
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Timeline.Core
@@ -42,7 +43,7 @@ defmodule RadioBeam.Room.Timeline do
   def filter_authz(pdus, :forward, user_id), do: pdus |> filter_authz(user_id) |> Enum.reverse()
 
   defp filter_authz([first_pdu | _] = pdus, user_id) do
-    {:ok, state_events} = PDU.all(first_pdu.state_events)
+    {:ok, state_events} = Repo.get_all(PDU, first_pdu.state_events)
 
     user_membership =
       Enum.find_value(state_events, :not_found, fn
@@ -205,7 +206,7 @@ defmodule RadioBeam.Room.Timeline do
     case membership do
       "leave" when not filter.include_leave? ->
         {:ok, room} = Room.get(room_id)
-        {:ok, latest_pdus} = PDU.all(room.latest_event_ids)
+        {:ok, latest_pdus} = Repo.get_all(PDU, room.latest_event_ids)
         {:no_update, latest_pdus}
 
       membership when membership in ~w|ban join leave| ->
@@ -226,7 +227,7 @@ defmodule RadioBeam.Room.Timeline do
       "invite" when is_nil(last_sync_pdus) ->
         PubSub.subscribe(PS, PS.stripped_state_events(room_id))
         {:ok, room} = Room.get(room_id)
-        {:ok, latest_pdus} = PDU.all(room.latest_event_ids)
+        {:ok, latest_pdus} = Repo.get_all(PDU, room.latest_event_ids)
         {:ok, :invite, latest_pdus, %{invite_state: %{events: Room.stripped_state(room, user_id)}}}
 
       "invite" ->
@@ -242,9 +243,8 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   defp get_state_delta(last_sync_pdus, timeline_events, full_state?) do
-    List.last(last_sync_pdus || [])
-    |> Core.get_state_delta_ids(List.first(timeline_events), full_state?)
-    |> PDU.all()
+    event_ids = List.last(last_sync_pdus || []) |> Core.get_state_delta_ids(List.first(timeline_events), full_state?)
+    Repo.get_all(PDU, event_ids)
   end
 
   defp make_config(room_id, user_id, membership, filter, full_state?, known_memberships) do
@@ -259,7 +259,7 @@ defmodule RadioBeam.Room.Timeline do
       "join" ->
         PubSub.subscribe(PS, PS.all_room_events(room_id))
         {:ok, room} = Room.get(room_id)
-        {:ok, latest_pdus} = PDU.all(room.latest_event_ids)
+        {:ok, latest_pdus} = Repo.get_all(PDU, room.latest_event_ids)
 
         Map.merge(init_config, %{
           room: room,
@@ -270,7 +270,7 @@ defmodule RadioBeam.Room.Timeline do
       membership when membership in ~w|ban leave| ->
         {:ok, room} = Room.get(room_id)
         user_leave_event_id = room.state[{"m.room.member", user_id}].event_id
-        {:ok, user_leave_pdu} = PDU.get(user_leave_event_id)
+        {:ok, user_leave_pdu} = Repo.fetch(PDU, user_leave_event_id)
 
         Map.merge(init_config, %{
           room: room,
@@ -311,7 +311,7 @@ defmodule RadioBeam.Room.Timeline do
   def bundle_aggregations([], _user_id), do: []
 
   def bundle_aggregations(%PDU{} = pdu, user_id) do
-    {:ok, child_pdus} = PDU.get_children(pdu, _recurse = 1)
+    {:ok, child_pdus} = EventGraph.get_children(pdu, _recurse = 1)
 
     case Enum.filter(child_pdus, &authz_to_view?(&1, user_id)) do
       [] -> pdu
@@ -320,7 +320,7 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   def bundle_aggregations(events, user_id) do
-    {:ok, child_pdus} = PDU.get_children(events, _recurse = 1)
+    {:ok, child_pdus} = EventGraph.get_children(events, _recurse = 1)
     # this will get expensive!!
     authz_child_pdus = Enum.filter(child_pdus, &authz_to_view?(&1, user_id))
     authz_child_event_ids = authz_child_pdus |> Stream.map(& &1.event_id) |> MapSet.new()
@@ -355,7 +355,7 @@ defmodule RadioBeam.Room.Timeline do
   defp get_pagination_token_pdus(:latest), do: %{}
 
   defp get_pagination_token_pdus(%{event_ids: event_ids}) do
-    {:ok, pdus} = PDU.all(event_ids)
+    {:ok, pdus} = Repo.get_all(PDU, event_ids)
     Enum.group_by(pdus, & &1.room_id)
   end
 end

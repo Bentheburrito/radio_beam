@@ -3,6 +3,7 @@ defmodule RadioBeam.Room.Impl do
   Implementation details for Room
   """
   alias RadioBeam.PDU
+  alias RadioBeam.Repo
   alias RadioBeam.Repo.Transaction
   alias RadioBeam.Room
   alias RadioBeam.Room.Core
@@ -15,7 +16,7 @@ defmodule RadioBeam.Room.Impl do
 
   def put_events(%Room{} = room, events) do
     latest_pdus =
-      case PDU.all(room.latest_event_ids) do
+      case Repo.get_all(PDU, room.latest_event_ids) do
         {:ok, pdus} -> pdus
         {:error, _} -> []
       end
@@ -40,16 +41,14 @@ defmodule RadioBeam.Room.Impl do
 
   defp assert_no_dup_annotations(pdus) do
     new_annotations = Enum.filter(pdus, &(&1.content["m.relates_to"]["rel_type"] == "m.annotation"))
+    parent_ids = Enum.map(new_annotations, & &1.parent_id)
 
-    new_annotations
-    |> Enum.map(& &1.parent_id)
-    |> PDU.all()
-    |> case do
+    case Repo.get_all(PDU, parent_ids) do
       {:ok, []} ->
         :ok
 
       {:ok, annotated} ->
-        {:ok, children} = PDU.get_children(annotated, _recurse = 1)
+        {:ok, children} = EventGraph.get_children(annotated, _recurse = 1)
         children_by_parent = Enum.group_by(children, & &1.parent_id)
 
         duplicate? =
@@ -93,13 +92,13 @@ defmodule RadioBeam.Room.Impl do
     [pdu.content["alias"] | Map.get(pdu.content, "alt_aliases", [])]
     |> Stream.reject(&is_nil/1)
     |> Enum.reduce(txn, &Transaction.add_fxn(&2, "put_alias_#{&1}", fn -> Room.Alias.put(&1, pdu.room_id) end))
-    |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
+    |> Transaction.add_fxn(:pdu, fn -> Repo.insert(pdu) end)
   end
 
   defp persist_pdu_with_side_effects(%PDU{type: "m.room.redaction"} = pdu, room, txn) do
     txn
     |> Transaction.add_fxn("apply-or-enqueue-redaction-#{pdu.event_id}", fn ->
-      case PDU.get(pdu.content["redacts"]) do
+      case Repo.fetch(PDU, pdu.content["redacts"]) do
         {:ok, to_redact} ->
           try_redact(room, to_redact, pdu)
 
@@ -111,18 +110,18 @@ defmodule RadioBeam.Room.Impl do
     end)
     # TODO: should also mark the m.room.redaction PDU somehow, to indicate to
     # not serve to clients
-    |> Transaction.add_fxn(:pdu, fn -> EventGraph.persist_pdu(pdu) end)
+    |> Transaction.add_fxn(:pdu, fn -> Repo.insert(pdu) end)
   end
 
   # TOIMPL: add room to published room list if visibility option was set to :public
   defp persist_pdu_with_side_effects(%PDU{} = pdu, _room, txn),
-    do: Transaction.add_fxn(txn, :pdu, fn -> EventGraph.persist_pdu(pdu) end)
+    do: Transaction.add_fxn(txn, :pdu, fn -> Repo.insert(pdu) end)
 
   def try_redact(room, to_redact, pdu) do
     if Timeline.authz_to_view?(to_redact, pdu.sender) and Core.authz_redact?(room, to_redact.sender, pdu.sender) do
       case EventGraph.redact_pdu(to_redact, pdu, room.version) do
         {:ok, redacted_pdu} ->
-          EventGraph.persist_pdu(redacted_pdu)
+          Repo.insert(redacted_pdu)
 
         {:error, cs} = error ->
           Logger.error("Could not redact an event, enqueueing retry job. Error: #{inspect(cs)}")

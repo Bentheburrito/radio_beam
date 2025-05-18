@@ -2,7 +2,9 @@ defmodule RadioBeam.PDU.RelationshipsTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.PDU.Relationships
+  alias RadioBeam.Repo
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventGraph
   alias RadioBeam.PDU
 
   describe "get_aggregations/3" do
@@ -10,7 +12,7 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
       {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
       assert 0 = map_size(parent_pdu.unsigned)
 
       relation = %{"m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "m.thread"}}
@@ -21,7 +23,7 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       Process.sleep(5)
       {:ok, thread_event_id3} = Fixtures.send_text_msg(room_id, user.id, "Yay", relation)
 
-      {:ok, child_events} = PDU.get_children(parent_pdu)
+      {:ok, child_events} = EventGraph.get_children(parent_pdu)
 
       assert %PDU{
                unsigned: %{
@@ -44,7 +46,7 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
       {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
       assert 0 = map_size(parent_pdu.unsigned)
 
       content = %{
@@ -56,7 +58,7 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       Process.sleep(5)
       {:ok, replace_event_id} = Fixtures.send_text_msg(room_id, user.id, "* This is a corrected test message", content)
 
-      {:ok, child_events} = PDU.get_children(parent_pdu)
+      {:ok, child_events} = EventGraph.get_children(parent_pdu)
 
       assert %PDU{unsigned: %{"m.relations" => %{"m.replace" => %{event_id: ^replace_event_id}}}} =
                Relationships.get_aggregations(parent_pdu, user.id, child_events)
@@ -66,14 +68,14 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
       {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
       assert 0 = map_size(parent_pdu.unsigned)
 
       relation = %{"m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "m.reference"}}
 
       {:ok, ref_event_id1} = Fixtures.send_text_msg(room_id, user.id, "ref event 1", relation)
       {:ok, ref_event_id2} = Fixtures.send_text_msg(room_id, user.id, "ref event 2", relation)
-      {:ok, child_events} = PDU.get_children(parent_pdu)
+      {:ok, child_events} = EventGraph.get_children(parent_pdu)
 
       assert %PDU{unsigned: %{"m.relations" => %{"m.reference" => %{"chunk" => chunk}}}} =
                Relationships.get_aggregations(parent_pdu, user.id, child_events)
@@ -85,14 +87,14 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
       {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
       assert 0 = map_size(parent_pdu.unsigned)
 
       relation = %{"m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "org.what.is.this"}}
 
       {:ok, _ref_event_id1} = Fixtures.send_text_msg(room_id, user.id, "ref event 1", relation)
       {:ok, _ref_event_id2} = Fixtures.send_text_msg(room_id, user.id, "ref event 2", relation)
-      {:ok, child_events} = PDU.get_children(parent_pdu)
+      {:ok, child_events} = EventGraph.get_children(parent_pdu)
 
       assert pdu = Relationships.get_aggregations(parent_pdu, user.id, child_events)
       assert 0 = map_size(pdu.unsigned)
@@ -102,10 +104,10 @@ defmodule RadioBeam.PDU.RelationshipsTest do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
       {:ok, parent_event_id} = Fixtures.send_text_msg(room_id, user.id, "This is a test message")
-      {:ok, parent_pdu} = PDU.get(parent_event_id)
+      {:ok, parent_pdu} = Repo.fetch(PDU, parent_event_id)
       assert 0 = map_size(parent_pdu.unsigned)
 
-      {:ok, child_events} = PDU.get_children(parent_pdu)
+      {:ok, child_events} = EventGraph.get_children(parent_pdu)
 
       assert pdu = Relationships.get_aggregations(parent_pdu, user.id, child_events)
       assert 0 = map_size(pdu.unsigned)
