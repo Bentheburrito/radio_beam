@@ -4,7 +4,7 @@ defmodule RadioBeam.User.Device.OneTimeKeyRing do
   keys.
   """
 
-  defstruct one_time_keys: %{}, fallback_keys: %{}
+  defstruct one_time_keys: %{}, fallback_keys: %{}, used_fallback_algos: MapSet.new()
 
   def new, do: %__MODULE__{}
 
@@ -25,17 +25,17 @@ defmodule RadioBeam.User.Device.OneTimeKeyRing do
   end
 
   def put_fallback_keys(%__MODULE__{} = otk_ring, keys_map) do
-    fallback_keys =
-      for {algo_by_key_id, content} <- keys_map, reduce: otk_ring.fallback_keys do
-        acc ->
+    {fallback_keys, used_fallback_algos} =
+      for {algo_by_key_id, content} <- keys_map, reduce: {otk_ring.fallback_keys, otk_ring.used_fallback_algos} do
+        {fb_keys, used_fb_algos} ->
           [algo, key_id] = String.split(algo_by_key_id, ":")
-          content = content |> Map.put("id", key_id) |> Map.put("used?", false)
+          content = Map.put(content, "id", key_id)
           # There can only be at most one key per algorithm uploaded, and the server
           # will only persist one key per algorithm.
-          Map.put(acc, algo, content)
+          {Map.put(fb_keys, algo, content), MapSet.delete(used_fb_algos, algo)}
       end
 
-    %__MODULE__{otk_ring | fallback_keys: fallback_keys}
+    %__MODULE__{otk_ring | fallback_keys: fallback_keys, used_fallback_algos: used_fallback_algos}
   end
 
   def one_time_key_counts(%__MODULE__{one_time_keys: otks}) do
@@ -52,7 +52,8 @@ defmodule RadioBeam.User.Device.OneTimeKeyRing do
   defp pop_otk(otk_ring, algorithm) do
     case otk_ring.one_time_keys do
       %{^algorithm => [key | rest]} ->
-        {:ok, {key, put_in(otk_ring.one_time_keys[algorithm], rest)}}
+        {key_id, key} = Map.pop!(key, "id")
+        {:ok, {key_id, key, put_in(otk_ring.one_time_keys[algorithm], rest)}}
 
       _else ->
         :none
@@ -62,7 +63,8 @@ defmodule RadioBeam.User.Device.OneTimeKeyRing do
   defp get_fallback_key(otk_ring, algorithm) do
     case otk_ring.fallback_keys do
       %{^algorithm => key} ->
-        {:ok, {key, put_in(otk_ring.fallback_keys[algorithm]["used?"], true)}}
+        {key_id, key} = Map.pop!(key, "id")
+        {:ok, {key_id, key, put_in(otk_ring.used_fallback_algos, MapSet.put(otk_ring.used_fallback_algos, algorithm))}}
 
       _else ->
         :none

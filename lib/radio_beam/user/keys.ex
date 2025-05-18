@@ -13,12 +13,15 @@ defmodule RadioBeam.User.Keys do
 
   @type put_signatures_error() :: :unknown_key | :disallowed_key_type | :no_master_csk | :user_not_found
 
-  def put_device_keys(%User{} = user, device_id, opts) do
-    with {:ok, %Device{} = device} <- User.get_device(user, device_id),
-         {:ok, %Device{} = device} <- Device.put_keys(device, user.id, opts) do
-      user = User.put_device(user, device)
-      Repo.insert(user)
-    end
+  def put_device_keys(user_id, device_id, opts) do
+    Repo.transaction(fn ->
+      with {:ok, %User{} = user} <- Repo.fetch(User, user_id, lock: :write),
+           {:ok, %Device{} = device} <- User.get_device(user, device_id),
+           {:ok, %Device{} = device} <- Device.put_keys(device, user.id, opts) do
+        user = User.put_device(user, device)
+        Repo.insert(user)
+      end
+    end)
   end
 
   def claim_otks(user_device_algo_map) do

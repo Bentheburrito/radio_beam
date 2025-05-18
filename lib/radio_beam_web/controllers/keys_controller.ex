@@ -43,7 +43,7 @@ defmodule RadioBeamWeb.KeysController do
         {"fallback_keys", fallback_keys} -> {:fallback_keys, fallback_keys}
       end)
 
-    case Keys.put_device_keys(user, device_id, opts) do
+    case Keys.put_device_keys(user.id, device_id, opts) do
       {:ok, %User{device_map: %{^device_id => %{one_time_key_ring: otk_ring}}}} ->
         json(conn, %{"one_time_key_counts" => OneTimeKeyRing.one_time_key_counts(otk_ring)})
 

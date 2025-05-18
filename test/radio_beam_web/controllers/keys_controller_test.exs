@@ -137,7 +137,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
       {:ok, user} = User.CrossSigningKeyRing.put(user.id, csks)
 
       {device_key, device_signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, user} = Keys.put_device_keys(user, device.id, identity_keys: device_key)
+      {:ok, user} = Keys.put_device_keys(user.id, device.id, identity_keys: device_key)
       {:ok, device} = User.get_device(user, device.id)
 
       %{user: user, device: device, user_priv_csks: privkeys, device_signingkey: device_signingkey}
@@ -187,7 +187,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
 
   describe "claim/2" do
     test "returns a one-time key (200) that matches the given query", %{conn: conn, user: user, device: device} do
-      {:ok, _device} = Keys.put_device_keys(user, device.id, one_time_keys: @otk_keys)
+      {:ok, _device} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/keys/claim", %{
@@ -210,7 +210,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
 
       {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, _device} = Keys.put_device_keys(user, device.id, identity_keys: device_key)
+      {:ok, _device} = Keys.put_device_keys(user.id, device.id, identity_keys: device_key)
       conn = post(conn, ~p"/_matrix/client/v3/keys/query", %{device_keys: %{user.id => []}})
 
       assert %{} = response = json_response(conn, 200)

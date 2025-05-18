@@ -40,6 +40,7 @@ defmodule RadioBeamWeb.SyncController do
       |> put_account_data(user)
       |> put_to_device_messages(user.id, device.id, maybe_since_token)
       |> put_device_key_changes(user, maybe_since_token)
+      |> put_device_otk_usages(device)
 
     json(conn, response)
   end
@@ -109,6 +110,19 @@ defmodule RadioBeamWeb.SyncController do
       |> Map.update!(:left, &MapSet.to_list/1)
 
     Map.put(response, :device_lists, changed_map)
+  end
+
+  defp put_device_otk_usages(response, %Device{} = device) do
+    response =
+      case Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring) do
+        counts when map_size(counts) > 0 -> Map.put(response, :device_one_time_keys_count, counts)
+        _else -> response
+      end
+
+    unused_fallback_algos =
+      Map.keys(device.one_time_key_ring.fallback_keys) -- MapSet.to_list(device.one_time_key_ring.used_fallback_algos)
+
+    Map.put(response, :device_unused_fallback_key_types, unused_fallback_algos)
   end
 
   defp get_user_event_filter(%User{} = user, filter_id) do

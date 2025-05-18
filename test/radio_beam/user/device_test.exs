@@ -50,7 +50,7 @@ defmodule RadioBeam.User.DeviceTest do
     test "adds the given fallback key to a device", %{user: user, device: device} do
       {:ok, device} = Device.put_keys(device, user.id, fallback_keys: @fallback_key)
 
-      assert {:ok, {%{"key" => "fallback1"}, _}} =
+      assert {:ok, {"AAAAGj", %{"key" => "fallback1"}, _}} =
                Device.OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
     end
 

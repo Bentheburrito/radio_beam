@@ -85,8 +85,8 @@ defmodule RadioBeam.User.Device.OneTimeKeyRingTest do
 
       otk_ring = OneTimeKeyRing.put_otks(device.one_time_key_ring, @otk_keys)
 
-      assert {:ok, {%{"key" => "key1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
-      assert {:ok, {%{"key" => "key2"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      assert {:ok, {"AAAAHQ", %{"key" => "key1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      assert {:ok, {"AAAAHg", %{"key" => "key2"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
       assert {:error, :not_found} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
     end
 
@@ -96,19 +96,23 @@ defmodule RadioBeam.User.Device.OneTimeKeyRingTest do
       otk_ring = OneTimeKeyRing.put_otks(device.one_time_key_ring, @otk_keys)
       otk_ring = OneTimeKeyRing.put_fallback_keys(otk_ring, @fallback_key)
 
-      refute get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+      refute MapSet.member?(otk_ring.used_fallback_algos, "signed_curve25519")
 
-      assert {:ok, {%{"key" => "key1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
-      refute get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+      assert {:ok, {"AAAAHQ", %{"key" => "key1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      refute MapSet.member?(otk_ring.used_fallback_algos, "signed_curve25519")
 
-      assert {:ok, {%{"key" => "key2"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
-      refute get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+      assert {:ok, {"AAAAHg", %{"key" => "key2"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+      refute MapSet.member?(otk_ring.used_fallback_algos, "signed_curve25519")
 
-      assert {:ok, {%{"key" => "fallback1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
-      assert get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+      assert {:ok, {"AAAAGj", %{"key" => "fallback1"}, otk_ring}} =
+               OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
 
-      assert {:ok, {%{"key" => "fallback1"}, otk_ring}} = OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
-      assert get_in(otk_ring.fallback_keys["signed_curve25519"]["used?"])
+      assert MapSet.member?(otk_ring.used_fallback_algos, "signed_curve25519")
+
+      assert {:ok, {"AAAAGj", %{"key" => "fallback1"}, otk_ring}} =
+               OneTimeKeyRing.claim_otk(otk_ring, "signed_curve25519")
+
+      assert MapSet.member?(otk_ring.used_fallback_algos, "signed_curve25519")
     end
   end
 end

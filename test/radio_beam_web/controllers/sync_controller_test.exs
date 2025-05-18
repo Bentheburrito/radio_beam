@@ -5,6 +5,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
   alias RadioBeam.User
   alias RadioBeam.User.Auth
   alias RadioBeam.User.Device
+  alias RadioBeam.User.Keys
   alias RadioBeam.Room
 
   setup %{conn: conn} do
@@ -20,6 +21,38 @@ defmodule RadioBeamWeb.SyncControllerTest do
     }
   end
 
+  @otk_keys %{
+    "signed_curve25519:AAAAHQ" => %{
+      "key" => "key1",
+      "signatures" => %{
+        "@alice:example.com" => %{
+          "ed25519:JLAFKJWSCS" =>
+            "IQeCEPb9HFk217cU9kw9EOiusC6kMIkoIRnbnfOh5Oc63S1ghgyjShBGpu34blQomoalCyXWyhaaT3MrLZYQAA"
+        }
+      }
+    },
+    "signed_curve25519:AAAAHg" => %{
+      "key" => "key2",
+      "signatures" => %{
+        "@alice:example.com" => %{
+          "ed25519:JLAFKJWSCS" =>
+            "FLWxXqGbwrb8SM3Y795eB6OA8bwBcoMZFXBqnTn58AYWZSqiD45tlBVcDa2L7RwdKXebW/VzDlnfVJ+9jok1Bw"
+        }
+      }
+    }
+  }
+  @fallback_key %{
+    "signed_curve25519:AAAAGj" => %{
+      "fallback" => true,
+      "key" => "fallback1",
+      "signatures" => %{
+        "@alice:example.com" => %{
+          "ed25519:JLAFKJWSCS" =>
+            "FLWxXqGbwrb8SM3Y795eB6OA8bwBcoMZFXBqnTn58AYWZSqiD45tlBVcDa2L7RwdKXebW/VzDlnfVJ+9jok1Bw"
+        }
+      }
+    }
+  }
   describe "sync/2" do
     test "successfully syncs with a room", %{conn: conn, creator: creator, user: user, device: device} do
       conn = get(conn, ~p"/_matrix/client/v3/sync", %{})
@@ -77,6 +110,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
       message = Device.Message.new(%{"hello2" => "world"}, "@hello:world", "com.spectrum.corncobtv.notification")
       Device.Message.put(user.id, device.id, message)
 
+      {:ok, user} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
+
       {:ok, filter} = Jason.encode(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
       creator_id = creator.id
@@ -88,6 +123,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
                "to_device" => %{
                  "events" => [%{"content" => %{"hello" => "world"}}, %{"content" => %{"hello2" => "world"}}]
                },
+               "device_one_time_keys_count" => %{"signed_curve25519" => 2},
+               "device_unused_fallback_key_types" => ["signed_curve25519"],
                "device_lists" => %{"changed" => [^creator_id], "left" => []},
                "rooms" => %{
                  "join" => %{

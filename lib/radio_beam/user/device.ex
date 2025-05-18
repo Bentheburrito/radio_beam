@@ -134,9 +134,8 @@ defmodule RadioBeam.User.Device do
   end
 
   def claim_otk(%__MODULE__{} = device, algorithm) do
-    with {:ok, {key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algorithm) do
+    with {:ok, {key_id, key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algorithm) do
       device = put_in(device.one_time_key_ring, otk_ring)
-      {key_id, key} = Map.pop!(key, "id")
       {:ok, {device, %{"#{algorithm}:#{key_id}" => key}}}
     end
   end

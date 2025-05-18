@@ -1,12 +1,14 @@
 # RadioBeam
 
-<img width="200" src="logo.png" alt="RadioBeam Logo" title="I am a programmer, not a graphic designer">
+<p align="center">
+  <img width="200" src="logo.png" alt="RadioBeam Logo" title="I am a programmer, not a graphic designer">
+</p>
 
 ---
 
-An easily deployable, scalable [Matrix](https://matrix.org/) homeserver powered
-by the [BEAM](https://en.wikipedia.org/wiki/BEAM_(Erlang_virtual_machine)),
-currently in early development.
+A [Matrix](https://matrix.org/) homeserver powered by the
+[BEAM](https://en.wikipedia.org/wiki/BEAM_(Erlang_virtual_machine)), currently
+in early development.
 
 ## Goals
 
@@ -14,11 +16,10 @@ currently in early development.
 
 As RadioBeam is currently in early development, the first and foremost goal is
 to reach full compliance with the
-[latest Matrix specification](https://spec.matrix.org/latest/) (as of writing,
-v1.11). This includes passing test suites such as
-[Complement](https://github.com/matrix-org/complement).
+[latest Matrix specification](https://spec.matrix.org/latest/). This includes
+passing test suites such as [Complement](https://github.com/matrix-org/complement).
 
-After achieving (and maintaining) core spec compliance, additional unstable
+After achieving and maintaining core spec compliance, additional unstable
 modules (like those described in [Matrix 2.0](https://matrix.org/blog/2023/09/matrix-2-0/))
 may also be implemented before they are fully stabilized in the spec.
 
@@ -56,7 +57,7 @@ sustainable codebase. By "sustainable" I mean:
 
 - maintaining a passing test suite with a certain level of coverage
 - practicing principles like [KISS](https://en.wikipedia.org/wiki/KISS_principle),
-- being thoughtful in the name of security, stability, and navigability.
+- being thoughtful in the name of security, stability, and maintainability.
 
 The result, I hope, will be a more reliable homeserver with a codebase that is
 nice to work in and has little tech debt.
