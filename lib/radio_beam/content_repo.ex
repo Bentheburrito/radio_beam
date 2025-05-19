@@ -95,7 +95,7 @@ defmodule RadioBeam.ContentRepo do
     thumbnail_path = thumbnail_file_path(upload, spec, repo_path)
 
     if not File.exists?(thumbnail_path) do
-      animated? = Keyword.get(opts, :animated?, true)
+      animated? = Keyword.get(opts, :animated?, false)
       generate_thumbnail(upload, spec, animated?, thumbnail_path, repo_path)
     end
 

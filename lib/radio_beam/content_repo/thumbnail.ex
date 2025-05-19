@@ -35,7 +35,7 @@ defmodule RadioBeam.ContentRepo.Thumbnail do
   def coerce_spec(width, height, method)
       when is_non_neg_int(width) and is_non_neg_int(height) and method in ~w|scale crop|a do
     Enum.find_value(@allowed_specs, {:error, :invalid_spec}, fn
-      {w, h, ^method} = spec -> w >= width and h >= height && {:ok, spec}
+      {w, h, ^method} = spec -> (w >= width and h >= height) && {:ok, spec}
       _ -> false
     end)
   end
@@ -81,17 +81,16 @@ defmodule RadioBeam.ContentRepo.Thumbnail do
   end
 
   defp thumbnail_image!(%Image{} = image, {width, height, method} = _spec, _animated?) do
-    # TODO: adjust for :animated? 
-    thumbnail_opts =
-      case method do
-        :crop -> [crop: :VIPS_INTERESTING_CENTRE] ++ default_thumbnail_opts(height)
-        :scale -> default_thumbnail_opts(height)
-      end
-
     # Conduit has similar logic to decide whether to return the original image.
     if Image.width(image) < width or Image.height(image) < height do
       :noop
     else
+      thumbnail_opts =
+        case method do
+          :crop -> [crop: :VIPS_INTERESTING_CENTRE] ++ default_thumbnail_opts(height)
+          :scale -> default_thumbnail_opts(height)
+        end
+
       Operation.thumbnail_image!(image, width, thumbnail_opts)
     end
   end

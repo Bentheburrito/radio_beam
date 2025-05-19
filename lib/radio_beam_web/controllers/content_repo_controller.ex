@@ -35,10 +35,14 @@ defmodule RadioBeamWeb.ContentRepoController do
   def download(conn, params) do
     upload = conn.assigns.upload
 
-    conn
-    |> put_resp_header("content-type", MIME.type(upload.file.type))
-    |> put_resp_header("content-disposition", Map.get(params, "filename", upload.file.filename))
-    |> send_file(200, ContentRepo.upload_file_path(upload))
+    content_type = MIME.type(upload.file.type)
+    disposition = if content_type in content_types_to_inline(), do: :inline, else: :attachment
+
+    send_download(conn, {:file, ContentRepo.upload_file_path(upload)},
+      filename: Map.get(params, "filename", upload.file.filename),
+      content_type: content_type,
+      disposition: disposition
+    )
   end
 
   def thumbnail(conn, _params) do
@@ -47,9 +51,11 @@ defmodule RadioBeamWeb.ContentRepoController do
 
     with {:ok, spec} <- Thumbnail.coerce_spec(request["width"], request["height"], request["method"]),
          {:ok, thumbnail_path} <- ContentRepo.get_thumbnail(upload, spec) do
-      conn
-      |> put_resp_header("content-type", MIME.type(upload.file.type))
-      |> send_file(200, thumbnail_path)
+      send_download(conn, {:file, thumbnail_path},
+        filename: "thumbnail.#{upload.file.type}",
+        content_type: MIME.type(upload.file.type),
+        disposition: :inline
+      )
     else
       {:error, :invalid_spec} ->
         json_error(conn, 400, :bad_json, "The given thumbnail width, height, or method is not supported")
@@ -89,7 +95,8 @@ defmodule RadioBeamWeb.ContentRepoController do
       {:ok, upload} ->
         json(conn, %{
           content_uri: upload.id,
-          expires_in: DateTime.to_unix(upload.inserted_at, :millisecond) + ContentRepo.unused_mxc_uris_expire_in_ms()
+          unused_expires_at:
+            DateTime.to_unix(upload.inserted_at, :millisecond) + ContentRepo.unused_mxc_uris_expire_in_ms()
         })
 
       {:error, {:quota_reached, :max_reserved}} ->
@@ -225,5 +232,36 @@ defmodule RadioBeamWeb.ContentRepoController do
 
   defp halting_not_yet_uploaded_error(conn) do
     halting_json_error(conn, 504, :endpoint_error, [:not_yet_uploaded, "File has not yet been uploaded"])
+  end
+
+  defp content_types_to_inline do
+    ~w|
+      text/css
+      text/plain
+      text/csv
+      application/json
+      application/ld+json
+      image/jpeg
+      image/gif
+      image/png
+      image/apng
+      image/webp
+      image/avif
+      video/mp4
+      video/webm
+      video/ogg
+      video/quicktime
+      audio/mp4
+      audio/webm
+      audio/aac
+      audio/mpeg
+      audio/ogg
+      audio/wave
+      audio/wav
+      audio/x-wav
+      audio/x-pn-wav
+      audio/flac
+      audio/x-flac
+    |
   end
 end

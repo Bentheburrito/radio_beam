@@ -39,14 +39,16 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}", %{})
       assert ^content = response(conn, 200)
       assert ["text/csv"] = get_resp_header(conn, "content-type")
-      assert ["a file to share"] = get_resp_header(conn, "content-disposition")
+
+      assert [~s|inline; filename="a%20file%20to%20share"; filename*=utf-8''a%20file%20to%20share|] =
+               get_resp_header(conn, "content-disposition")
     end
 
     test "returns an upload (200) but with a custom filename", %{conn: conn, upload: %{id: mxc}, content: content} do
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}/funny_file", %{})
       assert ^content = response(conn, 200)
       assert ["text/csv"] = get_resp_header(conn, "content-type")
-      assert ["funny_file"] = get_resp_header(conn, "content-disposition")
+      assert [~s|inline; filename="funny_file"|] = get_resp_header(conn, "content-disposition")
     end
 
     test "returns M_NOT_FOUND (404) when no upload exists for the URI", %{conn: conn} do
@@ -91,7 +93,9 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
       assert ^content = response(conn, 200)
       assert ["text/csv"] = get_resp_header(conn, "content-type")
-      assert ["a file to share"] = get_resp_header(conn, "content-disposition")
+
+      assert [~s|inline; filename="a%20file%20to%20share"; filename*=utf-8''a%20file%20to%20share|] =
+               get_resp_header(conn, "content-disposition")
     end
 
     test "returns M_TOO_LARGE (502) when content too large to serve", %{conn: conn, user: user, tmp_dir: tmp_dir} do

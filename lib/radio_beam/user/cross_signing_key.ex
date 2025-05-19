@@ -17,7 +17,7 @@ defmodule RadioBeam.User.CrossSigningKey do
 
   @typedoc """
   String-key params defining a CrossSigningKey, as defined in 
-  [the spec](https://spec.matrix.org/v1.13/client-server-api/#post_matrixclientv3keysdevice_signingupload)
+  [the spec](https://spec.matrix.org/latest/client-server-api/#post_matrixclientv3keysdevice_signingupload)
   """
   @type params() :: map()
 
