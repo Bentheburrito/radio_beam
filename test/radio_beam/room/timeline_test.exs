@@ -157,6 +157,65 @@ defmodule RadioBeam.Room.TimelineTest do
       assert Enum.any?(invite_state.events, &match?(%{type: "m.room.join_rules"}, &1))
       assert Enum.any?(invite_state.events, &match?(%{type: "m.room.member", state_key: ^user_id}, &1))
     end
+
+    test "successfully syncs, filtering out timeline events from ignored users", %{
+      creator: creator,
+      user: user,
+      device: device
+    } do
+      annoying_user = Fixtures.user()
+
+      RadioBeam.User.Account.put(user.id, :global, "m.ignored_user_list", %{
+        "ignored_users" => %{annoying_user.id => %{}}
+      })
+
+      {:ok, room_id} = Room.create(creator)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, _event_id} = Room.join(room_id, user.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.id, annoying_user.id)
+      {:ok, _event_id} = Room.join(room_id, annoying_user.id)
+
+      Fixtures.send_text_msg(room_id, annoying_user.id, "blah blah blah")
+      Fixtures.send_text_msg(room_id, annoying_user.id, "you shouldn't see this")
+
+      assert %{rooms: %{join: %{^room_id => %{timeline: timeline}}}, next_batch: token} =
+               Timeline.sync([room_id], user.id, device.id)
+
+      annoying_user_id = annoying_user.id
+      refute Enum.any?(timeline.events, &match?(%{sender: ^annoying_user_id, state_key: nil}, &1))
+
+      {:ok, _event_id} = Room.leave(room_id, annoying_user.id)
+      Fixtures.send_text_msg(room_id, creator.id, "welp, bye")
+
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 1}}})
+
+      assert %{rooms: %{join: %{^room_id => %{state: %{events: state}}}}} =
+               Timeline.sync([room_id], user.id, device.id, filter: filter, since: token)
+
+      assert Enum.any?(state, &match?(%{sender: ^annoying_user_id}, &1))
+    end
+
+    test "successfully syncs, filtering out invites from ignored users", %{user: user, device: device} do
+      annoying_user = Fixtures.user()
+
+      RadioBeam.User.Account.put(user.id, :global, "m.ignored_user_list", %{
+        "ignored_users" => %{annoying_user.id => %{}}
+      })
+
+      {:ok, room_id} = Room.create(annoying_user)
+      {:ok, _event_id} = Room.invite(room_id, annoying_user.id, user.id)
+
+      assert %{rooms: %{invite: invite}, next_batch: token} = Timeline.sync([room_id], user.id, device.id)
+      assert 0 = map_size(invite)
+
+      RadioBeam.User.Account.put(user.id, :global, "m.ignored_user_list", %{"ignored_users" => %{}})
+
+      assert %{rooms: %{invite: invite}} = Timeline.sync([room_id], user.id, device.id, since: token)
+      assert 1 = map_size(invite)
+
+      assert %{rooms: %{invite: invite}} = Timeline.sync([room_id], user.id, device.id)
+      assert 1 = map_size(invite)
+    end
   end
 
   describe "sync/4 performing a follow-up sync" do

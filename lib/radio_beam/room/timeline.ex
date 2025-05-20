@@ -15,6 +15,7 @@ defmodule RadioBeam.Room.Timeline do
   alias RadioBeam.Room.Timeline.Core
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room
+  alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
   @attrs ~w|events sync|a
@@ -55,6 +56,9 @@ defmodule RadioBeam.Room.Timeline do
 
     Core.filter_authz(pdus, user_id, user_membership, user_joined_later?)
   end
+
+  defp filter_ignored(pdus, ignored_user_ids),
+    do: Enum.reject(pdus, &(is_nil(&1.state_key) and &1.sender in ignored_user_ids))
 
   def get_messages(room_id, user_id, device_id, from_and_direction, to, opts \\ [])
 
@@ -197,22 +201,21 @@ defmodule RadioBeam.Room.Timeline do
   defp sync_one(room_id, user_id, last_sync_pdus, known_memberships, opts) do
     filter = Keyword.get_lazy(opts, :filter, fn -> EventFilter.new(%{}) end)
 
-    membership =
-      case Room.get_membership(room_id, user_id) do
-        %{content: %{"membership" => membership}} -> membership
-        :not_found -> :not_found
-      end
+    {:ok, user} = Repo.fetch(User, user_id)
 
-    case membership do
-      "leave" when not filter.include_leave? ->
+    ignored_user_ids =
+      MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
+
+    case Room.get_membership(room_id, user_id) do
+      %{content: %{"membership" => "leave"}} when not filter.include_leave? ->
         {:ok, room} = Room.get(room_id)
         {:ok, latest_pdus} = Repo.get_all(PDU, room.latest_event_ids)
         {:no_update, latest_pdus}
 
-      membership when membership in ~w|ban join leave| ->
+      %{content: %{"membership" => membership}} when membership in ~w|ban join leave| ->
         full_state? = Keyword.get(opts, :full_state?, false)
 
-        %__MODULE__{} = timeline = timeline(room_id, user_id, filter, opts)
+        %__MODULE__{} = timeline = timeline(room_id, user_id, filter, ignored_user_ids, opts)
         {:ok, state_delta_pdus} = get_state_delta(last_sync_pdus, timeline.events, full_state?)
 
         sync_config = make_config(room_id, user_id, membership, filter, full_state?, known_memberships)
@@ -224,16 +227,20 @@ defmodule RadioBeam.Room.Timeline do
 
       # TODO: should the invite reflect changes to stripped state events that
       # happened after the invite?
-      "invite" when is_nil(last_sync_pdus) ->
-        PubSub.subscribe(PS, PS.stripped_state_events(room_id))
-        {:ok, room} = Room.get(room_id)
-        {:ok, latest_pdus} = Repo.get_all(PDU, room.latest_event_ids)
-        {:ok, :invite, latest_pdus, %{invite_state: %{events: Room.stripped_state(room, user_id)}}}
+      %{content: %{"membership" => "invite"}} = membership_pdu when is_nil(last_sync_pdus) ->
+        if membership_pdu.sender in ignored_user_ids do
+          {:no_update, []}
+        else
+          PubSub.subscribe(PS, PS.stripped_state_events(room_id))
+          {:ok, room} = Room.get(room_id)
+          {:ok, latest_pdus} = Repo.get_all(PDU, room.latest_event_ids)
+          {:ok, :invite, latest_pdus, %{invite_state: %{events: Room.stripped_state(room, user_id)}}}
+        end
 
-      "invite" ->
+      %{content: %{"membership" => "invite"}} ->
         {:no_update, last_sync_pdus}
 
-      "knock" ->
+      %{content: %{"membership" => "knock"}} ->
         # TOIMPL
         {:no_update, []}
 
@@ -280,7 +287,7 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp timeline(room_id, user_id, filter, opts) do
+  defp timeline(room_id, user_id, filter, ignored_user_ids, opts) do
     {events, prev_batch_or_none} =
       case Keyword.fetch(opts, :since) do
         :error ->
@@ -303,8 +310,19 @@ defmodule RadioBeam.Room.Timeline do
       end
 
     case prev_batch_or_none do
-      :none -> events |> filter_authz(:forward, user_id) |> bundle_aggregations(user_id) |> complete()
-      token -> events |> filter_authz(:forward, user_id) |> bundle_aggregations(user_id) |> partial(token)
+      :none ->
+        events
+        |> filter_authz(:forward, user_id)
+        |> filter_ignored(ignored_user_ids)
+        |> bundle_aggregations(user_id)
+        |> complete()
+
+      token ->
+        events
+        |> filter_authz(:forward, user_id)
+        |> filter_ignored(ignored_user_ids)
+        |> bundle_aggregations(user_id)
+        |> partial(token)
     end
   end
 
