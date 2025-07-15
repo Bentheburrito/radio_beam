@@ -4,8 +4,7 @@ defmodule RadioBeam.Room.Server do
   """
   use GenServer
 
-  alias Phoenix.PubSub
-  alias RadioBeam.PubSub, as: PS
+  alias RadioBeam.PubSub
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.RoomSupervisor
@@ -48,7 +47,7 @@ defmodule RadioBeam.Room.Server do
   def init({room_id, events_or_room}) do
     case events_or_room do
       [%{"type" => "m.room.create", "content" => %{"room_version" => version}} | _] = events ->
-        init_room = %Room{id: room_id, latest_event_ids: [], state: %{}, version: version}
+        init_room = %Room{id: room_id, latest_event_ids: [], latest_known_joins: %{}, state: %{}, version: version}
 
         case Room.Impl.put_events(init_room, events) do
           {:ok, %Room{} = room, _pdus} -> {:ok, room}
@@ -73,14 +72,11 @@ defmodule RadioBeam.Room.Server do
   def handle_call({:put_event, event}, _from, %Room{} = room) do
     case Room.Impl.put_event(room, event) do
       {:ok, room, [pdu]} ->
-        PubSub.broadcast(PS, PS.all_room_events(room.id), {:room_event, room.id, pdu})
-
-        if pdu.type in Room.stripped_state_types(),
-          do: PubSub.broadcast(PS, PS.stripped_state_events(room.id), {:room_stripped_state, room.id, pdu})
+        PubSub.broadcast(PubSub.all_room_events(room.id), {:room_event, pdu})
 
         if pdu.type == "m.room.member" do
           if pdu.content["membership"] == "invite" do
-            PubSub.broadcast(PS, PS.invite_events(pdu.state_key), {:room_invite, room, pdu})
+            PubSub.broadcast(PubSub.invite_events(pdu.state_key), {:room_invite, room.id})
           end
 
           LazyLoadMembersCache.mark_dirty(room.id, pdu.state_key)

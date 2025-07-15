@@ -7,6 +7,10 @@ defmodule RadioBeam.PDU.Relationships do
 
   require RadioBeam
 
+  @aggregable_rel_types ~w|m.thread m.replace m.reference|
+  def aggregable?(%PDU{content: %{"m.relates_to" => %{"rel_type" => type}}}), do: type in @aggregable_rel_types
+  def aggregable?(%PDU{}), do: false
+
   def get_aggregations(%PDU{} = pdu, user_id, child_pdus) do
     grouped_pdus = group_pdus_by_relation_aggregator(pdu, user_id, child_pdus)
     grouped_pdus = handle_special_cases(pdu, grouped_pdus)

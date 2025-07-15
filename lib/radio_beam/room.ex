@@ -9,6 +9,7 @@ defmodule RadioBeam.Room do
   @types [
     id: :string,
     latest_event_ids: {:array, :string},
+    latest_known_joins: :map,
     state: :map,
     version: :string
   ]
@@ -129,7 +130,7 @@ defmodule RadioBeam.Room do
     end
   end
 
-  @state :"$3"
+  @state :"$4"
   @doc "Returns all room IDs that `user_id` is joined to"
   @spec joined(user_id :: String.t()) :: [room_id :: String.t()]
   def joined(user_id) do
@@ -218,10 +219,11 @@ defmodule RadioBeam.Room do
     Room.Server.call(room_id, {:put_event, event})
   end
 
-  def get_event(_room_id, user_id, event_id, bundle_aggregates? \\ true) do
-    with {:ok, pdu} <- Repo.fetch(PDU, event_id),
-         true <- Timeline.authz_to_view?(pdu, user_id) do
-      pdu = if bundle_aggregates?, do: Timeline.bundle_aggregations(pdu, user_id), else: pdu
+  def get_event(room_id, user_id, event_id, bundle_aggregates? \\ true) do
+    with {:ok, room} <- get(room_id),
+         {:ok, pdu} <- Repo.fetch(PDU, event_id),
+         true <- Timeline.pdu_visible_to_user?(pdu, user_id) do
+      pdu = if bundle_aggregates?, do: Timeline.bundle_aggregations(room, pdu, user_id), else: pdu
       {:ok, pdu}
     else
       _ -> {:error, :unauthorized}
@@ -247,6 +249,22 @@ defmodule RadioBeam.Room do
     end
   end
 
+  @doc """
+  Gets the latest `"m.room.member"` pdu for the given user_id whose membership
+  is `"join"`. If the user has never joined the room, `{:error, :never_joined}`
+  is returned.
+  """
+  @spec get_latest_known_join(id() | t(), User.id()) :: {:ok, PDU.t()} | {:error, :never_joined}
+  def get_latest_known_join("!" <> _ = room_id, user_id) do
+    with {:ok, %Room{} = room} <- get(room_id), do: get_latest_known_join(room, user_id)
+  end
+
+  def get_latest_known_join(%Room{} = room, user_id) do
+    with :error <- Map.fetch(room.latest_known_joins, user_id) do
+      {:error, :never_joined}
+    end
+  end
+
   def get_members(room_id, user_id, at_event_id \\ :current, membership_filter \\ fn _ -> true end)
 
   def get_members(room_id, user_id, :current, membership_filter) do
@@ -258,7 +276,7 @@ defmodule RadioBeam.Room do
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
     with {:ok, %{room_id: ^room_id} = pdu} <- Repo.fetch(PDU, at_event_id),
-         true <- Timeline.authz_to_view?(pdu, user_id),
+         true <- Timeline.pdu_visible_to_user?(pdu, user_id),
          {:ok, state_events} <- Repo.get_all(PDU, pdu.state_events) do
       get_members_from_state(state_events, membership_filter)
     else
@@ -317,11 +335,11 @@ defmodule RadioBeam.Room do
   end
 
   defp get_nearest_event({:ok, pdu}, user_id) do
-    if Timeline.authz_to_view?(pdu, user_id), do: {:ok, pdu}, else: {:error, :not_found}
+    if Timeline.pdu_visible_to_user?(pdu, user_id), do: {:ok, pdu}, else: {:error, :not_found}
   end
 
   defp get_nearest_event({:ok, pdu, cont}, user_id) do
-    if Timeline.authz_to_view?(pdu, user_id),
+    if Timeline.pdu_visible_to_user?(pdu, user_id),
       do: {:ok, pdu},
       else: get_nearest_event(EventGraph.get_nearest_event(cont), user_id)
   end
@@ -337,12 +355,11 @@ defmodule RadioBeam.Room do
   def stripped_state_types, do: @stripped_state_types
 
   @stripped_state_keys Enum.map(@stripped_state_types, &{&1, ""})
-  @stripped_keys ~w|content sender state_key type|a
   @doc "Returns the stripped state of the given room."
   def stripped_state(room, user_id) do
     # we additionally include the calling user's membership event
     stripped_state_keys = @stripped_state_keys ++ [{"m.room.member", user_id}]
-    room.state |> Map.take(stripped_state_keys) |> Enum.map(fn {_, pdu} -> Map.take(pdu, @stripped_keys) end)
+    room.state |> Map.take(stripped_state_keys) |> Enum.map(fn {_, pdu} -> pdu end)
   end
 
   def apply_redaction(room_id, event_id) do

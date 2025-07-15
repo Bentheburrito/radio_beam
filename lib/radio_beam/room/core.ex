@@ -42,6 +42,11 @@ defmodule RadioBeam.Room.Core do
 
   def put_tip(%Room{} = room, latest_event_ids), do: Map.replace!(room, :latest_event_ids, latest_event_ids)
 
+  def update_latest_known_joins(%Room{} = room, %PDU{type: "m.room.member"} = pdu),
+    do: put_in(room.latest_known_joins[pdu.state_key], pdu)
+
+  def update_latest_known_joins(%Room{} = room, %PDU{}), do: room
+
   defp select_auth_events(event, state) do
     keys = [{"m.room.create", ""}, {"m.room.power_levels", ""}]
     keys = if event["sender"] != event["state_key"], do: [{"m.room.member", event["sender"]} | keys], else: keys

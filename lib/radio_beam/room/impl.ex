@@ -25,7 +25,7 @@ defmodule RadioBeam.Room.Impl do
       Enum.reduce_while(events, {room, [], latest_pdus}, fn event, {%Room{} = room, pdus, parents} ->
         with {:ok, event} <- Core.authorize(room, event),
              {:ok, pdu} <- EventGraph.append(room, parents, event) do
-          room = room |> Core.update_state(pdu) |> Core.put_tip([pdu.event_id])
+          room = room |> Core.update_state(pdu) |> Core.update_latest_known_joins(pdu) |> Core.put_tip([pdu.event_id])
           {:cont, {room, [pdu | pdus], [pdu]}}
         else
           error -> {:halt, error}
@@ -118,7 +118,7 @@ defmodule RadioBeam.Room.Impl do
     do: Transaction.add_fxn(txn, :pdu, fn -> Repo.insert(pdu) end)
 
   def try_redact(room, to_redact, pdu) do
-    if Timeline.authz_to_view?(to_redact, pdu.sender) and Core.authz_redact?(room, to_redact.sender, pdu.sender) do
+    if Timeline.pdu_visible_to_user?(to_redact, pdu.sender) and Core.authz_redact?(room, to_redact.sender, pdu.sender) do
       case EventGraph.redact_pdu(to_redact, pdu, room.version) do
         {:ok, redacted_pdu} ->
           Repo.insert(redacted_pdu)

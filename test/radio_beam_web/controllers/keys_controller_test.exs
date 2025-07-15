@@ -21,7 +21,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
       {user, user_device} = Fixtures.device(user)
       {someone, device} = Fixtures.device(Fixtures.user())
       {:ok, room_id} = RadioBeam.Room.create(someone)
-      %{next_batch: since} = RadioBeam.Room.Timeline.sync([room_id], user.id, user_device.id)
+      %RadioBeam.Sync{next_batch: since} = RadioBeam.Sync.perform_v2(user.id, user_device.id, [])
 
       {:ok, _} = RadioBeam.Room.invite(room_id, someone.id, user.id)
       {:ok, _} = RadioBeam.Room.join(room_id, user.id)

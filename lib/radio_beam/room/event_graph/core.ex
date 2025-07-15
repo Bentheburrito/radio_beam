@@ -43,17 +43,13 @@ defmodule RadioBeam.Room.EventGraph.Core do
     end
   end
 
-  # we don't need strictly monotonic nums in prod, but it's a nice property for
-  # test assertions. In the future `arrival_order` could be passed to this fxn
-  # from the caller (`Room`)
-  @order_params if Mix.env() == :test, do: [:monotonic], else: []
   defp default_params(event_params, current_room_state) do
     arrival_time = Map.get_lazy(event_params, "arrival_time", fn -> :os.system_time(:millisecond) end)
     origin_server_ts = Map.get(event_params, "origin_server_ts", arrival_time)
 
     event_params
     |> Map.put_new("arrival_time", arrival_time)
-    |> Map.put_new_lazy("arrival_order", fn -> :erlang.unique_integer(@order_params) end)
+    |> Map.put_new_lazy("arrival_order", fn -> :erlang.unique_integer([:monotonic]) end)
     |> Map.put("state_events", Enum.map(current_room_state, &elem(&1, 1).event_id))
     |> Map.put(
       "current_visibility",
@@ -64,7 +60,15 @@ defmodule RadioBeam.Room.EventGraph.Core do
     |> Map.put_new("hashes", %{})
     |> Map.put_new("signatures", %{})
     |> Map.put_new("unsigned", %{})
+    |> maybe_put_prev_content(current_room_state)
   end
+
+  defp maybe_put_prev_content(%{"state_key" => sk} = event_params, current_room_state) when not is_nil(sk) do
+    prev_content = get_in(current_room_state[{event_params["type"], sk}].content)
+    update_in(event_params["unsigned"], &Map.put(&1, "prev_content", prev_content))
+  end
+
+  defp maybe_put_prev_content(event_params, _current_room_state), do: event_params
 
   defp calculate_dag_params("m.room.create", []) do
     {:ok,
@@ -130,22 +134,6 @@ defmodule RadioBeam.Room.EventGraph.Core do
 
   defp apply_v11_redaction_changes(changeset, _params, _room_version), do: changeset
 
-  def build_window_guards(from_pdu, to_pdu_or_limit, dir) do
-    case {from_pdu.depth, to_pdu_or_limit, dir} do
-      {from_depth, :limit, :backward} ->
-        {:ok, [{:"=<", :"$1", from_depth}]}
-
-      {from_depth, :limit, :forward} ->
-        {:ok, [{:>=, :"$1", from_depth}]}
-
-      {from_depth, %{depth: to_depth}, :backward} when from_depth >= to_depth ->
-        {:ok, [{:andalso, {:>, :"$1", to_depth}, {:"=<", :"$1", from_depth}}]}
-
-      {from_depth, %{depth: to_depth}, :forward} when from_depth <= to_depth ->
-        {:ok, [{:andalso, {:>=, :"$1", from_depth}, {:<, :"$1", to_depth}}]}
-
-      _params_that_dont_make_sense ->
-        {:error, :invalid_options}
-    end
-  end
+  def build_window_guards(%{depth: from_depth}, :backward), do: [{:"=<", :"$1", from_depth}]
+  def build_window_guards(%{depth: from_depth}, :forward), do: [{:>=, :"$1", from_depth}]
 end

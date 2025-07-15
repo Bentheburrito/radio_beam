@@ -3,10 +3,12 @@ defmodule RadioBeam.User.EventFilter do
   A client-defined filter describing what kinds of events to include in
   responses to certain API calls, and how to format those events.
   """
+  import Kernel, except: [apply: 2]
+
   @types [
+    id: :string,
     fields: :map,
     format: :map,
-    id: :string,
     include_leave?: :boolean,
     raw_definition: :map,
     rooms: :map,
@@ -24,7 +26,7 @@ defmodule RadioBeam.User.EventFilter do
   Strips the given event of any fields not in `event_fields`. Supports 
   dot-separated nested field names. If `event_fields` is `nil`, returns the
   event unmodified.
-    
+
     iex> event = %{"state_key" => "@test:localhost", "content" => %{"my_key" => 123, "other_key" => 321}}
     iex> RadioBeam.User.EventFilter.take_fields(event, ~w|state_key content.my_key|)
     %{"state_key" => "@test:localhost", "content" => %{"my_key" => 123}}
@@ -45,7 +47,7 @@ defmodule RadioBeam.User.EventFilter do
 
   TOIMPL unread_thread_notifications
   """
-  def new(%{} = definition) when is_map(definition) do
+  def new(%{} = definition) do
     room_def = Map.get(definition, "room", %{})
     timeline = room_def |> Map.get("timeline", %{}) |> parse_event_filter(RadioBeam.max_timeline_events())
     state = room_def |> Map.get("state", %{}) |> parse_event_filter(RadioBeam.max_state_events())
@@ -78,12 +80,15 @@ defmodule RadioBeam.User.EventFilter do
     |> Map.merge(%{
       contains_url: Map.get(filter, "contains_url", :none),
       memberships: parse_memberships(filter),
-      limit: filter |> Map.get("limit", max_events) |> min(max_events)
+      limit: filter |> Map.get("limit", max_events) |> min(max_events) |> max(1)
     })
   end
 
   defp merge_filter_list(filter, allowlist_key, denylist_key) do
     case filter do
+      %{^allowlist_key => []} ->
+        :none
+
       %{^allowlist_key => allowlist} ->
         denylist = Map.get(filter, denylist_key, [])
 
@@ -92,6 +97,9 @@ defmodule RadioBeam.User.EventFilter do
          |> MapSet.new()
          |> MapSet.difference(MapSet.new(denylist))
          |> MapSet.to_list()}
+
+      %{^denylist_key => []} ->
+        :none
 
       %{^denylist_key => denylist} ->
         {:denylist, denylist}
@@ -111,4 +119,43 @@ defmodule RadioBeam.User.EventFilter do
       :else -> :all
     end
   end
+
+  def allow_timeline_event?(filter, pdu), do: apply(filter.timeline, pdu)
+
+  def allow_state_event?(filter, pdu, senders, known_memberships) do
+    apply(filter.state, pdu) and apply_membership_filter(filter.state, pdu, senders, known_memberships)
+  end
+
+  defp apply(filter, %{content: content, type: type, sender: sender}) do
+    filter_url(filter, content) and filter_type(filter, type) and filter_sender(filter, sender)
+  end
+
+  defp apply_membership_filter(filter, %{type: "m.room.member"} = pdu, senders, known_memberships) do
+    case filter.memberships do
+      :lazy -> pdu.state_key not in known_memberships and pdu.state_key in senders
+      :lazy_redundant -> pdu.state_key in senders
+      :all -> true
+    end
+  end
+
+  defp apply_membership_filter(_filter, _pdu, _senders, _known_memberships), do: true
+
+  defp filter_url(%{contains_url: :none}, _), do: true
+  defp filter_url(%{contains_url: true}, %{"url" => _}), do: true
+  defp filter_url(%{contains_url: false}, content) when not is_map_key(content, "url"), do: true
+  defp filter_url(_, _), do: false
+
+  # TOIMPL: support for * wildcards in types
+  defp filter_type(%{types: types}, type), do: allow_listed?(type, types)
+
+  defp filter_sender(%{senders: senders}, sender), do: allow_listed?(sender, senders)
+
+  @doc "whether to include relevant state events/deltas"
+  def allow_state_in_room?(filter, room_id), do: allow_listed?(room_id, filter.state.rooms)
+  @doc "whether to include timeline events"
+  def allow_timeline_in_room?(filter, room_id), do: allow_listed?(room_id, filter.timeline.rooms)
+
+  defp allow_listed?(item, {:allowlist, allowlist}), do: item in allowlist
+  defp allow_listed?(item, {:denylist, denylist}), do: item not in denylist
+  defp allow_listed?(_item, :none), do: true
 end

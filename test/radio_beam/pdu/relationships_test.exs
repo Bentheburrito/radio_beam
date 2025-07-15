@@ -7,6 +7,18 @@ defmodule RadioBeam.PDU.RelationshipsTest do
   alias RadioBeam.Room.EventGraph
   alias RadioBeam.PDU
 
+  describe "aggregable?/1" do
+    test "returns `true` for aggregable m.relates_to.rel_type values defined in the spec" do
+      for rel_type <- ~w|m.thread m.replace m.reference| do
+        assert Relationships.aggregable?(%PDU{content: %{"m.relates_to" => %{"rel_type" => rel_type}}})
+      end
+    end
+
+    test "returns `false` for non-aggregable m.relates_to.rel_type values" do
+      refute Relationships.aggregable?(%PDU{content: %{"m.relates_to" => %{"rel_type" => "com.some.other.type"}}})
+    end
+  end
+
   describe "get_aggregations/3" do
     test "aggregates threaded events" do
       user = Fixtures.user()

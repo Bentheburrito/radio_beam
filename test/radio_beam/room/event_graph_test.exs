@@ -48,6 +48,25 @@ defmodule RadioBeam.Room.EventGraphTest do
         EventGraph.append(room, [create_pdu], name_event3)
     end
 
+    test "puts previous state content under unsigned.prev_content", %{user: user, room: room} do
+      create_event = room.id |> Events.create(user.id, room.version, %{}) |> auth_event()
+      name_event1 = room.id |> Events.name(user.id, "My new Room") |> auth_event()
+      name_event2 = room.id |> Events.name(user.id, "My New Room") |> auth_event()
+
+      {:ok, %PDU{unsigned: %{"prev_content" => nil}} = create_pdu} =
+        EventGraph.append(room, [], create_event)
+
+      room = Room.Core.update_state(room, create_pdu)
+
+      {:ok, %PDU{unsigned: %{"prev_content" => nil}} = name_pdu1} =
+        EventGraph.append(room, [create_pdu], name_event1)
+
+      room = Room.Core.update_state(room, name_pdu1)
+
+      {:ok, %PDU{unsigned: %{"prev_content" => %{"name" => "My new Room"}}}} =
+        EventGraph.append(room, [name_pdu1], name_event2)
+    end
+
     test "does not allow parents of different depths", %{user: user, room: room} do
       create_event = room.id |> Events.create(user.id, room.version, %{}) |> auth_event()
       name_event1 = room.id |> Events.name(user.id, "My new Room") |> auth_event()
@@ -101,66 +120,7 @@ defmodule RadioBeam.Room.EventGraphTest do
     end
   end
 
-  describe "user_joined_after?/3" do
-    setup do
-      user = Fixtures.user()
-      {:ok, room_id} = Room.create(user)
-      {:ok, create_event} = EventGraph.root(room_id)
-      %{room_id: room_id, user: user, create_event: create_event}
-    end
-
-    test "returns false if the user has never sent a membership event to the room before", %{
-      room_id: room_id,
-      create_event: create_event
-    } do
-      random_user = Fixtures.user()
-      refute EventGraph.user_joined_after?(random_user.id, room_id, create_event)
-    end
-
-    test "returns true for the room creator", %{
-      room_id: room_id,
-      create_event: create_event,
-      user: creator
-    } do
-      assert EventGraph.user_joined_after?(creator.id, room_id, create_event)
-    end
-
-    test "returns true if the user joined the room at some point in the future", %{
-      room_id: room_id,
-      create_event: create_event,
-      user: creator
-    } do
-      jimothy = Fixtures.user()
-      refute EventGraph.user_joined_after?(jimothy.id, room_id, create_event)
-
-      {:ok, _} = Room.invite(room_id, creator.id, jimothy.id)
-      refute EventGraph.user_joined_after?(jimothy.id, room_id, create_event)
-
-      {:ok, _} = Room.join(room_id, jimothy.id)
-      assert EventGraph.user_joined_after?(jimothy.id, room_id, create_event)
-    end
-
-    test "returns false if the user joined the room at some point in the past, but has since left", %{
-      room_id: room_id,
-      user: creator
-    } do
-      {:ok, pdu} = EventGraph.tip(room_id)
-      jimothy = Fixtures.user()
-      {:ok, _} = Room.invite(room_id, creator.id, jimothy.id)
-      {:ok, _} = Room.join(room_id, jimothy.id)
-      assert EventGraph.user_joined_after?(jimothy.id, room_id, pdu)
-
-      {:ok, event_id} = Room.leave(room_id, jimothy.id)
-      {:ok, pdu} = Repo.fetch(PDU, event_id)
-      refute EventGraph.user_joined_after?(jimothy.id, room_id, pdu)
-
-      Fixtures.send_text_msg(room_id, creator.id, "bye?")
-      {:ok, pdu} = Repo.fetch(PDU, event_id)
-      refute EventGraph.user_joined_after?(jimothy.id, room_id, pdu)
-    end
-  end
-
-  describe "all_since/2,3" do
+  describe "stream_all_since/2,3" do
     setup do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
@@ -174,30 +134,31 @@ defmodule RadioBeam.Room.EventGraphTest do
       %{room_id: room_id, user: user, since: since, since_pdu: since_pdu}
     end
 
-    test "gets all new messages since `since` when the total num is below `limit`", %{room_id: room_id, since: since} do
-      assert {:ok, [e1, e2], _token, true} = EventGraph.all_since(room_id, since, 5)
+    defp stream_and_sort(room_id, since) do
+      room_id |> EventGraph.stream_all_since(since) |> Enum.sort_by(&{&1.arrival_time, &1.arrival_order})
+    end
+
+    test "gets all new messages since `since`", %{room_id: room_id, since: since} do
+      assert [e1, e2] = stream_and_sort(room_id, since)
 
       assert %{content: %{"body" => "Testing 123"}} = e1
       assert %{content: %{"body" => "guess it works"}} = e2
     end
 
-    test "gets all new messages since `since`, returning only the `limit` latest", %{room_id: room_id, since: since} do
-      assert {:ok, [e1], _token, false} = EventGraph.all_since(room_id, since, 1)
-
-      assert %{content: %{"body" => "guess it works"}} = e1
-    end
-
-    test "returns the same since token if there are no new events", %{room_id: room_id} do
+    test "returns nothing if there have been no new events since `since`", %{room_id: room_id} do
       {:ok, tip} = EventGraph.tip(room_id)
       token = PaginationToken.new(tip, :forward)
 
-      assert {:ok, [], ^token, true} = EventGraph.all_since(room_id, token, 5)
+      assert [] = stream_and_sort(room_id, token)
     end
 
-    test "returns a pagination token that points to the oldest event returned", %{room_id: room_id, since: since} do
-      {:ok, [e1, _e2], token, true} = EventGraph.all_since(room_id, since, 5)
+    test "returns events where the first event comes after the event_id in the given since token", %{
+      room_id: room_id,
+      since: since
+    } do
+      [e1, _e2] = stream_and_sort(room_id, since)
 
-      assert ^token = PaginationToken.new(e1, :backward)
+      assert since.event_ids == e1.prev_events
     end
 
     test "returns an event that arrived late, even if its topologically 'earlier' than `since`", %{
@@ -217,16 +178,15 @@ defmodule RadioBeam.Room.EventGraphTest do
       {:ok, e_late} = EventGraph.append(room, parents, event_params)
       Repo.insert(e_late)
 
-      assert {:ok, [^e_late, e1, e2], _token, true} = EventGraph.all_since(room_id, since, 5)
+      assert [e1, e2, ^e_late] = stream_and_sort(room_id, since)
 
-      assert %{content: %{"body" => "ello from down unda"}} = e_late
       assert %{content: %{"body" => "Testing 123"}} = e1
       assert %{content: %{"body" => "guess it works"}} = e2
     end
   end
 
   # TODO: add some tests here that use a PaginationToken, not just the since_pdu
-  describe "traverse/1,2,3,4" do
+  describe "traverse/2" do
     setup do
       user = Fixtures.user()
       {:ok, room_id} = Room.create(user)
@@ -241,22 +201,24 @@ defmodule RadioBeam.Room.EventGraphTest do
     end
 
     test "can traverse from the beginning of the room", %{room_id: room_id, user: %{id: user_id}} do
-      assert {:ok, pdus, _cont} = EventGraph.traverse(room_id, :root)
+      assert {:ok, pdu_stream, :tip} = EventGraph.traverse(room_id, :root)
 
-      assert [
-               %PDU{type: "m.room.create"},
-               %PDU{type: "m.room.member", state_key: ^user_id},
-               %PDU{type: "m.room.power_levels"},
-               %PDU{type: "m.room.join_rules"},
-               %PDU{type: "m.room.history_visibility"},
-               %PDU{type: "m.room.guest_access"},
-               %PDU{type: "m.room.message"},
-               %PDU{type: "m.room.message"}
-             ] = pdus
+      Repo.transaction(fn ->
+        assert [
+                 %PDU{type: "m.room.create"},
+                 %PDU{type: "m.room.member", state_key: ^user_id},
+                 %PDU{type: "m.room.power_levels"},
+                 %PDU{type: "m.room.join_rules"},
+                 %PDU{type: "m.room.history_visibility"},
+                 %PDU{type: "m.room.guest_access"},
+                 %PDU{type: "m.room.message"},
+                 %PDU{type: "m.room.message"}
+               ] = Enum.to_list(pdu_stream)
+      end)
     end
 
     test "can traverse from the end of the room", %{room_id: room_id, user: %{id: user_id}} do
-      assert {:ok, pdus, _cont} = EventGraph.traverse(room_id, :tip)
+      assert {:ok, pdu_stream, :root} = EventGraph.traverse(room_id, :tip)
 
       assert [
                %PDU{type: "m.room.message"},
@@ -267,11 +229,11 @@ defmodule RadioBeam.Room.EventGraphTest do
                %PDU{type: "m.room.power_levels"},
                %PDU{type: "m.room.member", state_key: ^user_id},
                %PDU{type: "m.room.create"}
-             ] = pdus
+             ] = Enum.to_list(pdu_stream)
     end
 
     test "can traverse backward from an arbitrary PDU", %{room_id: room_id, user: %{id: user_id}, since_pdu: since_pdu} do
-      assert {:ok, pdus, _cont} = EventGraph.traverse(room_id, {since_pdu.event_id, :backward})
+      assert {:ok, pdu_stream, :root} = EventGraph.traverse(room_id, {since_pdu.event_id, :backward})
 
       assert [
                %PDU{type: "m.room.history_visibility"},
@@ -279,67 +241,24 @@ defmodule RadioBeam.Room.EventGraphTest do
                %PDU{type: "m.room.power_levels"},
                %PDU{type: "m.room.member", state_key: ^user_id},
                %PDU{type: "m.room.create"}
-             ] = pdus
+             ] = Enum.to_list(pdu_stream)
     end
 
     test "can traverse forward from an arbitrary PDU", %{room_id: room_id, since_pdu: since_pdu} do
-      assert {:ok, pdus, _cont} = EventGraph.traverse(room_id, {since_pdu.event_id, :forward})
+      assert {:ok, pdu_stream, :tip} = EventGraph.traverse(room_id, {since_pdu.event_id, :forward})
 
-      assert [
-               %PDU{type: "m.room.message"},
-               %PDU{type: "m.room.message"}
-             ] = pdus
+      Repo.transaction(fn ->
+        assert [
+                 %PDU{type: "m.room.message"},
+                 %PDU{type: "m.room.message"}
+               ] = Enum.to_list(pdu_stream)
+      end)
     end
 
-    test "will stop at the given `to` PDU when traversing forward", %{
-      room_id: room_id,
-      user: %{id: user_id},
-      since_pdu: since_pdu
-    } do
-      assert {:ok, pdus, _cont} = EventGraph.traverse(room_id, :root, since_pdu.event_id)
-
-      assert [
-               %PDU{type: "m.room.create"},
-               %PDU{type: "m.room.member", state_key: ^user_id},
-               %PDU{type: "m.room.power_levels"},
-               %PDU{type: "m.room.join_rules"},
-               %PDU{type: "m.room.history_visibility"}
-             ] = pdus
-    end
-
-    test "will stop at the given `to` PDU when traversing backward", %{
-      room_id: room_id,
-      since_pdu: since_pdu
-    } do
-      assert {:ok, pdus, _cont} = EventGraph.traverse(room_id, :tip, since_pdu.event_id)
-
-      assert [
-               %PDU{type: "m.room.message"},
-               %PDU{type: "m.room.message"}
-             ] = pdus
-    end
-
-    test "will stop at the limit if it's reached before `to`", %{
-      room_id: room_id,
-      user: %{id: user_id},
-      since_pdu: since_pdu
-    } do
-      assert {:ok, pdus, _cont} = EventGraph.traverse(room_id, :root, since_pdu.event_id, 3)
-
-      assert [
-               %PDU{type: "m.room.create"},
-               %PDU{type: "m.room.member", state_key: ^user_id},
-               %PDU{type: "m.room.power_levels"}
-             ] = pdus
-    end
-
-    test "will return an :invalid_options error when the `dir` would have `from` traverse in the opposite direction of `to`",
-         %{
-           room_id: room_id,
-           since_pdu: since_pdu
-         } do
-      {:ok, root} = EventGraph.root(room_id)
-      assert {:error, :invalid_options} = EventGraph.traverse(room_id, {since_pdu.event_id, :forward}, root.event_id)
+    test "will return an :ambiguous_token error when the since token doesn't hold a known event for the given room_id",
+         %{room_id: room_id} do
+      token = PaginationToken.new(0, :forward)
+      assert {:error, :ambiguous_token} = EventGraph.traverse(room_id, {token, :forward})
     end
   end
 

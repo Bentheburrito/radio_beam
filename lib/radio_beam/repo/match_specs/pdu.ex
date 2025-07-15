@@ -90,11 +90,19 @@ defmodule RadioBeam.Repo.MatchSpecs.PDU do
   end
 
   @doc """
-  Selects PDUs that occurred before/after the given `since` tuple.
+  Selects PDUs that occurred the given `since` tuple, including PDUs whose
+  arrival time/order are equal to `since`.
   """
   def since(room_id, since) do
     match_head = put_elem(PDU.__info__().query_base, 1, {room_id, :_, :_, :_, :_})
-    [{match_head, [{:>, :"$2", {since}}], [:"$_"]}]
+
+    guards =
+      case since do
+        nil -> []
+        _else -> [{:>, :"$2", {since}}]
+      end
+
+    [{match_head, guards, [:"$_"]}]
   end
 
   @doc """

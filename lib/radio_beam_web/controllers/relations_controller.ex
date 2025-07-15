@@ -26,16 +26,17 @@ defmodule RadioBeamWeb.RelationsController do
     # and /sync (so a PaginationToken). EventGraph.get_children does not currently
     # support this (nor a `limit`), so just returning all children for now -
     # need to come back to do this properly
-    with {:ok, %PDU{} = pdu} <- Room.get_event(room_id, user.id, event_id, _bundle_aggregates? = false),
+    with {:ok, user_latest_known_join} <- Room.get_latest_known_join(room_id, user.id),
+         {:ok, %PDU{} = pdu} <- Room.get_event(room_id, user.id, event_id, _bundle_aggregates? = false),
          {:ok, children} <- EventGraph.get_children(pdu, recurse_level) do
       rel_type = Map.get(params, "rel_type")
       event_type = Map.get(params, "event_type")
 
       children =
         if dir == :forward do
-          children |> filter(user.id, rel_type, event_type) |> Enum.reverse()
+          children |> filter(user.id, rel_type, event_type, user_latest_known_join) |> Enum.reverse()
         else
-          children |> filter(user.id, rel_type, event_type) |> Enum.to_list()
+          children |> filter(user.id, rel_type, event_type, user_latest_known_join) |> Enum.to_list()
         end
 
       json(conn, %{chunk: children, recursion_depth: recurse_level})
@@ -44,13 +45,13 @@ defmodule RadioBeamWeb.RelationsController do
     end
   end
 
-  defp filter(children, user_id, rel_type, event_type) do
+  defp filter(children, user_id, rel_type, event_type, user_latest_known_join) do
     # we can't use Timeline.filter_authz here because it assumes we're
     # filtering against a contiguous slice of the room history, (and thus
     # certain assumptions used to update state/membership don't hold up).
-    Stream.filter(children, fn pdu ->
-      Timeline.authz_to_view?(pdu, user_id) and filter_rel_type(pdu, rel_type) and filter_event_type(pdu, event_type)
-    end)
+    children
+    |> Stream.filter(&(filter_rel_type(&1, rel_type) and filter_event_type(&1, event_type)))
+    |> Timeline.reject_unauthorized_child_pdus(user_id, user_latest_known_join)
   end
 
   defp filter_rel_type(_pdu, nil), do: true

@@ -3,7 +3,6 @@ defmodule RadioBeam.ContentRepo do
   The content/media repository. Manages user-uploaded files, authorizing based
   on configured limits.
   """
-  alias Phoenix.PubSub
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Thumbnail
@@ -54,7 +53,7 @@ defmodule RadioBeam.ContentRepo do
   def get(%MatrixContentURI{} = mxc, opts) do
     max_size_bytes = max_upload_size_bytes()
     timeout = Keyword.get_lazy(opts, :timeout, &max_wait_for_download_ms/0)
-    PubSub.subscribe(PS, PS.file_uploaded(mxc))
+    PS.subscribe(PS.file_uploaded(mxc))
 
     case Repo.fetch(Upload, mxc) do
       {:ok, %Upload{file: %FileInfo{byte_size: byte_size}}} when byte_size > max_size_bytes -> {:error, :too_large}
@@ -151,7 +150,7 @@ defmodule RadioBeam.ContentRepo do
       with :ok <- validate_upload_size(upload.uploaded_by_id, file_info.byte_size),
            {:ok, %Upload{} = upload} <- upload |> Upload.put_file(file_info) |> Upload.put(),
            :ok <- copy_upload_if_no_exists(tmp_upload_path, upload_file_path(upload, repo_path)) do
-        PubSub.broadcast(PS, PS.file_uploaded(upload.id), {:file_uploaded, upload})
+        PS.broadcast(PS.file_uploaded(upload.id), {:file_uploaded, upload})
         {:ok, upload}
       end
     end)

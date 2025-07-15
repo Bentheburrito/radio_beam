@@ -15,7 +15,7 @@ defmodule RadioBeam.Room.EventGraph.PaginationToken do
 
   def new(pdus, direction) when is_list(pdus) and direction in [:forward, :backward] do
     %__MODULE__{
-      arrival_key: pdus |> Stream.map(&{&1.arrival_time, &1.arrival_order}) |> Enum.max(),
+      arrival_key: pdus |> Stream.map(&{&1.arrival_time, &1.arrival_order}) |> Enum.max(fn -> {0, 0} end),
       direction: direction,
       event_ids: Enum.map(pdus, & &1.event_id)
     }
