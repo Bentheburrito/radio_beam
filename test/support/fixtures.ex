@@ -6,6 +6,8 @@ defmodule Fixtures do
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.Repo
   alias RadioBeam.Room
+  alias RadioBeam.Room.Events
+  alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo
   alias RadioBeam.User
@@ -14,7 +16,10 @@ defmodule Fixtures do
 
   def strong_password, do: "Asdf123$"
 
-  def user(user_id \\ "localhost" |> UserIdentifier.generate() |> to_string()) do
+  def room_id(server_name \\ "localhost"), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(server_name)
+  def user_id(server_name \\ "localhost"), do: server_name |> UserIdentifier.generate() |> to_string()
+
+  def user(user_id \\ user_id()) do
     {:ok, user} = User.new(user_id, strong_password())
     {:ok, user} = RadioBeam.Repo.insert(user)
     user
@@ -143,5 +148,30 @@ defmodule Fixtures do
     {:ok, device} = Device.put_keys(device, user.id, identity_keys: key)
     {:ok, user} = user |> User.put_device(device) |> Repo.insert()
     {user, device}
+  end
+
+  def authz_event(event_attrs, auth_events) do
+    attrs =
+      event_attrs
+      |> Map.put("auth_events", auth_events)
+      |> Map.put("origin_server_ts", System.os_time(:second))
+
+    id = Events.reference_hash(attrs, "11")
+
+    attrs
+    |> Map.put("id", id)
+    |> AuthorizedEvent.new!()
+  end
+
+  def authz_create_event(sender_id \\ user_id(), content_overrides \\ %{}) do
+    room_id()
+    |> Events.create(sender_id, "11", content_overrides)
+    |> authz_event([])
+  end
+
+  def authz_message_event(room_id, sender_id, auth_events, message) do
+    room_id
+    |> Events.text_message(sender_id, message)
+    |> authz_event(auth_events)
   end
 end

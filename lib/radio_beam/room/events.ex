@@ -4,9 +4,33 @@ defmodule RadioBeam.Room.Events do
   """
 
   alias Polyjuice.Util.Identifiers.V1.RoomAliasIdentifier
+  alias Polyjuice.Util.RoomVersion
 
+  def reference_hash(event_attrs, room_version) do
+    case RoomVersion.compute_reference_hash(room_version, event_attrs) do
+      # Events began using the URL-safe variant in Room Version 4.
+      # It's not planned to support Room Versions 1 or 2 currently, since they
+      # have a completely different (non-hash-based) schema for event IDs that
+      # include the servername.
+      {:ok, hash} when room_version == "3" -> {:ok, "$" <> Base.encode64(hash)}
+      {:ok, hash} -> {:ok, "$" <> Base.url_encode64(hash)}
+      :error -> {:error, :could_not_compute_reference_hash}
+    end
+  end
+
+  @doc "Returns the attrs for a room message event."
   def message(room_id, sender_id, type, content) do
     %{"type" => type, "room_id" => room_id, "sender" => sender_id, "content" => content}
+  end
+
+  @doc "Returns the attrs for a m.room.message event with content.msgtype m.text."
+  def text_message(room_id, sender_id, message) do
+    %{
+      "type" => "m.room.message",
+      "room_id" => room_id,
+      "sender" => sender_id,
+      "content" => %{"msgtype" => "m.text", "body" => message}
+    }
   end
 
   def state(room_id, type, sender_id, content, state_key \\ "") do
