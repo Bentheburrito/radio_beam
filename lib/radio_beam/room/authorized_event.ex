@@ -6,6 +6,7 @@ defmodule RadioBeam.Room.AuthorizedEvent do
   @attrs ~w|auth_events content id origin_server_ts room_id sender state_key type unsigned|a
   @enforce_keys @attrs
   defstruct @attrs
+  @type t() :: %__MODULE__{}
 
   def new!(event_attrs) do
     struct!(__MODULE__,

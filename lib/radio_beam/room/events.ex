@@ -20,27 +20,24 @@ defmodule RadioBeam.Room.Events do
 
   @doc "Returns the attrs for a room message event."
   def message(room_id, sender_id, type, content) do
-    %{"type" => type, "room_id" => room_id, "sender" => sender_id, "content" => content}
+    %{
+      "type" => type,
+      "room_id" => room_id,
+      "sender" => sender_id,
+      "content" => content,
+      "origin_server_ts" => System.os_time(:second)
+    }
   end
 
   @doc "Returns the attrs for a m.room.message event with content.msgtype m.text."
   def text_message(room_id, sender_id, message) do
-    %{
-      "type" => "m.room.message",
-      "room_id" => room_id,
-      "sender" => sender_id,
-      "content" => %{"msgtype" => "m.text", "body" => message}
-    }
+    message(room_id, sender_id, "m.room.message", %{"msgtype" => "m.text", "body" => message})
   end
 
   def state(room_id, type, sender_id, content, state_key \\ "") do
-    %{
-      "content" => content,
-      "room_id" => room_id,
-      "sender" => sender_id,
-      "state_key" => state_key,
-      "type" => type
-    }
+    room_id
+    |> message(sender_id, type, content)
+    |> Map.put("state_key", state_key)
   end
 
   def create(room_id, creator_id, room_version, create_content) do

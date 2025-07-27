@@ -13,6 +13,8 @@ defmodule RadioBeam do
 
   def env, do: Application.fetch_env!(:radio_beam, :env)
 
+  def default_room_version, do: Application.fetch_env!(:radio_beam, :capabilities)[:"m.room_versions"].default
+
   @cs_event_keys ["content", "event_id", "origin_server_ts", "room_id", "sender", "state_key", "type", "unsigned"]
   @doc """
   Strips an event/map of all keys that don't belong to a Client-Server

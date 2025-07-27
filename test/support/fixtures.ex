@@ -16,7 +16,9 @@ defmodule Fixtures do
 
   def strong_password, do: "Asdf123$"
 
-  def room_id(server_name \\ "localhost"), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(server_name)
+  def room_id(server_name \\ "localhost"),
+    do: server_name |> Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate() |> to_string()
+
   def user_id(server_name \\ "localhost"), do: server_name |> UserIdentifier.generate() |> to_string()
 
   def user(user_id \\ user_id()) do
@@ -151,12 +153,9 @@ defmodule Fixtures do
   end
 
   def authz_event(event_attrs, auth_events) do
-    attrs =
-      event_attrs
-      |> Map.put("auth_events", auth_events)
-      |> Map.put("origin_server_ts", System.os_time(:second))
+    attrs = Map.put(event_attrs, "auth_events", auth_events)
 
-    id = Events.reference_hash(attrs, "11")
+    {:ok, id} = Events.reference_hash(attrs, "11")
 
     attrs
     |> Map.put("id", id)

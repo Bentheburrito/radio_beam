@@ -9,6 +9,7 @@ defmodule RadioBeam.Room.DAG do
   @enforce_keys ~w|root forward_extremities|a
   defstruct root: nil,
             forward_extremities: [],
+            next_stream_number: 0,
             pdu_map: %{}
 
   # event_id_by_event_number: %{},
@@ -21,18 +22,24 @@ defmodule RadioBeam.Room.DAG do
   ### CREATE / UPDATE DAG ###
 
   def new!(%AuthorizedEvent{type: "m.room.create"} = create_event) do
-    %PDU{} = root = PDU.new!(create_event, [])
+    %PDU{} = root = PDU.new!(create_event, [], 0)
 
     %__MODULE__{
       root: root,
       forward_extremities: [root.event.id],
+      next_stream_number: 1,
       pdu_map: %{root.event.id => root}
     }
   end
 
   def append!(%__MODULE__{} = dag, %AuthorizedEvent{} = event) do
-    %PDU{} = pdu = PDU.new!(event, dag.forward_extremities)
-    struct!(dag, pdu_map: Map.put(dag.pdu_map, event.id, pdu), forward_extremities: [event.id])
+    %PDU{} = pdu = PDU.new!(event, dag.forward_extremities, dag.next_stream_number)
+
+    struct!(dag,
+      pdu_map: Map.put(dag.pdu_map, event.id, pdu),
+      forward_extremities: [event.id],
+      next_stream_number: dag.next_stream_number + 1
+    )
   end
 
   def redact(%__MODULE__{} = dag, _event_id) do
