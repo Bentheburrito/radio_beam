@@ -94,7 +94,7 @@ defmodule RadioBeam.Room.PDU do
 
     def redact(pdu, room_version) when is_supported(room_version) do
       content_keys_to_keep =
-        case pdu.type do
+        case pdu.event.type do
           "m.room.member" ->
             cond do
               room_version in ~w|1 2 3 4 5 6 7 8| ->
@@ -132,7 +132,7 @@ defmodule RadioBeam.Room.PDU do
         end
 
       if content_keys_to_keep == :all do
-        {:ok, put_in(pdu.unsigned, %{})}
+        {:ok, put_in(pdu.event.unsigned, %{})}
       else
         # since Map.take doesn't support nested keys, we parse them and
         # rebuild the content manually
@@ -143,7 +143,7 @@ defmodule RadioBeam.Room.PDU do
             put_in(
               new_content,
               Enum.map(path, &Access.key(&1, %{})),
-              get_in(pdu.content, path)
+              get_in(pdu.event.content, path)
             )
           end)
 

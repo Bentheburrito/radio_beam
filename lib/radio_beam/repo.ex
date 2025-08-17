@@ -6,7 +6,6 @@ defmodule RadioBeam.Repo do
   require Logger
 
   alias RadioBeam.ContentRepo.Upload
-  alias RadioBeam.Job
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.Repo.Tables
@@ -30,7 +29,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @one_to_one_tables [User, Room, Room.Alias, Upload, Job]
+  @one_to_one_tables [User, Tables.Room, Room.Alias, Upload]
   @table_map %{PDU => Tables.PDU}
   @mappable Map.keys(@table_map)
   @tables @one_to_one_tables ++ Map.values(@table_map)

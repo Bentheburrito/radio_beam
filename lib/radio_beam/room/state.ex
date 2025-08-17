@@ -28,6 +28,7 @@ defmodule RadioBeam.Room.State do
   where lower_bound_state_group_number stores PDUs whose assigned state_group_number
   is rounded down to the nearest mult of 100 (i.e. `state_group_num - rem(state_group_num, 100)
   """
+  alias Polyjuice.Util.RoomVersion
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.PDU
@@ -58,7 +59,7 @@ defmodule RadioBeam.Room.State do
     end
   end
 
-  defp room_version(%__MODULE__{} = state) do
+  def room_version(%__MODULE__{} = state) do
     case fetch(state, "m.room.create", "") do
       {:ok, %{event: %{content: %{"room_version" => version}}}} -> version
       {:error, :not_found} -> RadioBeam.default_room_version()
@@ -103,8 +104,10 @@ defmodule RadioBeam.Room.State do
   end
 
   defp authorized?(state_mapping, room_version, event, auth_event_pdus) do
-    Polyjuice.Util.RoomVersion.authorized?(room_version, event, state_mapping, auth_event_pdus)
+    RoomVersion.authorized?(room_version, event, state_mapping, auth_event_pdus)
   end
+
+  def size(%__MODULE__{mapping: mapping}), do: map_size(mapping)
 
   def fetch(%__MODULE__{mapping: mapping}, type, state_key \\ "") do
     case Map.fetch(mapping, {type, state_key}) do
@@ -130,6 +133,39 @@ defmodule RadioBeam.Room.State do
     |> Enum.find_value({:error, :not_found}, fn {upper_bound_stream_num, %PDU{} = state_pdu} ->
       if stream_number in state_pdu.stream_number..(upper_bound_stream_num - 1), do: {:ok, state_pdu}
     end)
+  end
+
+  def replace_pdu!(%__MODULE__{} = state, %PDU{event: %{state_key: :none}}), do: state
+
+  def replace_pdu!(%__MODULE__{mapping: mapping} = state, %PDU{event: %{id: event_id}} = pdu)
+      when is_map_key(mapping, {pdu.event.type, pdu.event.state_key}) do
+    update_in(state.mapping[{pdu.event.type, pdu.event.state_key}], fn pdu_list ->
+      Enum.map(pdu_list, fn
+        %PDU{event: %{id: ^event_id}} -> pdu
+        pdu -> pdu
+      end)
+    end)
+  end
+
+  @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
+  @doc "Returns the stripped state of the given room."
+  def get_invite_pdus(%__MODULE__{} = state, user_id) do
+    # we additionally include the calling user's membership event
+    @stripped_state_types
+    |> Stream.map(&{&1, ""})
+    |> Stream.concat([{"m.room.member", user_id}])
+    |> Enum.reduce([], fn {type, state_key}, acc ->
+      case fetch(state, type, state_key) do
+        {:ok, pdu} -> [pdu | acc]
+        {:error, :not_found} -> acc
+      end
+    end)
+  end
+
+  def user_has_power?(%__MODULE__{} = state, power_level_content_path, user_id, state_event? \\ false) do
+    # TODO: Polyjuice RoomState protocol
+    state_mapping = Map.new(state.mapping, fn {key, [pdu | _]} -> {key, pdu} end)
+    RoomVersion.has_power?(user_id, power_level_content_path, state_event?, state_mapping)
   end
 
   def handle_pdu(%__MODULE__{} = state, %PDU{event: %AuthorizedEvent{state_key: :none}}), do: state

@@ -1,35 +1,46 @@
 defmodule RadioBeam.Room.Server do
   @moduledoc """
-  The GenServer that uses Room.Impl to drive changes in a room.
+  The `GenServer` that manages a particular Matrix Room.
+  `RadioBeam.Room.Server`s should not be directly interacted with outside of
+  the the public `RadioBeam.Room` API.
   """
   use GenServer
 
   alias RadioBeam.PubSub
-  alias RadioBeam.PDU
+  alias RadioBeam.Repo
   alias RadioBeam.Room
-  alias RadioBeam.RoomSupervisor
+  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
+  alias RadioBeam.Room.Server.Supervisor
 
   require Logger
 
-  def start_link({room_id, _events_or_room} = init_arg) do
-    GenServer.start_link(__MODULE__, init_arg, name: via(room_id))
+  @do_not_log_errors ~w|duplicate_annotation|a
+
+  def start_link(%Room{id: room_id} = room), do: GenServer.start_link(__MODULE__, room, name: via(room_id))
+
+  def create(version, creator_id, opts) do
+    with %Room{} = room <- Room.Core.new(version, creator_id, opts),
+         {:ok, _pid} <- Supervisor.start_room(room) do
+      {:ok, room.id}
+    end
   end
 
-  def call(room_id, message) do
+  def send(room_id, event_attrs), do: call(room_id, {:send, event_attrs})
+
+  defp call(room_id, message) do
     case Registry.lookup(RadioBeam.RoomRegistry, room_id) do
       [{pid, _}] ->
         GenServer.call(pid, message)
 
       _ ->
-        Logger.debug("Room.Server is not alive, trying to start...")
+        Logger.debug("Room.Server for #{room_id} is not alive, trying to start...")
 
-        case Room.get(room_id) do
-          {:ok, %Room{} = room} ->
-            case DynamicSupervisor.start_child(RoomSupervisor, {__MODULE__, {room.id, room}}) do
-              {:ok, pid} -> GenServer.call(pid, message)
-              error -> error
-            end
+        # TODO: abstract/hide
+        case Repo.fetch(Repo.Tables.Room, room_id) do
+          {:ok, %Repo.Tables.Room{} = room_record} ->
+            room = Repo.Tables.Room.load!(room_record)
+            with {:ok, pid} <- Supervisor.start_room(room), do: GenServer.call(pid, message)
 
           {:error, :not_found} ->
             {:error, :room_does_not_exist}
@@ -44,66 +55,46 @@ defmodule RadioBeam.Room.Server do
   ### IMPL ###
 
   @impl GenServer
-  def init({room_id, events_or_room}) do
-    case events_or_room do
-      [%{"type" => "m.room.create", "content" => %{"room_version" => version}} | _] = events ->
-        init_room = %Room{id: room_id, latest_event_ids: [], latest_known_joins: %{}, state: %{}, version: version}
-
-        case Room.Impl.put_events(init_room, events) do
-          {:ok, %Room{} = room, _pdus} -> {:ok, room}
-          {:error, :unauthorized} -> {:stop, :invalid_state}
-          {:error, %Ecto.Changeset{} = changeset} -> {:stop, inspect(changeset.errors)}
-          {:error, :alias_in_use} -> {:stop, :alias_in_use}
-          {:error, _txn_fxn_name, error} -> {:stop, error}
-          {:error, error} -> {:stop, inspect(error)}
-        end
-
-      %Room{} = room ->
-        {:ok, room}
-
-      invalid_init_arg ->
-        reason = "Tried to start a Room with invalid arg: #{inspect(invalid_init_arg)}"
-        Logger.error("Aborting room #{room_id} GenServer init: #{reason}")
-        {:stop, reason}
-    end
-  end
+  def init(%Room{} = room), do: {:ok, room}
 
   @impl GenServer
-  def handle_call({:put_event, event}, _from, %Room{} = room) do
-    case Room.Impl.put_event(room, event) do
-      {:ok, room, [pdu]} ->
-        PubSub.broadcast(PubSub.all_room_events(room.id), {:room_event, pdu})
+  def handle_call({:send, event_attrs}, _from, %Room{} = room) do
+    case Room.Core.send(room, event_attrs, deps()) do
+      {:sent, %Room{} = room, %PDU{event: event} = pdu} ->
+        # TODO: abstract/hide
+        room |> Repo.Tables.Room.dump!() |> Repo.insert!()
 
-        if pdu.type == "m.room.member" do
-          if pdu.content["membership"] == "invite" do
-            PubSub.broadcast(PubSub.invite_events(pdu.state_key), {:room_invite, room.id})
+        PubSub.broadcast(PubSub.all_room_events(room.id), {:room_event, event})
+
+        if event.type == "m.room.member" do
+          if event.content["membership"] == "invite" do
+            PubSub.broadcast(PubSub.invite_events(event.state_key), {:room_invite, room.id})
           end
 
-          LazyLoadMembersCache.mark_dirty(room.id, pdu.state_key)
+          LazyLoadMembersCache.mark_dirty(room.id, event.state_key)
         end
 
-        {:reply, {:ok, pdu.event_id}, room}
-
-      {:error, :duplicate_annotation} = e ->
-        {:reply, e, room}
+        {:reply, {:ok, pdu}, room}
 
       {:error, :unauthorized} = e ->
-        Logger.info("rejecting an event for being unauthorized: #{inspect(event)}")
+        Logger.info("rejecting an event for being unauthorized: #{inspect(event_attrs)}")
+        {:reply, e, room}
+
+      {:error, error} = e when error in @do_not_log_errors ->
         {:reply, e, room}
 
       {:error, error} ->
         Logger.error("""
-        An error occurred trying to put an event: #{inspect(error)}
-        ∟> The event: #{inspect(event)}
+        An error occurred trying to send an event into room #{room.id}: #{inspect(error)}
+        The event_attrs: #{inspect(event_attrs)}
         """)
 
         {:reply, {:error, :internal}, room}
     end
   end
 
-  @impl GenServer
-  def handle_call({:try_redact, %PDU{} = to_redact, %PDU{type: "m.room.redaction"} = pdu}, _from, %Room{} = room) do
-    {:reply, Room.Impl.try_redact(room, to_redact, pdu), room}
+  defp deps do
+    %{resolve_room_alias: &Room.Alias.get_room_id/1}
   end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}

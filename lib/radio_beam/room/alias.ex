@@ -2,14 +2,11 @@ defmodule RadioBeam.Room.Alias do
   @moduledoc """
   This table maps room aliases to room IDs
   """
-  @types [alias: :string, room_id: :string]
-  @attrs Keyword.keys(@types)
 
   use Memento.Table,
-    attributes: @attrs,
+    attributes: [:alias_tuple, :room_id],
     type: :set
 
-  alias RadioBeam.Room
   alias RadioBeam.Repo
 
   @type t() :: %__MODULE__{}
@@ -20,23 +17,38 @@ defmodule RadioBeam.Room.Alias do
   `{:error, error}` otherwise, where `error` is either `:room_does_not_exist` or
   `:alias_in_use`.
   """
-  def put(room_alias, room_id) do
-    Repo.transaction(fn ->
-      case {Repo.fetch(__MODULE__, room_alias), Repo.fetch(Room, room_id)} do
-        {_, {:error, :not_found}} ->
-          {:error, :room_does_not_exist}
+  def put(alias, room_id) do
+    with {:ok, alias_localpart, server_name} <- validate(alias) do
+      alias_tuple = {alias_localpart, server_name}
 
-        {{:ok, %__MODULE__{}}, _} ->
-          {:error, :alias_in_use}
-
-        {{:error, :not_found}, {:ok, %RadioBeam.Room{id: ^room_id}}} ->
-          Repo.insert(%__MODULE__{alias: room_alias, room_id: room_id})
-      end
-    end)
+      Repo.transaction(fn ->
+        case Repo.fetch(__MODULE__, alias_tuple) do
+          {:ok, %__MODULE__{}} -> {:error, :alias_in_use}
+          {:error, :not_found} -> Repo.insert(%__MODULE__{alias_tuple: alias_tuple, room_id: room_id})
+        end
+      end)
+    end
   end
 
-  def get_room_id(room_alias) do
-    with {:ok, %__MODULE__{room_id: room_id}} <- Repo.fetch(__MODULE__, room_alias) do
+  defp validate(alias) do
+    case String.split(alias, ":", parts: 2) do
+      ["#" <> localpart, server_name] ->
+        cond do
+          # TOIMPL: "The localpart of a room alias may contain any valid non-surrogate
+          # Unicode codepoints except : and NUL."
+          not String.valid?(localpart) -> {:error, :invalid_alias_localpart}
+          server_name != RadioBeam.server_name() -> {:error, :invalid_or_unknown_server_name}
+          :else -> :ok
+        end
+
+      _ ->
+        {:error, :invalid_alias}
+    end
+  end
+
+  def get_room_id(alias) do
+    with {:ok, localpart, server_name} <- validate(alias),
+         {:ok, %__MODULE__{room_id: room_id}} <- Repo.fetch(__MODULE__, {localpart, server_name}) do
       {:ok, room_id}
     end
   end

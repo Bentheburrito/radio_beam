@@ -32,18 +32,32 @@ defmodule RadioBeam.Room.DAG do
     }
   end
 
+  def forward_extremities(%__MODULE__{forward_extremities: fes}), do: fes
+
   def append!(%__MODULE__{} = dag, %AuthorizedEvent{} = event) do
     %PDU{} = pdu = PDU.new!(event, dag.forward_extremities, dag.next_stream_number)
 
-    struct!(dag,
-      pdu_map: Map.put(dag.pdu_map, event.id, pdu),
-      forward_extremities: [event.id],
-      next_stream_number: dag.next_stream_number + 1
-    )
+    {
+      struct!(dag,
+        pdu_map: Map.put(dag.pdu_map, event.id, pdu),
+        forward_extremities: [event.id],
+        next_stream_number: dag.next_stream_number + 1
+      ),
+      pdu
+    }
   end
 
-  def redact(%__MODULE__{} = dag, _event_id) do
-    # TODO
-    dag
+  def size(%__MODULE__{pdu_map: pdu_map}), do: map_size(pdu_map)
+
+  def root!(%__MODULE__{root: root}), do: root
+
+  def fetch(%__MODULE__{} = dag, event_id) do
+    with :error <- Map.fetch(dag.pdu_map, event_id), do: {:error, :not_found}
   end
+
+  def fetch!(%__MODULE__{pdu_map: pdu_map}, event_id) when is_map_key(pdu_map, event_id),
+    do: Map.fetch!(pdu_map, event_id)
+
+  def replace_pdu!(%__MODULE__{pdu_map: pdu_map} = dag, %PDU{} = pdu) when is_map_key(pdu_map, pdu.event.id),
+    do: put_in(dag.pdu_map[pdu.event.id], pdu)
 end

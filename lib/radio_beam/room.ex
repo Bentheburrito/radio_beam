@@ -6,129 +6,32 @@ defmodule RadioBeam.Room do
   this API.
   """
 
-  @types [
-    id: :string,
-    latest_event_ids: {:array, :string},
-    latest_known_joins: :map,
-    state: :map,
-    version: :string
-  ]
-  @attrs Keyword.keys(@types)
-
-  use Memento.Table,
-    attributes: @attrs,
-    type: :set
-
   require Logger
 
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Repo
-  alias Polyjuice.Util.Identifiers.V1.RoomIdentifier
   alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.EventGraph
-  alias RadioBeam.RoomSupervisor
   alias RadioBeam.User
+
+  @attrs ~w|id dag state redactions relationships|a
+  @enforce_keys @attrs
+  defstruct @attrs
 
   @type t() :: %__MODULE__{}
   @type id() :: String.t()
+  @type event_id() :: String.t()
 
   ### API ###
 
-  @typedoc """
-  Additional options to configure a new room with.
-
-  TODO: document overview of each variant here
-  """
-  @type create_opt ::
-          {:power_levels, map()}
-          | {:preset, :private_chat | :trusted_private_chat | :public_chat}
-          | {:addl_state_events, [map()]}
-          | {:alias | :name | :topic, String.t()}
-          | {:content, map()}
-          | {:invite | :invite_3pid, [String.t()]}
-          | {:direct?, boolean()}
-          | {:version, String.t()}
-          | {:visibility, :public | :private}
-
-  # credo:disable-for-lines:75 Credo.Check.Refactor.CyclomaticComplexity
   @doc """
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
   room was successfully started.
   """
-  @spec create(User.t(), [create_opt()]) :: {:ok, String.t()} | {:error, any()}
-  def create(%User{} = creator, opts \\ []) do
-    server_name = RadioBeam.server_name()
-    room_id = server_name |> RoomIdentifier.generate() |> to_string()
-
-    room_version =
-      Keyword.get_lazy(opts, :room_version, fn ->
-        Application.get_env(:radio_beam, :capabilities)[:"m.room_versions"][:default]
-      end)
-
-    create_event = Events.create(room_id, creator.id, room_version, Keyword.get(opts, :content, %{}))
-    creator_join_event = Events.membership(room_id, creator.id, creator.id, :join)
-    power_levels_event = Events.power_levels(room_id, creator.id, Keyword.get(opts, :power_levels, %{}))
-
-    wrapped_canonical_alias_event =
-      case Keyword.get(opts, :alias) do
-        nil -> []
-        alias_localpart -> [Events.canonical_alias(room_id, creator.id, alias_localpart, server_name)]
-      end
-
-    visibility = Keyword.get(opts, :visibility, :private)
-
-    unless visibility in [:public, :private] do
-      raise "option :visibility must be one of [:public, :private]"
-    end
-
-    preset = Keyword.get(opts, :preset, (visibility == :private && :private_chat) || :public_chat)
-
-    unless preset in [:public_chat, :private_chat, :trusted_private_chat] do
-      raise "option :preset must be one of [:public_chat, :private_chat, :trusted_private_chat]"
-    end
-
-    preset_events = Events.from_preset(preset, room_id, creator.id)
-
-    wrapped_name_event =
-      case Keyword.get(opts, :name) do
-        nil -> []
-        name -> [Events.name(room_id, creator.id, name)]
-      end
-
-    wrapped_topic_event =
-      case Keyword.get(opts, :topic) do
-        nil -> []
-        topic -> [Events.topic(room_id, creator.id, topic)]
-      end
-
-    direct? = Keyword.get(opts, :direct?, false)
-
-    invite_events =
-      opts
-      |> Keyword.get(:invite, [])
-      |> Enum.map(&Events.membership(room_id, creator.id, &1, :invite, nil, direct?))
-
-    # TOIMPL
-    invite_3pid_events = []
-
-    init_state_events =
-      opts
-      |> Keyword.get(:addl_state_events, [])
-      |> Enum.map(&(&1 |> Map.put("room_id", room_id) |> Map.put("sender", creator.id)))
-
-    events =
-      [create_event, creator_join_event, power_levels_event] ++
-        wrapped_canonical_alias_event ++
-        preset_events ++
-        init_state_events ++
-        wrapped_name_event ++ wrapped_topic_event ++ invite_events ++ invite_3pid_events
-
-    with {:ok, _pid} <- DynamicSupervisor.start_child(RoomSupervisor, {Room.Server, {room_id, events}}) do
-      {:ok, room_id}
-    end
-  end
+  @spec create(User.t(), [Room.Core.create_opt()]) :: {:ok, id()} | {:error, any()}
+  def create(room_version, %User{} = creator, opts \\ []), do: Room.Server.create(room_version, creator.id, opts)
 
   @state :"$4"
   @doc "Returns all room IDs that `user_id` is joined to"
@@ -162,7 +65,7 @@ defmodule RadioBeam.Room do
   def invite(room_id, inviter_id, invitee_id, reason \\ nil) do
     event = Events.membership(room_id, inviter_id, invitee_id, :invite, reason)
 
-    Room.Server.call(room_id, {:put_event, event})
+    Room.Server.send(room_id, event)
   end
 
   @doc "Tries to join the given user to the given room"
@@ -171,7 +74,7 @@ defmodule RadioBeam.Room do
   def join(room_id, joiner_id, reason \\ nil) do
     event = Events.membership(room_id, joiner_id, joiner_id, :join, reason)
 
-    Room.Server.call(room_id, {:put_event, event})
+    Room.Server.send(room_id, event)
   end
 
   @doc "Tries to remove the given user from the given room"
@@ -180,7 +83,7 @@ defmodule RadioBeam.Room do
   def leave(room_id, user_id, reason \\ nil) do
     event = Events.membership(room_id, user_id, user_id, :leave, reason)
 
-    Room.Server.call(room_id, {:put_event, event})
+    Room.Server.send(room_id, event)
   end
 
   @doc "Helper function to set the name of the room"
@@ -189,7 +92,7 @@ defmodule RadioBeam.Room do
   def set_name(room_id, user_id, name) do
     event = Events.name(room_id, user_id, name)
 
-    Room.Server.call(room_id, {:put_event, event})
+    Room.Server.send(room_id, event)
   end
 
   @doc """
@@ -205,18 +108,14 @@ defmodule RadioBeam.Room do
           {:ok, event_id :: String.t()}
           | {:error, :alias_in_use | :invalid_alias | :unauthorized | :room_does_not_exist | :internal}
   def put_state(room_id, user_id, type, state_key \\ "", content) do
-    event = Events.state(room_id, type, user_id, content, state_key)
-
-    Room.Server.call(room_id, {:put_event, event})
+    Room.Server.send(room_id, Events.state(room_id, type, user_id, content, state_key))
   end
 
   @doc "Sends a Message Event to the room"
   @spec send(room_id :: String.t(), user_id :: String.t(), type :: String.t(), content :: map()) ::
           {:ok, event_id :: String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def send(room_id, user_id, type, content) do
-    event = Events.message(room_id, user_id, type, content)
-
-    Room.Server.call(room_id, {:put_event, event})
+    Room.Server.send(room_id, Events.message(room_id, user_id, type, content))
   end
 
   def get_event(room_id, user_id, event_id, bundle_aggregates? \\ true) do
@@ -231,8 +130,7 @@ defmodule RadioBeam.Room do
   end
 
   def redact_event(room_id, user_id, event_id, reason \\ nil) do
-    event = Events.redaction(room_id, user_id, event_id, reason)
-    Room.Server.call(room_id, {:put_event, event})
+    Room.Server.send(room_id, Events.redaction(room_id, user_id, event_id, reason))
   end
 
   def member?(room_id, user_id) do
@@ -346,31 +244,7 @@ defmodule RadioBeam.Room do
 
   defp get_nearest_event({:error, :not_found}, _user_id), do: :none
 
-  @doc """
-  Gets the %Room{} under the given room_id
-  """
   def get(id), do: Repo.fetch(__MODULE__, id)
-
-  @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
-  def stripped_state_types, do: @stripped_state_types
-
-  @stripped_state_keys Enum.map(@stripped_state_types, &{&1, ""})
-  @doc "Returns the stripped state of the given room."
-  def stripped_state(room, user_id) do
-    # we additionally include the calling user's membership event
-    stripped_state_keys = @stripped_state_keys ++ [{"m.room.member", user_id}]
-    room.state |> Map.take(stripped_state_keys) |> Enum.map(fn {_, pdu} -> pdu end)
-  end
-
-  def apply_redaction(room_id, event_id) do
-    {:ok, redaction} = Repo.fetch(PDU, event_id)
-
-    with {:ok, to_redact} <- Repo.fetch(PDU, redaction.content["redacts"]) do
-      Room.Server.call(room_id, {:try_redact, to_redact, redaction})
-    else
-      _ -> :error
-    end
-  end
 
   def generate_id(domain \\ RadioBeam.server_name()), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
 end

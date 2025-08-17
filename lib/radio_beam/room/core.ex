@@ -1,86 +1,101 @@
 defmodule RadioBeam.Room.Core do
   @moduledoc """
-  ❗This is a private module intended to only be used by `Room` GenServers. It 
-  serves as the functional core for a room, housing business logic for 
+  Functional core for the %Room{} aggregate/state machine.
   """
+  import Kernel, except: [send: 2]
 
-  alias Polyjuice.Util.RoomVersion
-  alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Room.AuthorizedEvent
+  alias RadioBeam.Room.Core.Redactions
+  alias RadioBeam.Room.Core.Relationships
+  alias RadioBeam.Room.DAG
+  alias RadioBeam.Room.Events
+  alias RadioBeam.Room.PDU
+  alias RadioBeam.Room.State
 
-  @doc """
-  TOIMPL: admins should be able to redact too
+  @typedoc """
+  Options to configure a new room with.
 
-  > Any user with a power level greater than or equal to the m.room.redaction
-  > event power level may send redaction events in the room. If the user’s
-  > power level greater is also greater than or equal to the redact power level
-  > of the room, the user may redact events sent by other users.
-  > 
-  > Server administrators may redact events sent by users on their server.
-  > 
-  > https://spec.matrix.org/latest/client-server-api/#put_matrixclientv3roomsroomidredacteventidtxnid
+  TODO: document overview of each variant here
   """
-  def authz_redact?(%Room{} = room, to_redact_sender, redaction_sender) do
-    RoomVersion.has_power?(redaction_sender, "redact", false, room.state) or
-      (RoomVersion.has_power?(redaction_sender, ~w|events m.room.redaction|, false, room.state) and
-         to_redact_sender == redaction_sender)
-  end
+  @type create_opt() ::
+          {:power_levels, map()}
+          | {:preset, :private_chat | :trusted_private_chat | :public_chat}
+          | {:addl_state_events, [map()]}
+          | {:alias | :name | :topic, String.t()}
+          | {:content, map()}
+          | {:invite | :invite_3pid, [String.t()]}
+          | {:direct?, boolean()}
+          | {:visibility, :public | :private}
 
-  def authorize(%Room{} = room, event) do
-    auth_events = select_auth_events(event, room.state)
+  ### CREATE / WRITE ###
 
-    if authorized?(room, event, auth_events) do
-      {:ok, Map.put(event, "auth_events", Enum.map(auth_events, & &1.event_id))}
-    else
-      {:error, :unauthorized}
+  @spec new(String.t(), User.id(), [create_opt()]) :: Room.t() | {:error, :unauthorized}
+  def new(version, creator_id, deps, opts \\ []) do
+    state = State.new!()
+
+    create_event_attrs =
+      Room.generate_id() |> to_string() |> Events.create(creator_id, version, Keyword.get(opts, :content, %{}))
+
+    with {:ok, %AuthorizedEvent{} = create_event} <- State.authorize_event(state, create_event_attrs) do
+      %DAG{} = dag = DAG.new!(create_event)
+      %PDU{event: ^create_event} = create_pdu = DAG.fetch!(dag, create_event.id)
+      state = State.handle_pdu(state, create_pdu)
+
+      room = %Room{
+        id: create_event.room_id,
+        dag: dag,
+        state: state,
+        redactions: Redactions.new!(),
+        relationships: Relationships.new!()
+      }
+
+      create_event
+      |> Events.initial_state_stream(opts)
+      |> Enum.reduce_while(room, fn event_attrs, %Room{} = room ->
+        case send(room, event_attrs, deps) do
+          {:sent, %Room{} = room, _pdu} -> {:cont, room}
+          {:error, _error} = error -> {:halt, error}
+        end
+      end)
     end
   end
 
-  def update_state(%Room{} = room, %PDU{} = pdu) do
-    if not is_nil(pdu.state_key), do: put_in(room.state[{pdu.type, pdu.state_key}], pdu), else: room
+  def send(%Room{} = room, %AuthorizedEvent{type: "m.room.redaction"} = event, _deps) do
+    room
+    |> Redactions.apply_or_queue(event)
+    |> send_common(event)
   end
 
-  def put_tip(%Room{} = room, latest_event_ids), do: Map.replace!(room, :latest_event_ids, latest_event_ids)
-
-  def update_latest_known_joins(%Room{} = room, %PDU{type: "m.room.member"} = pdu),
-    do: put_in(room.latest_known_joins[pdu.state_key], pdu)
-
-  def update_latest_known_joins(%Room{} = room, %PDU{}), do: room
-
-  defp select_auth_events(event, state) do
-    keys = [{"m.room.create", ""}, {"m.room.power_levels", ""}]
-    keys = if event["sender"] != event["state_key"], do: [{"m.room.member", event["sender"]} | keys], else: keys
-
-    keys =
-      if event["type"] == "m.room.member" do
-        # TODO: check if room version actually supports restricted rooms
-        keys =
-          if sk = Map.get(event["content"], "join_authorised_via_users_server"),
-            do: [{"m.room.member", sk} | keys],
-            else: keys
-
-        cond do
-          match?(%{"membership" => "invite", "third_party_invite" => _}, event["content"]) ->
-            [
-              {"m.room.member", event["state_key"]},
-              {"m.room.join_rules", ""},
-              {"m.room.third_party_invite", get_in(event, ~w[content third_party_invite signed token])} | keys
-            ]
-
-          event["content"]["membership"] in ~w[join invite] ->
-            [{"m.room.member", event["state_key"]}, {"m.room.join_rules", ""} | keys]
-
-          :else ->
-            [{"m.room.member", event["state_key"]} | keys]
-        end
-      else
-        keys
+  def send(%Room{id: room_id} = room, %AuthorizedEvent{type: "m.room.canonical_alias"} = event, deps) do
+    [event.content["alias"] | Map.get(event.content, "alt_aliases", [])]
+    |> Stream.filter(&is_binary/1)
+    |> Enum.find_value(send_common(room, event), fn alias ->
+      case deps.resolve_room_alias.(alias) do
+        {:ok, ^room_id} -> false
+        {:ok, _different_room_id} -> {:error, :alias_room_id_mismatch}
+        {:error, _} = error -> error
       end
-
-    for key <- keys, is_map_key(state, key), do: state[key]
+    end)
   end
 
-  defp authorized?(%Room{} = room, event, auth_events) do
-    RoomVersion.authorized?(room.version, event, room.state, auth_events)
+  def send(%Room{} = room, %AuthorizedEvent{} = event, _deps), do: send_common(room, event)
+
+  def send(%Room{} = room, event_attrs, deps) do
+    event_attrs = Map.put(event_attrs, "prev_events", DAG.forward_extremities(room.dag))
+    with {:ok, event} <- State.authorize_event(room.state, event_attrs), do: send(room, event, deps)
   end
+
+  defp send_common(%Room{} = room, %AuthorizedEvent{} = event) do
+    with %Room{} = room <- Relationships.apply_event(room, event) do
+      {%DAG{} = dag, pdu} = DAG.append!(room.dag, event)
+
+      room
+      |> struct!(dag: dag, state: State.handle_pdu(room.state, pdu))
+      |> Redactions.apply_any_pending(event.id)
+      |> sent(pdu)
+    end
+  end
+
+  defp sent(room, pdu), do: {:sent, room, pdu}
 end

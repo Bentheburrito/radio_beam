@@ -3,6 +3,7 @@ defmodule RadioBeam.Room.Events do
   Helper functions for constructing room events
   """
 
+  alias RadioBeam.Room.AuthorizedEvent
   alias Polyjuice.Util.Identifiers.V1.RoomAliasIdentifier
   alias Polyjuice.Util.RoomVersion
 
@@ -38,6 +39,53 @@ defmodule RadioBeam.Room.Events do
     room_id
     |> message(sender_id, type, content)
     |> Map.put("state_key", state_key)
+  end
+
+  @doc """
+  Returns an Enumerable of initial state events that should be sent into a Room
+  after the given m.room.create event.
+  """
+  def initial_state_stream(%AuthorizedEvent{type: "m.room.create"} = create_event, opts \\ []) do
+    %{room_id: room_id, sender: creator_id} = create_event
+
+    event_from_optional_string = fn opt_name, event_fxn ->
+      with str_value when is_binary(str_value) <- Keyword.get(opts, opt_name), do: event_fxn.(str_value)
+    end
+
+    maybe_canonical_alias_event =
+      event_from_optional_string.(:alias, &canonical_alias(room_id, creator_id, &1, RadioBeam.server_name()))
+
+    maybe_name_event = event_from_optional_string.(:name, &name(room_id, creator_id, &1))
+    maybe_topic_event = event_from_optional_string.(:topic, &topic(room_id, creator_id, &1))
+
+    visibility = Keyword.get(opts, :visibility, :private)
+    preset = Keyword.get(opts, :preset, (visibility == :private && :private_chat) || :public_chat)
+    direct? = Keyword.get(opts, :direct?, false)
+
+    addl_state_events =
+      opts
+      |> Keyword.get(:addl_state_events, [])
+      |> Stream.map(
+        &state(room_id, Map.fetch!(&1, "type"), creator_id, Map.fetch!(&1, "content"), Map.fetch!(&1, "state_key"))
+      )
+
+    invite_events =
+      opts
+      |> Keyword.get(:invite, [])
+      |> Stream.map(&membership(room_id, creator_id, &1, :invite, "New room invitation", direct?))
+
+    [
+      membership(room_id, creator_id, creator_id, :join, "Creator join event", direct?),
+      power_levels(room_id, creator_id, Keyword.get(opts, :power_levels, %{})),
+      maybe_canonical_alias_event
+    ]
+    |> Stream.concat(from_preset(preset, room_id, creator_id))
+    |> Stream.concat(addl_state_events)
+    |> Stream.concat([maybe_name_event, maybe_topic_event])
+    |> Stream.concat(invite_events)
+    # TOIMPL: 3pid invites
+    |> Stream.concat(_3pid_invite_events = [])
+    |> Stream.reject(&is_nil/1)
   end
 
   def create(room_id, creator_id, room_version, create_content) do
