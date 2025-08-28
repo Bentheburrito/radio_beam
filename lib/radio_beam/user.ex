@@ -30,6 +30,9 @@ defmodule RadioBeam.User do
 
   @hash_pwd_opts [t_cost: 3, m_cost: 12, parallelism: 1]
 
+  def dump!(user), do: user
+  def load!(user), do: user
+
   def new(id, password) do
     params = %{
       id: id,

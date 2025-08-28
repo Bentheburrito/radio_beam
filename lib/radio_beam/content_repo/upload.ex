@@ -30,6 +30,8 @@ defmodule RadioBeam.ContentRepo.Upload do
           inserted_at: DateTime.t(),
           uploaded_by_id: User.id()
         }
+  def dump!(upload), do: upload
+  def load!(upload), do: upload
 
   def new(%User{} = uploaded_by, %MatrixContentURI{} = mxc \\ MatrixContentURI.new!()) do
     %__MODULE__{

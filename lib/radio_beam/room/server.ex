@@ -36,10 +36,8 @@ defmodule RadioBeam.Room.Server do
       _ ->
         Logger.debug("Room.Server for #{room_id} is not alive, trying to start...")
 
-        # TODO: abstract/hide
         case Repo.fetch(Repo.Tables.Room, room_id) do
-          {:ok, %Repo.Tables.Room{} = room_record} ->
-            room = Repo.Tables.Room.load!(room_record)
+          {:ok, %Room{} = room} ->
             with {:ok, pid} <- Supervisor.start_room(room), do: GenServer.call(pid, message)
 
           {:error, :not_found} ->
@@ -61,9 +59,11 @@ defmodule RadioBeam.Room.Server do
   def handle_call({:send, event_attrs}, _from, %Room{} = room) do
     case Room.Core.send(room, event_attrs, deps()) do
       {:sent, %Room{} = room, %PDU{event: event} = pdu} ->
-        # TODO: abstract/hide
-        room |> Repo.Tables.Room.dump!() |> Repo.insert!()
+        Repo.insert!(room)
 
+        Room.View.handle_pdu(room, pdu)
+
+        # TODO: remove
         PubSub.broadcast(PubSub.all_room_events(room.id), {:room_event, event})
 
         if event.type == "m.room.member" do

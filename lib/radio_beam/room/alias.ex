@@ -11,6 +11,9 @@ defmodule RadioBeam.Room.Alias do
 
   @type t() :: %__MODULE__{}
 
+  def dump!(alias), do: alias
+  def load!(alias), do: alias
+
   # TOIMPL: check the room alias grammar
   @doc """
   Adds a new room alias mapping. Returns `{:ok, %Alias{}}` on success, or

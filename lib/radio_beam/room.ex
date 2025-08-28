@@ -33,30 +33,37 @@ defmodule RadioBeam.Room do
   @spec create(User.t(), [Room.Core.create_opt()]) :: {:ok, id()} | {:error, any()}
   def create(room_version, %User{} = creator, opts \\ []), do: Room.Server.create(room_version, creator.id, opts)
 
-  @state :"$4"
+  # read models per user:
+  # - all rooms they have a m.room.member event in
+  #   - all joined rooms
+  # read models per user per room:
+  # - latest visible state (all or by type + state_key)
+  #   - latest known join event
+  # - visible member state events at a given visible event
+  #     NOTE: this can take an `at` pagination token
+  # - read visible event by ID
+  # - nearest visible event to a timestamp in a direction
+  # - relationships - get all visible children for a given visible event (with
+  #   a certain level of recursion 
+  # - room timeline
+  #   - topological ordering of event history, filtered by visible to user (/messages, initial /sync)
+  #   - stream ordering of event history, filtered by visible to user (/sync)
+  #     - state delta if there are tons of msgs since `since`
+  # read models per user per device per room:
+  # - unchanged member events previously sent to the device (lazy loading members)
+
   @doc "Returns all room IDs that `user_id` is joined to"
-  @spec joined(user_id :: String.t()) :: [room_id :: String.t()]
+  @spec joined(user_id :: String.t()) :: MapSet.t(id())
   def joined(user_id) do
-    match_head = __MODULE__.__info__().query_base
-
-    joined_guard =
-      {:==, "join", {:map_get, "membership", {:map_get, :content, {:map_get, {{"m.room.member", user_id}}, @state}}}}
-
-    match_spec = [{match_head, [joined_guard], [:"$1"]}]
-
-    Repo.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
+    with {:ok, %{joined: joined}} <- Room.View.all_participating(user_id), do: joined
   end
 
   @doc """
-  Returns all rooms whose state has a `{m.room.member, user_id}` key
+  Returns all rooms whose state has a `{"m.room.member", user_id}` key
   """
-  @spec all_where_has_membership(user_id :: String.t()) :: [room_id :: String.t()]
+  @spec all_where_has_membership(user_id :: String.t()) :: MapSet.t(id())
   def all_where_has_membership(user_id) do
-    match_head = __MODULE__.__info__().query_base
-    has_membership_guard = {:is_map_key, {{"m.room.member", user_id}}, @state}
-    match_spec = [{match_head, [has_membership_guard], [:"$1"]}]
-
-    Repo.transaction(fn -> Memento.Query.select_raw(__MODULE__, match_spec, coerce: false) end)
+    with {:ok, %{all: all}} <- Room.View.all_participating(user_id), do: all
   end
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
@@ -86,7 +93,7 @@ defmodule RadioBeam.Room do
     Room.Server.send(room_id, event)
   end
 
-  @doc "Helper function to set the name of the room"
+  @doc "Sets the name of the room"
   @spec set_name(room_id :: String.t(), user_id :: String.t(), name :: String.t()) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def set_name(room_id, user_id, name) do
@@ -244,7 +251,7 @@ defmodule RadioBeam.Room do
 
   defp get_nearest_event({:error, :not_found}, _user_id), do: :none
 
-  def get(id), do: Repo.fetch(__MODULE__, id)
+  defp get(id), do: Repo.fetch(Repo.Tables.Room, id)
 
   def generate_id(domain \\ RadioBeam.server_name()), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
 end

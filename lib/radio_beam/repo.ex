@@ -6,7 +6,6 @@ defmodule RadioBeam.Repo do
   require Logger
 
   alias RadioBeam.ContentRepo.Upload
-  alias RadioBeam.PDU
   alias RadioBeam.Room
   alias RadioBeam.Repo.Tables
   alias RadioBeam.User
@@ -29,10 +28,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @one_to_one_tables [User, Tables.Room, Room.Alias, Upload]
-  @table_map %{PDU => Tables.PDU}
-  @mappable Map.keys(@table_map)
-  @tables @one_to_one_tables ++ Map.values(@table_map)
+  @tables [User, Tables.Room, Room.Alias, Upload, Tables.ViewState]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =
@@ -83,47 +79,41 @@ defmodule RadioBeam.Repo do
   @spec fetch(table :: module(), id :: any(), opts :: Keyword.t()) :: {:ok, struct()} | {:error, :not_found}
   def fetch(table, id, opts \\ [])
 
-  def fetch(table, id, opts) when table in @one_to_one_tables do
+  def fetch(table, id, opts) when table in @tables do
     transaction(fn ->
       case Memento.Query.read(table, id, opts) do
         nil -> {:error, :not_found}
-        data -> {:ok, data}
+        data -> {:ok, table.load!(data)}
       end
     end)
   end
 
-  def fetch(table, id, opts) when table in @mappable, do: @table_map[table].fetch(id, opts)
-
   def get_all(table, ids, opts \\ [])
 
-  def get_all(table, ids, opts) when table in @one_to_one_tables do
+  def get_all(table, ids, opts) when table in @tables do
     transaction(fn ->
       Enum.reduce(ids, [], fn id, acc ->
         case fetch(table, id, opts) do
           {:error, :not_found} -> acc
-          {:ok, data} -> [data | acc]
+          {:ok, data} -> [table.load!(data) | acc]
         end
       end)
     end)
   end
 
-  def get_all(table, ids, opts) when table in @mappable, do: @table_map[table].get_all(ids, opts)
-
-  def insert(%table{} = data) when table in @one_to_one_tables do
-    transaction(fn -> {:ok, Memento.Query.write(data)} end)
+  def insert(%table{} = data) when table in @tables do
+    transaction(fn -> {:ok, data |> table.dump!() |> Memento.Query.write()} end)
   end
 
-  def insert(%table{} = data) when table in @mappable, do: @table_map[table].insert(data)
-
-  def insert!(data) do
-    transaction!(fn -> Memento.Query.write(data) end)
+  def insert!(%table{} = data) do
+    transaction!(fn -> data |> table.dump!() |> Memento.Query.write() end)
   end
 
   def insert_new(%table{} = data) when table in @tables do
     transaction(fn ->
       case fetch(table, data.id, lock: :write) do
         {:ok, %^table{}} -> {:error, :already_exists}
-        {:error, :not_found} -> {:ok, Memento.Query.write(data)}
+        {:error, :not_found} -> {:ok, data |> table.dump!() |> Memento.Query.write()}
       end
     end)
   end
@@ -133,14 +123,12 @@ defmodule RadioBeam.Repo do
   end
 
   def delete(%table{} = data) when table in @tables do
-    transaction(fn -> Memento.Query.delete_record(data) end)
+    transaction(fn -> data |> table.dump!() |> Memento.Query.delete_record() end)
   end
 
   def select(table, match_spec, opts \\ [])
 
-  def select(table, match_spec, opts) when table in @one_to_one_tables do
+  def select(table, match_spec, opts) when table in @tables do
     transaction(fn -> Memento.Query.select_raw(table, match_spec, opts) end)
   end
-
-  def select(table, match_spec, opts) when table in @mappable, do: @table_map[table].select(match_spec, opts)
 end
