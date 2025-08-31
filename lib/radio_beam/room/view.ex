@@ -1,6 +1,9 @@
 defmodule RadioBeam.Room.View do
   alias RadioBeam.Repo
   alias RadioBeam.Repo.Tables.ViewState
+
+  alias RadioBeam.Room
+  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.Participating
 
