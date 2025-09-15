@@ -6,20 +6,21 @@ defmodule RadioBeam.Room.Timeline do
 
   require Logger
 
-  alias RadioBeam.PDU
   alias RadioBeam.Repo
   alias RadioBeam.Room.EventGraph
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.Timeline.Core
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
   @doc """
-  Get a chunk of `room_id` events visible to the given `user_id`, from `from`
-  to `to`. The user must have a membership event in the room.
+  Get a chunk of `room_id` events visible to the given `user_id`, starting at
+  `from`, up to the limit or a provided `to`. The user must have a membership
+  event in the room.
 
   ### Options
 
@@ -27,16 +28,19 @@ defmodule RadioBeam.Room.Timeline do
   - `limit`: If `filter` is not supplied, this will apply a maximum limit of
     events returned. Otherwise the `EventFilter`'s limits will be applied.
   """
-  def get_messages(room_id, user_id, device_id, from, to, opts \\ []) do
+  def get_messages(room_id, user_id, device_id, from, opts \\ []) do
     Repo.transaction(fn ->
       with {:ok, _event} <- get_membership(room_id, user_id),
            {:ok, user} = Repo.fetch(User, user_id),
            {:ok, %Room{} = room} <- Room.get(room_id),
-           {:ok, event_stream, stream_ends_at} <- EventGraph.traverse(room.id, from) do
+           {:ok, event_stream} <- Room.View.timeline_event_stream(room.id, from) do
         ignored_user_ids =
           MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
 
         filter = get_filter_from_opts(opts, user)
+
+        # an order_id or :none
+        to = Keyword.get(opts, :to, :none)
 
         direction =
           case from do
@@ -45,11 +49,19 @@ defmodule RadioBeam.Room.Timeline do
             {_from, dir} when dir in [:forward, :backward] -> dir
           end
 
-        user_membership_at_first_event = event_stream |> Enum.take(1) |> hd() |> get_user_membership_at_pdu(user_id)
-        {:ok, user_latest_known_join_pdu} = Room.get_latest_known_join(room, user_id)
-        latest_room_event_id = List.last(room.latest_event_ids)
+        [%Event{} = first_event] = Enum.take(event_stream, 1)
+        user_membership_at_first_event = get_user_membership_at_pdu(first_event, room, user_id)
 
-        {timeline_events, next_page_info} =
+        {:ok, user_latest_known_join_pdu} = Room.get_latest_known_join(room, user_id)
+
+        not_passed_to =
+          cond do
+            to == :none -> fn _ -> true end
+            direction == :forward -> &(TopologicalID.compare(&1, to) != :gt)
+            direction == :backward -> &(TopologicalID.compare(&1, to) != :lt)
+          end
+
+        {user_event_stream, last_event} =
           event_stream
           |> Core.from_event_stream(
             direction,
@@ -59,49 +71,32 @@ defmodule RadioBeam.Room.Timeline do
             filter,
             ignored_user_ids
           )
-          |> Enum.flat_map_reduce({filter.timeline.limit, nil}, fn
-            _should_never_happen, :no_more_events ->
-              {:halt, :no_more_events}
-
-            %PDU{event_id: ^to}, {_num_left, %PDU{} = last_pdu} ->
-              {:halt, PaginationToken.new(last_pdu, direction)}
-
-            %PDU{type: "m.room.create"}, {0, last_pdu} when direction == :backward ->
-              {:halt, PaginationToken.new(last_pdu, :backward)}
-
-            %PDU{type: "m.room.create"} = pdu, {_num_left, _last_pdu} when direction == :backward ->
-              {[pdu], :no_more_events}
-
-            _should_never_happen, %PaginationToken{} = token ->
-              {:halt, token}
-
-            # we return a PaginationToken here assuming we want to be able to
-            # paginate on new events, once they are sent, opposed to returning
-            # :no_more_events
-            %PDU{event_id: ^latest_room_event_id}, {0, last_pdu} when direction == :forward ->
-              {:halt, PaginationToken.new(last_pdu, :forward)}
-
-            %PDU{event_id: ^latest_room_event_id} = pdu, {_num_left, _last_pdu} when direction == :forward ->
-              {[pdu], PaginationToken.new(pdu, :forward)}
-
-            _pdu, {0, last_pdu} ->
-              {:halt, PaginationToken.new(last_pdu, direction)}
-
-            pdu, {num_left_to_take, _last_pdu} ->
-              {[pdu], {num_left_to_take - 1, pdu}}
+          |> Stream.take(filter.timeline.limit)
+          |> Stream.take_while(not_passed_to)
+          |> Enum.flat_map_reduce(first_event.order_id, fn
+            %Event{} = event, _ -> {[event], event}
           end)
 
+        maybe_next_order_id =
+          cond do
+            last_event.order_id == to -> :no_more_events
+            last_event.type == "m.room.create" and direction == :backward -> :no_more_events
+            :else -> last_event.order_id
+          end
+
+        # if is_tuple(next_page_info) and stream_ends_at == :end_of_chunk and Enum.empty?(timeline_events) do
         timeline_events =
-          if is_tuple(next_page_info) and stream_ends_at == :end_of_chunk and Enum.empty?(timeline_events) do
+          if maybe_next_order_id != :no_more_events and Enum.empty?(timeline_events) do
             # TODO: sync initiate backfill job
+            {:error, :not_implemented}
           else
             # TODO: async initiate backfill job
-            bundle_aggregations(room, timeline_events, user_id)
+            bundle_aggregations(room, user_timeline_events, user_id)
           end
 
         get_known_memberships_fxn = fn -> LazyLoadMembersCache.get([room.id], device_id) end
 
-        {:ok, Chunk.new(room, timeline_events, direction, from, next_page_info, get_known_memberships_fxn, filter)}
+        {:ok, Chunk.new(room, timeline_events, maybe_next_order_id, get_known_memberships_fxn, filter)}
       end
     end)
   end
@@ -132,17 +127,17 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp get_user_membership_at_pdu(%PDU{} = pdu, user_id) do
-    {:ok, state_events} = Repo.get_all(PDU, pdu.state_events)
-
-    case Enum.find(state_events, :none, &(&1.type == "m.room.member" and &1.state_key == user_id)) do
-      :none -> "leave"
-      %PDU{content: %{"membership" => membership}} -> membership
+  #### WORKING ON THIS / TODO NEXT: Use Timeline.Core.Event instead of Room.PDU
+  defp get_user_membership_at_pdu(%PDU{} = pdu, room, user_id) do
+    case Room.State.fetch_at(room.state, "m.room.member", user_id, pdu) do
+      {:error, :not_found} -> "leave"
+      {:ok, %PDU{} = pdu} -> pdu.event.content["membership"]
     end
   end
 
   def bundle_aggregations(_room, [], _user_id), do: []
 
+  ### TO UPDATE: need to finish impl of  Room.Core.Relationships...
   def bundle_aggregations(%Room{} = room, %PDU{} = pdu, user_id) do
     {:ok, child_pdus} = EventGraph.get_children(pdu, _recurse = 1)
 

@@ -41,7 +41,7 @@ defmodule RadioBeam.Room do
   #   - latest known join event
   # - visible member state events at a given visible event
   #     NOTE: this can take an `at` pagination token
-  # - read visible event by ID
+  # - read visible event by ID (via timeline?)
   # - nearest visible event to a timestamp in a direction
   # - relationships - get all visible children for a given visible event (with
   #   a certain level of recursion 

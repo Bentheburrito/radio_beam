@@ -3,23 +3,28 @@ defmodule RadioBeam.Room.Timeline.Chunk do
   A chunk of visible events in a user's timeline, as queried via /messages.
   """
 
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.User.EventFilter
+  alias RadioBeam.Room.View.Core.Timeline.Event
 
-  defstruct ~w|timeline_events state_events start next_page room_version filter|a
+  defstruct ~w|timeline_events state_events start end to_event|a
 
-  def new(room, timeline_events, direction, from, next_page_info, get_known_memberships_fxn, filter) do
+  def new(room, timeline_events, maybe_next_order_id, get_known_memberships_fxn, filter) do
     %__MODULE__{
       timeline_events: timeline_events,
       state_events: get_state_events(room, timeline_events, get_known_memberships_fxn, filter),
-      start: start_token(hd(timeline_events), from, direction),
-      next_page: next_page_info,
-      room_version: room.version,
-      filter: filter
+      start: timeline_events |> hd() |> start_token(),
+      end: maybe_next_order_id,
+      to_event: &encode_event(&1, room.version, filter)
     }
   end
 
-  defp start_token(_first_pdu, {%PaginationToken{} = from, _dir}, _inferred_dir), do: from
-  defp start_token(first_pdu, _root_or_tip, dir), do: PaginationToken.new(first_pdu, dir)
+  defp start_token(%Event{order_id: order_id}), do: order_id
+
+  defp encode_event(%Event{} = event, room_version, _filter) do
+    Event.to_map(event, room_version)
+    # TOIMPL
+    # |> EventFilter.take_fields(filter.fields)
+  end
 
   defp get_state_events(room, timeline_events, get_known_memberships_fxn, filter) do
     ignore_memberships_from =
@@ -31,30 +36,21 @@ defmodule RadioBeam.Room.Timeline.Chunk do
       end
 
     timeline_events
-    |> Stream.map(& &1.sender)
-    |> Stream.reject(&(&1 in ignore_memberships_from))
-    |> Stream.uniq()
-    |> Enum.map(&Map.fetch!(room.state, {"m.room.member", &1}))
+    |> Stream.reject(&(&1.sender in ignore_memberships_from))
+    |> Stream.uniq_by(& &1.sender)
+    |> Enum.map(&(room.state |> Map.fetch!({"m.room.member", &1.sender}) |> Event.new!()))
   end
 
   defimpl Jason.Encoder do
     alias RadioBeam.Room.Timeline.Chunk
 
     def encode(%Chunk{} = chunk, opts) do
-      format = String.to_existing_atom(chunk.filter.format)
-
-      to_event = fn pdu ->
-        pdu
-        |> RadioBeam.PDU.to_event(chunk.room_version, :strings, format)
-        |> RadioBeam.User.EventFilter.take_fields(chunk.filter.fields)
-      end
-
       %{
-        chunk: Enum.map(chunk.timeline_events, to_event),
-        state: Enum.map(chunk.state_events, to_event),
+        chunk: Enum.map(chunk.timeline_events, chunk.to_event),
+        state: Enum.map(chunk.state_events, chunk.to_event),
         start: chunk.start
       }
-      |> maybe_put_end(chunk.next_page)
+      |> maybe_put_end(chunk.end)
       |> Jason.Encode.map(opts)
     end
 

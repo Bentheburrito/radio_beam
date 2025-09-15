@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.Timeline.Core do
   Functional core for syncing with clients and reading the event graph.
   """
 
-  alias RadioBeam.PDU
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User.EventFilter
 
   @doc """
@@ -39,10 +39,10 @@ defmodule RadioBeam.Room.Timeline.Core do
   # this function assumes its reducing over consecutive events, thus it should
   # not be used when "seeking" through disconnected events in a timeline,
   # else it will not track memberships properly between each call
-  defp reject_unauthorized_events(%PDU{} = pdu, user_id, {user_membership_at_pdu, user_latest_known_join_pdu}, dir) do
+  defp reject_unauthorized_events(%Event{} = event, user_id, {user_membership_at_pdu, user_latest_known_join_pdu}, dir) do
     {user_membership_at_pdu, user_membership_before_pdu} =
-      if pdu.type == "m.room.member" and pdu.state_key == user_id do
-        {Map.fetch!(pdu.content, "membership"), get_in(pdu.unsigned["prev_content"]["membership"]) || "leave"}
+      if event.type == "m.room.member" and event.state_key == user_id do
+        {Map.fetch!(event.content, "membership"), get_in(event.unsigned["prev_content"]["membership"]) || "leave"}
       else
         {user_membership_at_pdu, user_membership_at_pdu}
       end
@@ -53,16 +53,16 @@ defmodule RadioBeam.Room.Timeline.Core do
         :forward -> user_membership_at_pdu
       end
 
-    user_joined_later? = user_joined_later?(pdu, user_latest_known_join_pdu)
+    user_joined_later? = user_joined_later?(event, user_latest_known_join_pdu)
 
-    if user_authorized_to_view?(pdu, user_id, user_membership_at_pdu, user_joined_later?) do
-      {[pdu], {user_membership_at_next_pdu, user_latest_known_join_pdu}}
+    if user_authorized_to_view?(event, user_id, user_membership_at_pdu, user_joined_later?) do
+      {[event], {user_membership_at_next_pdu, user_latest_known_join_pdu}}
     else
       {[], {user_membership_at_next_pdu, user_latest_known_join_pdu}}
     end
   end
 
-  def user_authorized_to_view?(pdu, user_id, user_membership_at_pdu, user_joined_later?) do
+  def user_authorized_to_view?(event, user_id, user_membership_at_pdu, user_joined_later?) do
     cond do
       visible?(user_membership_at_pdu, user_joined_later?, pdu.current_visibility) ->
         true
@@ -70,22 +70,22 @@ defmodule RadioBeam.Room.Timeline.Core do
       # For m.room.history_visibility events themselves, the user should be
       # allowed to see the event if the history_visibility before or after the
       # event would allow them to see it
-      pdu.type == "m.room.history_visibility" ->
+      event.type == "m.room.history_visibility" ->
         visible?(user_membership_at_pdu, user_joined_later?, pdu.content["history_visibility"])
 
       # Likewise, for the user’s own m.room.member events, the user should be
       # allowed to see the event if their membership before or after the event
       # would allow them to see it.
-      pdu.type == "m.room.member" and pdu.state_key == user_id ->
-        user_membership_before_pdu = get_in(pdu.unsigned["prev_content"]["membership"]) || "leave"
-        visible?(user_membership_before_pdu, user_joined_later?, pdu.current_visibility)
+      event.type == "m.room.member" and event.state_key == user_id ->
+        user_membership_before_pdu = get_in(event.unsigned["prev_content"]["membership"]) || "leave"
+        visible?(user_membership_before_pdu, user_joined_later?, event.current_visibility)
 
       :else ->
         false
     end
   end
 
-  def user_joined_later?(pdu, user_latest_known_join_pdu), do: PDU.compare(user_latest_known_join_pdu, pdu) == :gt
+  def user_joined_later?(event, user_latest_known_join_pdu), do: PDU.compare(user_latest_known_join_pdu, event) == :gt
 
   defp visible?(user_membership_at_event, user_joined_later?, history_visibility) do
     history_visibility == "world_readable" or
@@ -94,5 +94,5 @@ defmodule RadioBeam.Room.Timeline.Core do
       (user_membership_at_event == "invite" and history_visibility == "invited" and user_joined_later?)
   end
 
-  defp from_ignored_user?(pdu, ignored_user_ids), do: is_nil(pdu.state_key) and pdu.sender in ignored_user_ids
+  defp from_ignored_user?(event, ignored_user_ids), do: is_nil(event.state_key) and event.sender in ignored_user_ids
 end

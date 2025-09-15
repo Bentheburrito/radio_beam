@@ -21,4 +21,6 @@ defmodule RadioBeam.Room.AuthorizedEvent do
       unsigned: Map.get(event_attrs, "unsigned", %{})
     )
   end
+
+  def keys, do: @attrs
 end

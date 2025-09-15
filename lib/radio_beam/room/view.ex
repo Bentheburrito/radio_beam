@@ -6,6 +6,7 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.Participating
+  alias RadioBeam.Room.View.Core.Timeline
 
   def handle_pdu(%Room{} = room, %PDU{} = pdu) do
     Core.handle_pdu(room, pdu, view_deps())
@@ -14,6 +15,13 @@ defmodule RadioBeam.Room.View do
   def all_participating(user_id) do
     # TODO: should hide view_state key behind fxn in Participating here?
     Repo.fetch(ViewState, {Participating, user_id})
+  end
+
+  def timeline_event_stream(room_id, from) do
+    with {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
+         {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
+      Timeline.topological_stream(timeline, from, &Room.DAG.fetch!(room.dag, &1))
+    end
   end
 
   defp view_deps do
