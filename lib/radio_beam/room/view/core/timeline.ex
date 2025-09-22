@@ -31,10 +31,34 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
     pdu_topo_id = TopologicalID.new!(pdu, prev_events_topo_id_stream)
 
+    event_metadata =
+      with {:ok, %{"event_id" => parent_event_id}} <- Map.fetch(pdu.event.content, "m.relates_to"),
+           true <- Relationships.aggregable?(pdu) do
+        timeline.event_metadata
+        |> Map.update(
+          parent_event_id,
+          EventMetadata.new!(:unknown, [pdu.event.id]),
+          &EventMetadata.append_bundled_event_id(&1, pdu.event.id)
+        )
+        |> Map.update(
+          pdu.event.id,
+          EventMetadata.new!(pdu_topo_id),
+          &EventMetadata.put_topological_id(&1, pdu_topo_id)
+        )
+      else
+        _ ->
+          Map.update(
+            timeline.event_metadata,
+            pdu.event.id,
+            EventMetadata.new!(pdu_topo_id),
+            &EventMetadata.put_topological_id(&1, pdu_topo_id)
+          )
+      end
+
     struct!(timeline,
       topological_id_to_event_id: Map.put(timeline.topological_id_to_event_id, pdu_topo_id, pdu.event.id),
       topological_id_ord_set: TopologicalID.OrderedSet.put(timeline.topological_id_ord_set, pdu_topo_id),
-      event_metadata: Map.put(timeline.event_metadata, pdu.event.id, EventMetadata.new!(pdu_topo_id)),
+      event_metadata: event_metadata,
       timestamp_to_event_id_index:
         TimestampToEventIDIndex.put(timeline.timestamp_to_event_id_index, pdu.event.origin_server_ts, pdu.event.id)
     )
@@ -227,6 +251,12 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
     def new!(%TopologicalID{} = topological_id, bundled_event_ids \\ []) do
       %__MODULE__{topological_id: topological_id, bundled_event_ids: bundled_event_ids}
+    end
+
+    def put_topological_id(%__MODULE__{} = metadata, %TopologicalID{} = id), do: struct!(metadata, topological_id: id)
+
+    def append_bundled_event_id(%__MODULE__{} = metadata, event_id) do
+      update_in(metadata.bundled_event_ids, &[event_id | &1])
     end
   end
 

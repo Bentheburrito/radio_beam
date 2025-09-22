@@ -1,14 +1,16 @@
-defmodule RadioBeam.PDU.Relationships do
+defmodule RadioBeam.Room.Relationships do
   @moduledoc """
   Functions for working with relationships between events, such as aggregating
   them.
   """
-  alias RadioBeam.PDU
+  alias RadioBeam.Room.PDU
 
   require RadioBeam
 
   @aggregable_rel_types ~w|m.thread m.replace m.reference|
-  def aggregable?(%PDU{content: %{"m.relates_to" => %{"rel_type" => type}}}), do: type in @aggregable_rel_types
+  def aggregable?(%PDU{event: %{content: %{"m.relates_to" => %{"rel_type" => type}}}}),
+    do: type in @aggregable_rel_types
+
   def aggregable?(%PDU{}), do: false
 
   def get_aggregations(%PDU{} = pdu, user_id, child_pdus) do
@@ -24,7 +26,7 @@ defmodule RadioBeam.PDU.Relationships do
 
   defp group_pdus_by_relation_aggregator(pdu, user_id, child_pdus) do
     key_fxn = fn child_pdu ->
-      rel_type = child_pdu.content["m.relates_to"]["rel_type"]
+      rel_type = child_pdu.event.content["m.relates_to"]["rel_type"]
 
       case get_aggregator_by_rel_type(rel_type, pdu, user_id) do
         {aggregator, init_acc} -> {rel_type, aggregator, init_acc}
@@ -46,25 +48,31 @@ defmodule RadioBeam.PDU.Relationships do
 
   defp aggregate_replace(%PDU{} = edit1, %PDU{} = edit2) do
     cond do
-      edit1.origin_server_ts > edit2.origin_server_ts -> edit1
-      edit1.origin_server_ts == edit2.origin_server_ts and edit1.event_id > edit2.event_id -> edit1
-      :else -> edit2
+      edit1.event.origin_server_ts > edit2.event.origin_server_ts ->
+        edit1
+
+      edit1.event.origin_server_ts == edit2.event.origin_server_ts and edit1.event.event_id > edit2.event.event_id ->
+        edit1
+
+      :else ->
+        edit2
     end
   end
 
   defp aggregate_thread(%PDU{} = pdu, %{} = acc, user_id) do
-    latest_event = if PDU.compare(pdu, acc.latest_event) == :gt, do: pdu, else: acc.latest_event
+    # latest_event = if PDU.compare(pdu, acc.latest_event) == :gt, do: pdu, else: acc.latest_event
+    latest_event = if pdu.stream_number > acc.latest_event.stream_number, do: pdu, else: acc.latest_event
 
     %{
       acc
       | latest_event: latest_event,
         count: acc.count + 1,
-        current_user_participated: acc.current_user_participated or pdu.sender == user_id
+        current_user_participated: acc.current_user_participated or pdu.event.sender == user_id
     }
   end
 
   defp init_thread_acc(parent, user_id),
-    do: %{latest_event: parent, count: 0, current_user_participated: user_id == parent.sender}
+    do: %{latest_event: parent, count: 0, current_user_participated: user_id == parent.event.sender}
 
   defp aggregate_reference(%PDU{} = child_pdu, %{"chunk" => chunk}) do
     %{"chunk" => [child_pdu.event_id | chunk]}
@@ -73,7 +81,8 @@ defmodule RadioBeam.PDU.Relationships do
   # If the original event is redacted, any m.replace relationship should not be
   # bundled with it (whether or not any subsequent replacements are themselves
   # redacted). Note that this behaviour is specific to the m.replace relationship
-  defp handle_special_cases(%PDU{content: content}, %{"m.replace" => _} = grouped_pdus) when map_size(content) == 0 do
+  defp handle_special_cases(%PDU{event: %{content: content}}, %{"m.replace" => _} = grouped_pdus)
+       when map_size(content) == 0 do
     Map.delete(grouped_pdus, "m.replace")
   end
 

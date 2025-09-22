@@ -30,9 +30,9 @@ defmodule RadioBeam.Room.Timeline do
   """
   def get_messages(room_id, user_id, device_id, from, opts \\ []) do
     Repo.transaction(fn ->
-      with {:ok, _event} <- get_membership(room_id, user_id),
-           {:ok, user} = Repo.fetch(User, user_id),
-           {:ok, %Room{} = room} <- Room.get(room_id),
+      with {:ok, user} = Repo.fetch(User, user_id),
+           {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
+           :ok <- check_membership(room, user_id),
            {:ok, event_stream} <- Room.View.timeline_event_stream(room.id, from) do
         ignored_user_ids =
           MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
@@ -50,7 +50,7 @@ defmodule RadioBeam.Room.Timeline do
           end
 
         [%Event{} = first_event] = Enum.take(event_stream, 1)
-        user_membership_at_first_event = get_user_membership_at_pdu(first_event, room, user_id)
+        user_membership_at_first_event = get_user_membership_at_event(first_event, room, user_id)
 
         {:ok, user_latest_known_join_pdu} = Room.get_latest_known_join(room, user_id)
 
@@ -101,10 +101,10 @@ defmodule RadioBeam.Room.Timeline do
     end)
   end
 
-  defp get_membership(room_id, user_id) do
-    case Room.get_membership(room_id, user_id) do
-      :not_found -> {:error, :unauthorized}
-      event -> {:ok, event}
+  defp check_membership(room, user_id) do
+    case Room.State.fetch(room.state, "m.room.member", user_id) do
+      {:ok, _pdu} -> :ok
+      {:error, :not_found} -> {:error, :unauthorized}
     end
   end
 
@@ -127,8 +127,9 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  #### WORKING ON THIS / TODO NEXT: Use Timeline.Core.Event instead of Room.PDU
-  defp get_user_membership_at_pdu(%PDU{} = pdu, room, user_id) do
+  defp get_user_membership_at_event(%Event{} = event, room, user_id) do
+    %PDU{} = pdu = Room.DAG.fetch!(room.dag, event.id)
+
     case Room.State.fetch_at(room.state, "m.room.member", user_id, pdu) do
       {:error, :not_found} -> "leave"
       {:ok, %PDU{} = pdu} -> pdu.event.content["membership"]
@@ -138,22 +139,33 @@ defmodule RadioBeam.Room.Timeline do
   def bundle_aggregations(_room, [], _user_id), do: []
 
   ### TO UPDATE: need to finish impl of  Room.Core.Relationships...
-  def bundle_aggregations(%Room{} = room, %PDU{} = pdu, user_id) do
-    {:ok, child_pdus} = EventGraph.get_children(pdu, _recurse = 1)
+  def bundle_aggregations(%Room{} = room, %Event{} = event, user_id) do
+    # {:ok, child_pdus} = EventGraph.get_children(pdu, _recurse = 1)
+    child_pdus =
+      for event_id <- Room.View.child_events(room.id, event.id) do
+        Room.DAG.fetch!(room.dag, event_id)
+      end
 
-    {:ok, user_latest_known_join_pdu} = Room.get_latest_known_join(room, user_id)
+    # {:ok, user_latest_known_join_pdu} = Room.get_latest_known_join(room, user_id)
+    {:ok, user_latest_known_join_pdu} = Room.View.latest_known_join_pdu(room.id, user_id)
 
-    case reject_unauthorized_child_pdus(child_pdus, user_id, user_latest_known_join_pdu) do
+    case reject_unauthorized_child_pdus(room, child_pdus, user_id, user_latest_known_join_pdu) do
       [] -> pdu
       children -> PDU.Relationships.get_aggregations(pdu, user_id, children)
     end
   end
 
   def bundle_aggregations(room, events, user_id) do
-    {:ok, child_pdus} = EventGraph.get_children(events, _recurse = 1)
-    {:ok, user_latest_known_join_pdu} = Room.get_latest_known_join(room, user_id)
+    # {:ok, child_pdus} = EventGraph.get_children(events, _recurse = 1)
+    child_pdus =
+      for event_id <- Room.View.child_events(room.id, event.id) do
+        Room.DAG.fetch!(room.dag, event_id)
+      end
 
-    authz_child_pdus = reject_unauthorized_child_pdus(child_pdus, user_id, user_latest_known_join_pdu)
+    # {:ok, user_latest_known_join_pdu} = Room.get_latest_known_join(room, user_id)
+    {:ok, user_latest_known_join_pdu} = Room.View.latest_known_join_pdu(room.id, user_id)
+
+    authz_child_pdus = reject_unauthorized_child_pdus(room, child_pdus, user_id, user_latest_known_join_pdu)
     authz_child_event_ids = authz_child_pdus |> Stream.map(& &1.event_id) |> MapSet.new()
     authz_child_pdu_map = Enum.group_by(authz_child_pdus, & &1.parent_id)
 
@@ -169,22 +181,23 @@ defmodule RadioBeam.Room.Timeline do
 
   # this is quite expensive!
   # TODO: move relations_controller stuff to here/Timeline.Relations - this could/should be a private module
-  def reject_unauthorized_child_pdus(child_pdus, user_id, user_latest_known_join_pdu) do
-    Enum.filter(child_pdus, &pdu_visible_to_user?(&1, user_id, user_latest_known_join_pdu))
+  def reject_unauthorized_child_pdus(room_id, child_pdus, user_id, user_latest_known_join_pdu) do
+    Enum.filter(child_pdus, &pdu_visible_to_user?(room_id, &1, user_id, user_latest_known_join_pdu))
   end
 
   @doc """
   Returns `true` if the given a `t:RadioBeam.PDU` is visible to `user_id`, else
   returns `false`.
   """
-  def pdu_visible_to_user?(%PDU{} = pdu, user_id) do
-    case Room.get_latest_known_join(pdu.room_id, user_id) do
-      {:ok, user_latest_known_join} -> pdu_visible_to_user?(pdu, user_id, user_latest_known_join)
-      {:error, :never_joined} -> pdu.current_visibility == "world_readable"
+  def pdu_visible_to_user?(room, %PDU{} = pdu, user_id, user_latest_known_join) do
+    if user_latest_known_join == {:error, :never_joined} do
+      pdu.current_visibility == "world_readable"
+    else
+      pdu_visible_to_user?(room, pdu, user_id, user_latest_known_join)
     end
   end
 
-  defp pdu_visible_to_user?(%PDU{} = pdu, user_id, %PDU{} = user_latest_known_join_pdu) do
+  defp pdu_visible_to_user?(room, %PDU{} = pdu, user_id, %PDU{} = user_latest_known_join_pdu) do
     {:ok, state_pdus} = Repo.get_all(PDU, pdu.state_events)
 
     maybe_membership_pdu = Enum.find(state_pdus, &(&1.type == "m.room.member" and &1.state_key == user_id))
