@@ -8,8 +8,9 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   alias RadioBeam.Room.View.Core.Timeline.EventMetadata
   alias RadioBeam.Room.View.Core.Timeline.TimestampToEventIDIndex
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
+  alias RadioBeam.Room.View.Core.Timeline.VisibilityGroup
 
-  @attrs ~w|topological_id_to_event_id topological_id_ord_set event_metadata timestamp_to_event_id_index|a
+  @attrs ~w|topological_id_to_event_id topological_id_ord_set event_metadata member_metadata visibility_groups timestamp_to_event_id_index|a
   @enforce_keys @attrs
   defstruct @attrs
   @typep t() :: %__MODULE__{}
@@ -19,17 +20,30 @@ defmodule RadioBeam.Room.View.Core.Timeline do
       topological_id_to_event_id: %{},
       topological_id_ord_set: TopologicalID.OrderedSet.new!(),
       event_metadata: %{},
+      member_metadata: %{},
+      visibility_groups: %{},
       timestamp_to_event_id_index: TimestampToEventIDIndex.new!()
     }
   end
 
   def key_for(%{id: room_id}, _pdu), do: {:ok, {__MODULE__, room_id}}
 
-  def handle_pdu(%__MODULE__{} = timeline, %Room{} = _room, %PDU{} = pdu) do
+  def handle_pdu(%__MODULE__{} = timeline, %Room{} = room, %PDU{} = pdu) do
     prev_events_topo_id_stream =
       timeline.event_metadata |> Map.take(pdu.prev_event_ids) |> Stream.map(& &1.topological_id)
 
     pdu_topo_id = TopologicalID.new!(pdu, prev_events_topo_id_stream)
+
+    member_metadata =
+      if pdu.event.type == "m.room.member" and pdu.event.content["membership"] == "join" do
+        latest_topo_id = later_join_topo_id(timeline, pdu.event.state_key, pdu_topo_id)
+        put_in(timeline.member_metadata[pdu.event.state_key], %{latest_known_join_topo_id: latest_topo_id})
+      else
+        timeline.member_metadata
+      end
+
+    visibility_group = VisibilityGroup.from_state!(room.state, pdu)
+    visibility_group_id = VisibilityGroup.id(visibility_group)
 
     event_metadata =
       with {:ok, %{"event_id" => parent_event_id}} <- Map.fetch(pdu.event.content, "m.relates_to"),
@@ -37,12 +51,12 @@ defmodule RadioBeam.Room.View.Core.Timeline do
         timeline.event_metadata
         |> Map.update(
           parent_event_id,
-          EventMetadata.new!(:unknown, [pdu.event.id]),
+          EventMetadata.new!(:unknown, visibility_group_id, [pdu.event.id]),
           &EventMetadata.append_bundled_event_id(&1, pdu.event.id)
         )
         |> Map.update(
           pdu.event.id,
-          EventMetadata.new!(pdu_topo_id),
+          EventMetadata.new!(pdu_topo_id, visibility_group_id),
           &EventMetadata.put_topological_id(&1, pdu_topo_id)
         )
       else
@@ -50,7 +64,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
           Map.update(
             timeline.event_metadata,
             pdu.event.id,
-            EventMetadata.new!(pdu_topo_id),
+            EventMetadata.new!(pdu_topo_id, visibility_group_id),
             &EventMetadata.put_topological_id(&1, pdu_topo_id)
           )
       end
@@ -59,24 +73,105 @@ defmodule RadioBeam.Room.View.Core.Timeline do
       topological_id_to_event_id: Map.put(timeline.topological_id_to_event_id, pdu_topo_id, pdu.event.id),
       topological_id_ord_set: TopologicalID.OrderedSet.put(timeline.topological_id_ord_set, pdu_topo_id),
       event_metadata: event_metadata,
+      member_metadata: member_metadata,
+      visibility_groups: Map.put(timeline.visibility_groups, visibility_group_id, visibility_group),
       timestamp_to_event_id_index:
         TimestampToEventIDIndex.put(timeline.timestamp_to_event_id_index, pdu.event.origin_server_ts, pdu.event.id)
     )
   end
 
-  @spec topological_stream(t(), {TopologicalID.t(), :forward | :backward} | :root | :tip) ::
-          {Enumerable.t(Room.event_id()), TopologicalID.t(), :more | :done}
-  def topological_stream(%__MODULE__{} = timeline, {%TopologicalID{} = from, direction}, fetch_pdu!) do
-    timeline.topological_id_ord_set
-    |> TopologicalID.OrderedSet.stream_from(from, direction)
-    |> Stream.map(&Event.new(&1, timeline.topological_id_to_event_id |> Map.fetch!(&1) |> fetch_pdu!.()))
+  defp later_join_topo_id(timeline, user_id, pdu_topo_id) do
+    case timeline.member_metadata[user_id][:latest_known_join_topo_id] do
+      nil ->
+        pdu_topo_id
+
+      latest_known_join_topo_id ->
+        if TopologicalID.compare(pdu_topo_id, latest_known_join_topo_id) == :gt do
+          pdu_topo_id
+        else
+          latest_known_join_topo_id
+        end
+    end
   end
 
-  def topological_stream(timeline, :root, fetch_pdu!),
-    do: topological_stream(timeline, {timeline.set.first_id, :forward}, fetch_pdu!)
+  defp put_vg_id_for_user(user_id_to_visibility_group, user_id, vg_id) do
+    Map.update(user_id_to_visibility_group, user_id, MapSet.new([vg_id]), &MapSet.put(&1, vg_id))
+  end
 
-  def topological_stream(timeline, :tip, fetch_pdu!),
-    do: topological_stream(timeline, {timeline.set.last_id, :backward}, fetch_pdu!)
+  @spec topological_stream(t(), {TopologicalID.t(), :forward | :backward} | :root | :tip) ::
+          {Enumerable.t(Room.event_id()), TopologicalID.t(), :more | :done}
+  def topological_stream(%__MODULE__{} = timeline, user_id, {%TopologicalID{} = from, direction}, fetch_pdu!) do
+    latest_known_join_topo_id = get_in(timeline.member_metadata[user_id][:latest_known_join_topo_id]) || :never_joined
+
+    timeline.topological_id_ord_set
+    |> TopologicalID.OrderedSet.stream_from(from, direction)
+    |> Stream.filter(&visible_to_user?(timeline, user_id, latest_known_join_topo_id, &1))
+    |> Stream.map(fn topological_id ->
+      event_id = Map.fetch!(timeline.topological_id_to_event_id, topological_id)
+
+      event_visible? =
+        fn {_event_id, metadata} ->
+          visible_to_user?(timeline, user_id, latest_known_join_topo_id, metdata.topological_id)
+        end
+
+      visible_bundled_events =
+        timeline.event_metadata[event_id].bundled_event_ids
+        |> Stream.map(&{&1, Map.fetch!(timeline.event_metadata, &1)})
+        |> Stream.filter(event_visible?)
+        |> Enum.map(fn {event_id, metadata} -> Event.new!(metadata.topological_id, fetch_pdu!.(event_id), []) end)
+
+      Event.new!(topological_id, fetch_pdu!.(event_id), visible_bundled_events)
+    end)
+  end
+
+  def topological_stream(timeline, user_id, :root, fetch_pdu!),
+    do: topological_stream(timeline, user_id, {timeline.set.first_id, :forward}, fetch_pdu!)
+
+  def topological_stream(timeline, user_id, :tip, fetch_pdu!),
+    do: topological_stream(timeline, user_id, {timeline.set.last_id, :backward}, fetch_pdu!)
+
+  defp visible_to_user?(timeline, user_id, latest_known_join_topo_id, topological_id) do
+    event_id = Map.fetch!(timeline.topological_id_to_event_id, topological_id)
+    event_metadata = Map.fetch!(timeline.event_metadata, event_id)
+
+    case event_metadata.visibility_group_id do
+      :world_readable ->
+        true
+
+      event_visibility_group_id ->
+        %VisibilityGroup{history_visibility: visibility_at_event} =
+          event_visibility_group = Map.fetch!(timeline.visibility_groups, event_visibility_group_id)
+
+        user_joined_after_event? = TopologicalID.compare(latest_known_join_topo_id, topological_id) == :gt
+
+        user_id in event_visibility_group.joined or
+          (visibility_at_event == "shared" and user_joined_after_event?) or
+          (visibility_at_event == "invited" and user_id in event_visibility_group.invited and user_joined_after_event?)
+    end
+  end
+
+  def get_visible_events(%__MODULE__{} = timeline, event_ids, user_id, fetch_pdu!) do
+    latest_known_join_topo_id = get_in(timeline.member_metadata[user_id][:latest_known_join_topo_id]) || :never_joined
+
+    event_visible? =
+      fn {_event_id, metadata} ->
+        visible_to_user?(timeline, user_id, latest_known_join_topo_id, metdata.topological_id)
+      end
+
+    event_ids
+    |> Stream.map(&{&1, timeline.event_metadata[&1]})
+    |> Stream.reject(fn {_event_id, maybe_metadata} -> is_nil(maybe_metadata) end)
+    |> Stream.filter(event_visible?)
+    |> Stream.map(fn {event_id, metadata} ->
+      visible_bundled_events =
+        timeline.event_metadata[event_id].bundled_event_ids
+        |> Stream.map(&{&1, Map.fetch!(timeline.event_metadata, &1)})
+        |> Stream.filter(event_visible?)
+        |> Enum.map(fn {event_id, metadata} -> Event.new!(metadata.topological_id, fetch_pdu!.(event_id), []) end)
+
+      Event.new!(metadata.topological_id, fetch_pdu!.(event_id), visible_bundled_events)
+    end)
+  end
 
   defmodule TopologicalID do
     @moduledoc """
@@ -212,13 +307,49 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     end
   end
 
+  defmodule VisibilityGroup do
+    defstruct ~w|joined invited history_visibility|a
+
+    def from_state!(state, pdu) do
+      init_group =
+        case Room.State.fetch_at(state, "m.room.history_visibility", pdu) do
+          {:ok, %PDU{} = pdu} -> %__MODULE__{history_visibility: pdu.event.content["history_visibility"]}
+          {:error, :not_found} -> %__MODULE__{history_visibility: "shared"}
+        end
+
+      state
+      |> Room.State.get_all_at(pdu)
+      |> Enum.reduce(init_group, fn
+        {{"m.room.member", user_id}, %PDU{event: %{state_key: user_id}} = pdu}, %__MODULE__{} = group ->
+          case pdu.event.content["membership"] do
+            "join" -> put_in(group.joined, user_id)
+            "invite" -> put_in(group.invited, user_id)
+            _ -> group
+          end
+
+        _, group ->
+          group
+      end)
+    end
+
+    def id(%__MODULE__{history_visibility: "world_readable"}), do: :world_readable
+    def id(%__MODULE__{} = group), do: :crypto.hash(:sha256, :erlang.term_to_binary(group))
+  end
+
   defmodule Event do
     alias RadioBeam.Room.AuthorizedEvent
 
-    defstruct [:order_id] ++ AuthorizedEvent.keys()
+    defstruct [:order_id, :bundled_events] ++ AuthorizedEvent.keys()
 
-    def new!(%TopologicalID{} = id, %PDU{event: event}),
-      do: struct!(__MODULE__, event |> Map.from_struct() |> Map.put(:order_id, id))
+    def new!(id, %PDU{event: event}, bundled_events) when is_struct(id, TopologicalID) or id == :unknown do
+      struct!(
+        __MODULE__,
+        event
+        |> Map.from_struct()
+        |> Map.put(:order_id, id)
+        |> Map.put(:bundled_events, bundled_events)
+      )
+    end
 
     # TOIMPL: choose client or federation format based on filter
     @cs_event_keys [:content, :event_id, :origin_server_ts, :room_id, :sender, :state_key, :type, :unsigned]
@@ -247,10 +378,14 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
   defmodule EventMetadata do
     @enforce_keys ~w|topological_id|a
-    defstruct topological_id: nil, bundled_event_ids: []
+    defstruct topological_id: nil, visibility_group_id: nil, bundled_event_ids: []
 
-    def new!(%TopologicalID{} = topological_id, bundled_event_ids \\ []) do
-      %__MODULE__{topological_id: topological_id, bundled_event_ids: bundled_event_ids}
+    def new!(%TopologicalID{} = topological_id, visibility_group_id, bundled_event_ids \\ []) do
+      %__MODULE__{
+        topological_id: topological_id,
+        visibility_group_id: visibility_group_id,
+        bundled_event_ids: bundled_event_ids
+      }
     end
 
     def put_topological_id(%__MODULE__{} = metadata, %TopologicalID{} = id), do: struct!(metadata, topological_id: id)

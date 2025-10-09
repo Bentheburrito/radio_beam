@@ -125,14 +125,10 @@ defmodule RadioBeam.Room do
     Room.Server.send(room_id, Events.message(room_id, user_id, type, content))
   end
 
-  def get_event(room_id, user_id, event_id, bundle_aggregates? \\ true) do
-    with {:ok, room} <- get(room_id),
-         {:ok, pdu} <- Repo.fetch(PDU, event_id),
-         true <- Timeline.pdu_visible_to_user?(pdu, user_id) do
-      pdu = if bundle_aggregates?, do: Timeline.bundle_aggregations(room, pdu, user_id), else: pdu
-      {:ok, pdu}
-    else
-      _ -> {:error, :unauthorized}
+  def get_event(room_id, user_id, event_id, _bundle_aggregates? \\ true) do
+    case Room.View.get_events(room_id, user_id, [event_id]) do
+      [event] -> {:ok, event}
+      [] -> {:error, :unauthorized}
     end
   end
 
@@ -140,93 +136,81 @@ defmodule RadioBeam.Room do
     Room.Server.send(room_id, Events.redaction(room_id, user_id, event_id, reason))
   end
 
-  def member?(room_id, user_id) do
-    case get(room_id) do
-      {:ok, %{state: %{{"m.room.member", ^user_id} => %{content: %{"membership" => "join"}}}}} -> true
-      _else -> false
-    end
-  end
-
-  def get_membership(room_id, user_id) do
-    case get(room_id) do
-      {:ok, %{state: %{{"m.room.member", ^user_id} => membership_event}}} -> membership_event
-      _else -> :not_found
-    end
-  end
-
-  @doc """
-  Gets the latest `"m.room.member"` pdu for the given user_id whose membership
-  is `"join"`. If the user has never joined the room, `{:error, :never_joined}`
-  is returned.
-  """
-  @spec get_latest_known_join(id() | t(), User.id()) :: {:ok, PDU.t()} | {:error, :never_joined}
-  def get_latest_known_join("!" <> _ = room_id, user_id) do
-    with {:ok, %Room{} = room} <- get(room_id), do: get_latest_known_join(room, user_id)
-  end
-
-  def get_latest_known_join(%Room{} = room, user_id) do
-    with :error <- Map.fetch(room.latest_known_joins, user_id) do
-      {:error, :never_joined}
-    end
-  end
+  # this is only used in tests, so delete and assert in another way...
+  #   def member?(room_id, user_id) do
+  #     with {:ok, room} <- get(room_id) do
+  #       case Room.State.fetch(room.state, "m.room.member", user_id) do
+  #         {:ok, %{event: %{content: %{"membership" => "join"}}}} -> true
+  #         _else -> false
+  #       end
+  #     end
+  #   end
 
   def get_members(room_id, user_id, at_event_id \\ :current, membership_filter \\ fn _ -> true end)
 
   def get_members(room_id, user_id, :current, membership_filter) do
-    case get_state(room_id, user_id) do
-      {:ok, state} -> state |> Stream.map(&elem(&1, 1)) |> get_members_from_state(membership_filter)
-      error -> error
+    with {:ok, state_events} <- get_state(room_id, user_id) do
+      filter_member_events(state_events, membership_filter)
     end
   end
 
   def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    with {:ok, %{room_id: ^room_id} = pdu} <- Repo.fetch(PDU, at_event_id),
-         true <- Timeline.pdu_visible_to_user?(pdu, user_id),
-         {:ok, state_events} <- Repo.get_all(PDU, pdu.state_events) do
-      get_members_from_state(state_events, membership_filter)
+    with {:ok, room} <- get(room_id),
+         {:ok, pdu} <- Room.DAG.fetch(room.dag, at_event_id),
+         {:ok, state_pdus_at_pdu} <- Room.State.get_all_at(room.state, pdu) do
+      state_event_ids = Stream.map(state_pdus_at_pdu, fn {_key, pdu} -> pdu.event.id end)
+
+      room_id
+      |> Room.View.get_events(user_id, state_event_ids)
+      |> filter_member_events(membership_filter)
     else
       _ -> {:error, :unauthorized}
     end
   end
 
-  defp get_members_from_state(state, membership_filter) do
-    members =
-      Enum.filter(state, fn
+  defp filter_member_events(state_events, membership_filter) do
+    member_events =
+      Enum.filter(state_events, fn
         %{type: "m.room.member"} = event -> membership_filter.(get_in(event.content["membership"]))
         _ -> false
       end)
 
-    {:ok, members}
+    {:ok, member_events}
   end
 
   def get_state(room_id, user_id) do
-    case get(room_id) do
-      {:ok, %{state: %{{"m.room.member", ^user_id} => %{content: %{"membership" => "join"}}} = state}} ->
-        {:ok, state}
-
-      {:ok, %{state: %{{"m.room.member", ^user_id} => %{content: %{"membership" => "leave"}} = membership}}} ->
-        {:ok, pdu} = Repo.fetch(PDU, membership.event_id)
-
-        case Repo.get_all(PDU, pdu.state_events) do
-          {:ok, state_events} ->
-            {:ok, Map.new(state_events, &{{&1.type, &1.state_key}, &1})}
-
-          _ ->
-            {:error, :unauthorized}
+    with {:ok, room} <- get(room_id),
+         {:ok, use_state_at} <- use_state_at(room.state, user_id) do
+      state =
+        case use_state_at do
+          :latest_event -> Room.State.get_all(room.state)
+          %PDU{} = pdu -> Room.State.get_all_at(room.state, pdu)
         end
 
-      _ ->
-        {:error, :unauthorized}
+      state_event_ids = Stream.map(state, fn {_key, pdu} -> pdu.event.id end)
+
+      {:ok, Room.View.get_events(room_id, user_id, state_event_ids)}
+    else
+      _ -> {:error, :unauthorized}
     end
   end
 
   def get_state(room_id, user_id, type, state_key) do
-    with {:ok, state} <- get_state(room_id, user_id),
-         {:ok, event} <- Map.fetch(state, {type, state_key}) do
+    with {:ok, room} <- get(room_id),
+         {:ok, pdu} <- Room.State.fetch(room.state, type, state_key),
+         [event] <- Room.View.get_events(room_id, user_id, [pdu.event.id]) do
       {:ok, event}
     else
-      :error -> {:error, :not_found}
-      error -> error
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp use_state_at(room_state, user_id) do
+    case Room.State.fetch(room_state, "m.room.member", user_id) do
+      {:ok, %{event: %{content: %{"membership" => "join"}}}} -> {:ok, :latest_event}
+      {:ok, %{event: %{content: %{"membership" => membership}}}} = pdu when membership in ~w|leave kick| -> {:ok, pdu}
+      {:ok, _} -> {:error, :unauthorized}
+      {:error, :not_found} -> {:error, :unauthorized}
     end
   end
 

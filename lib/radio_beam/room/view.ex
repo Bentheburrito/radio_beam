@@ -25,10 +25,17 @@ defmodule RadioBeam.Room.View do
     end
   end
 
-  def timeline_event_stream(room_id, from) do
+  def timeline_event_stream(room_id, user_id, from) do
     with {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
          {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
-      Timeline.topological_stream(timeline, from, &Room.DAG.fetch!(room.dag, &1))
+      Timeline.topological_stream(timeline, user_id, from, &Room.DAG.fetch!(room.dag, &1))
+    end
+  end
+
+  def get_events(room_id, user_id, event_ids) do
+    with {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
+         {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
+      Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))
     end
   end
 

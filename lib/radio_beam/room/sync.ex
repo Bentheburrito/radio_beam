@@ -84,7 +84,7 @@ defmodule RadioBeam.Room.Sync do
       functions: %{
         event_stream: &EventGraph.stream_all_since(&1, since),
         latest_known_join_pdu: &Room.get_latest_known_join(&1, user.id),
-        event_ids_to_pdus: &event_ids_to_pdus/1
+        get_events_for_user: &Room.View.get_events(&1, user.id, &2)
       }
     }
   end
@@ -172,11 +172,6 @@ defmodule RadioBeam.Room.Sync do
       %PDU{} = pdu -> pdu
       :initial -> nil
     end
-  end
-
-  defp event_ids_to_pdus(event_ids) when is_list(event_ids) do
-    {:ok, state_pdus} = RadioBeam.Repo.get_all(PDU, event_ids)
-    state_pdus
   end
 
   defp wait_for_room_events(timeout) do

@@ -115,7 +115,7 @@ defmodule RadioBeam.User do
     else
       struct!(user,
         device_map: Map.put(user.device_map, device.id, device),
-        last_cross_signing_change_at: {:os.system_time(:millisecond), :erlang.unique_integer(@order_params)}
+        last_cross_signing_change_at: System.os_time(:millisecond)
       )
     end
   end
@@ -125,7 +125,7 @@ defmodule RadioBeam.User do
   def delete_device(%__MODULE__{} = user, device_id) when is_map_key(user.device_map, device_id) do
     struct!(user,
       device_map: Map.delete(user.device_map, device_id),
-      last_cross_signing_change_at: {:os.system_time(:millisecond), :erlang.unique_integer(@order_params)}
+      last_cross_signing_change_at: System.os_time(:millisecond)
     )
   end
 

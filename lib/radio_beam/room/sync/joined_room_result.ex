@@ -3,14 +3,15 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
-  alias RadioBeam.PDU
   alias RadioBeam.Room
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.PDU
+  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
+  alias RadioBeam.Room.View.Core.Timeline.Event
 
-  defstruct ~w|room_id room_version timeline_events limited? maybe_prev_batch latest_seen_pdu state_events sender_ids filter current_membership account_data|a
+  defstruct ~w|room_id room_version timeline_events limited? maybe_prev_batch latest_seen_event state_events sender_ids filter current_membership account_data|a
 
   @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [PDU.t()], state_events: [PDU.event_id()]}
-  @type maybe_prev_batch() :: :no_earlier_events | PaginationToken.t()
+  @type maybe_prev_batch() :: :no_earlier_events | TopologicalID.t()
 
   # TODO: reduce args by taking `opts`
   @spec new(
@@ -34,7 +35,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         limited?,
         maybe_prev_batch,
         maybe_room_state_event_ids_at_last_sync,
-        event_ids_to_pdus,
+        get_events_for_user,
         full_state?,
         membership,
         known_memberships,
@@ -46,10 +47,10 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     state_events =
       if EventFilter.allow_state_in_room?(filter, room.id) do
         determine_state_events(
-          room.id,
+          room,
           timeline_events,
           maybe_room_state_event_ids_at_last_sync,
-          event_ids_to_pdus,
+          get_events_for_user,
           full_state?,
           known_memberships,
           sender_ids,
@@ -62,13 +63,13 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     if Enum.empty?(timeline_events) and Enum.empty?(state_events) do
       :no_update
     else
-      latest_seen_pdu = hd(timeline_events)
+      latest_seen_event = hd(timeline_events)
 
       timeline_events =
         if EventFilter.allow_timeline_in_room?(filter, room.id) do
           timeline_events
           |> bundle_aggregations(user.id)
-          |> Enum.sort_by(&{&1.arrival_time, &1.arrival_order})
+          |> Enum.sort_by(& &1.order_id)
         else
           []
         end
@@ -79,7 +80,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         timeline_events: timeline_events,
         limited?: limited?,
         maybe_prev_batch: maybe_prev_batch,
-        latest_seen_pdu: latest_seen_pdu,
+        latest_seen_event: latest_seen_event,
         state_events: state_events,
         sender_ids: sender_ids,
         filter: filter,
@@ -90,10 +91,10 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   end
 
   defp determine_state_events(
-         room_id,
+         room,
          timeline_events,
          maybe_room_state_event_ids_at_last_sync,
-         event_ids_to_pdus,
+         get_events_for_user,
          full_state?,
          known_memberships,
          sender_ids,
@@ -109,8 +110,12 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     # events, and an incremental sync will always have a "last known state" of the last sync
     state_event_ids_at_tl_start =
       case List.last(timeline_events) do
-        %PDU{} = oldest_tl_event ->
-          oldest_tl_event.state_events
+        %Event{} = oldest_tl_event ->
+          %PDU{} = oldest_tl_pdu = Room.DAG.fetch!(room.dag, oldest_tl_event.id)
+
+          room.state
+          |> Room.State.get_all_at(oldest_tl_pdu)
+          |> Enum.map(fn {_k, pdu} -> pdu.event.id end)
 
         nil ->
           room_state_event_ids_at_last_sync
@@ -119,10 +124,10 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     state_event_ids =
       determine_state_event_ids(room_state_event_ids_at_last_sync, state_event_ids_at_tl_start, desired_state_events)
 
-    known_memberships = Map.get(known_memberships, room_id, MapSet.new())
+    known_memberships = Map.get(known_memberships, room.id, MapSet.new())
 
-    event_ids_to_pdus.(state_event_ids_at_tl_start)
-    |> Stream.filter(&(&1.event_id in state_event_ids))
+    get_events_for_user.(room.id, state_event_ids_at_tl_start)
+    |> Stream.filter(&(&1.id in state_event_ids))
     |> Stream.filter(&EventFilter.allow_state_event?(filter, &1, sender_ids, known_memberships))
   end
 
@@ -151,7 +156,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
       timeline =
         case room_result.maybe_prev_batch do
           :no_earlier_events -> timeline
-          %PaginationToken{} = prev_batch -> Map.put(timeline, :prev_batch, prev_batch)
+          %TopologicalID{} = prev_batch -> Map.put(timeline, :prev_batch, prev_batch)
         end
 
       Jason.Encode.map(

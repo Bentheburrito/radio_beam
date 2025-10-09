@@ -52,7 +52,7 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
               }
 
               user
-              |> struct!(cross_signing_key_ring: key_ring, last_cross_signing_change_at: :os.system_time(:millisecond))
+              |> struct!(cross_signing_key_ring: key_ring, last_cross_signing_change_at: System.os_time(:millisecond))
               |> Repo.insert()
           end
         end

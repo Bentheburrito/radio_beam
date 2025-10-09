@@ -41,10 +41,7 @@ defmodule RadioBeam.User.Keys do
     end)
   end
 
-  def all_changed_since(%User{} = user, %Room.EventGraph.PaginationToken{arrival_key: since_token}),
-    do: all_changed_since(user, since_token)
-
-  def all_changed_since(%User{} = user, since_token) do
+  def all_changed_since(%User{} = user, since) do
     shared_memberships_by_user =
       Repo.transaction(fn ->
         user.id
@@ -62,7 +59,7 @@ defmodule RadioBeam.User.Keys do
       end)
 
     Enum.reduce(shared_memberships_by_user, %{changed: MapSet.new(), left: MapSet.new()}, fn
-      {%{id: user_id, last_cross_signing_change_at: lcsca}, _}, acc when lcsca > since_token ->
+      {%{id: user_id, last_cross_signing_change_at: lcsca}, _}, acc when lcsca > since_unix_timestamp ->
         Map.update!(acc, :changed, &MapSet.put(&1, user_id))
 
       {user, member_events}, acc ->
@@ -70,10 +67,12 @@ defmodule RadioBeam.User.Keys do
         leave_events = Stream.filter(member_events, &(&1.content["membership"] == "leave"))
 
         cond do
-          not Enum.empty?(join_events) and Enum.all?(join_events, &({&1.arrival_time, &1.arrival_order} > since_token)) ->
+          not Enum.empty?(join_events) and
+              Enum.all?(join_events, &({&1.arrival_time, &1.arrival_order} > since_unix_timestamp)) ->
             Map.update!(acc, :changed, &MapSet.put(&1, user.id))
 
-          Enum.empty?(join_events) and Enum.any?(leave_events, &({&1.arrival_time, &1.arrival_order} > since_token)) ->
+          Enum.empty?(join_events) and
+              Enum.any?(leave_events, &({&1.arrival_time, &1.arrival_order} > since_unix_timestamp)) ->
             Map.update!(acc, :left, &MapSet.put(&1, user.id))
 
           :else ->

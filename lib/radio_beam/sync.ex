@@ -12,7 +12,11 @@ defmodule RadioBeam.Sync do
   defstruct ~w|account_data device_lists device_one_time_keys_count device_unused_fallback_key_types next_batch rooms to_device|a
 
   def perform_v2(user_id, device_id, opts) do
-    since_or_nil = Keyword.get(opts, :since)
+    since_or_nil =
+      with %PaginationToken{} = since <- Keyword.get(opts, :since) do
+        # IN PROGRESS maybe have a timestamp on PaginationToken, not the TopologicalID? idk I'm tired
+        nil
+      end
 
     Repo.transaction!(fn ->
       with {:ok, user} <- Repo.fetch(User, user_id) do

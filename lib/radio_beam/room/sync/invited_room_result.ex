@@ -5,7 +5,9 @@ defmodule RadioBeam.Room.Sync.InvitedRoomResult do
 
   @type t() :: %__MODULE__{room_id: Room.id(), stripped_state_events: [map()]}
 
-  def new(room, user_id), do: %__MODULE__{room_id: room.id, stripped_state_events: Room.stripped_state(room, user_id)}
+  def new(room, user_id) do
+    %__MODULE__{room_id: room.id, stripped_state_events: Room.State.get_invite_state_events(room.state, user_id)}
+  end
 
   defimpl Jason.Encoder do
     alias RadioBeam.Room.Sync.InvitedRoomResult

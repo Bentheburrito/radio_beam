@@ -135,6 +135,18 @@ defmodule RadioBeam.Room.State do
     end)
   end
 
+  # normalizes to %{{type, state_key} => pdu}
+  def get_all(%__MODULE__{} = state) do
+    Map.new(state.mapping, fn {key, [pdu | _]} -> {key, pdu} end)
+  end
+
+  def get_all_at(%__MODULE__{} = state, %PDU{} = pdu) do
+    Map.new(state.mapping, fn {{type, state_key}, _value} ->
+      {:ok, state_pdu} = fetch_at(state, type, state_key, pdu)
+      {{type, state_key}, state_pdu}
+    end)
+  end
+
   def replace_pdu!(%__MODULE__{} = state, %PDU{event: %{state_key: :none}}), do: state
 
   def replace_pdu!(%__MODULE__{mapping: mapping} = state, %PDU{event: %{id: event_id}} = pdu)
@@ -149,7 +161,7 @@ defmodule RadioBeam.Room.State do
 
   @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
   @doc "Returns the stripped state of the given room."
-  def get_invite_pdus(%__MODULE__{} = state, user_id) do
+  def get_invite_state_events(%__MODULE__{} = state, user_id) do
     # we additionally include the calling user's membership event
     @stripped_state_types
     |> Stream.map(&{&1, ""})

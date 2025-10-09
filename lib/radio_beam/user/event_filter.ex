@@ -120,25 +120,25 @@ defmodule RadioBeam.User.EventFilter do
     end
   end
 
-  def allow_timeline_event?(filter, pdu), do: apply(filter.timeline, pdu)
+  def allow_timeline_event?(filter, event), do: apply(filter.timeline, event)
 
-  def allow_state_event?(filter, pdu, senders, known_memberships) do
-    apply(filter.state, pdu) and apply_membership_filter(filter.state, pdu, senders, known_memberships)
+  def allow_state_event?(filter, event, senders, known_memberships) do
+    apply(filter.state, event) and apply_membership_filter(filter.state, event, senders, known_memberships)
   end
 
   defp apply(filter, %{content: content, type: type, sender: sender}) do
     filter_url(filter, content) and filter_type(filter, type) and filter_sender(filter, sender)
   end
 
-  defp apply_membership_filter(filter, %{type: "m.room.member"} = pdu, senders, known_memberships) do
+  defp apply_membership_filter(filter, %{type: "m.room.member"} = event, senders, known_memberships) do
     case filter.memberships do
-      :lazy -> pdu.state_key not in known_memberships and pdu.state_key in senders
-      :lazy_redundant -> pdu.state_key in senders
+      :lazy -> event.state_key not in known_memberships and event.state_key in senders
+      :lazy_redundant -> event.state_key in senders
       :all -> true
     end
   end
 
-  defp apply_membership_filter(_filter, _pdu, _senders, _known_memberships), do: true
+  defp apply_membership_filter(_filter, _event, _senders, _known_memberships), do: true
 
   defp filter_url(%{contains_url: :none}, _), do: true
   defp filter_url(%{contains_url: true}, %{"url" => _}), do: true

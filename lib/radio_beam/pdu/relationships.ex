@@ -1,4 +1,4 @@
-defmodule RadioBeam.Room.Relationships do
+defmodule RadioBeam.Room.PDU.Relationships do
   @moduledoc """
   Functions for working with relationships between events, such as aggregating
   them.

@@ -1,15 +1,15 @@
 defmodule RadioBeam.Room.Sync.Core do
-  alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Timeline
 
-  def perform(%Sync{} = sync, %Room{} = room, latest_known_join_pdu) do
-    user_membership_pdu = Map.fetch!(room.state, {"m.room.member", sync.user.id})
-    user_membership = user_membership_pdu.content["membership"]
+  def perform(%Sync{} = sync, %Room{} = room) do
+    {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", sync.user.id)
+    user_membership = user_membership_pdu.event.content["membership"]
 
     ignored_user_ids =
       MapSet.new(sync.user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
@@ -74,7 +74,7 @@ defmodule RadioBeam.Room.Sync.Core do
           limited?,
           maybe_prev_batch,
           maybe_room_state_event_ids_at_last_sync,
-          sync.functions.event_ids_to_pdus,
+          sync.functions.get_events_for_user,
           sync.full_state?,
           membership,
           sync.known_memberships,

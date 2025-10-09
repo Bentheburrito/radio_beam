@@ -8,10 +8,10 @@ defmodule RadioBeam.Room.Timeline.Chunk do
 
   defstruct ~w|timeline_events state_events start end to_event|a
 
-  def new(room, timeline_events, maybe_next_order_id, get_known_memberships_fxn, filter) do
+  def new(room, timeline_events, maybe_next_order_id, get_known_memberships_fxn, get_events_for_user, filter) do
     %__MODULE__{
       timeline_events: timeline_events,
-      state_events: get_state_events(room, timeline_events, get_known_memberships_fxn, filter),
+      state_events: get_state_events(room, timeline_events, get_known_memberships_fxn, get_events_for_user, filter),
       start: timeline_events |> hd() |> start_token(),
       end: maybe_next_order_id,
       to_event: &encode_event(&1, room.version, filter)
@@ -26,7 +26,7 @@ defmodule RadioBeam.Room.Timeline.Chunk do
     # |> EventFilter.take_fields(filter.fields)
   end
 
-  defp get_state_events(room, timeline_events, get_known_memberships_fxn, filter) do
+  defp get_state_events(room, timeline_events, get_known_memberships_fxn, get_events_for_user, filter) do
     ignore_memberships_from =
       if filter.state.memberships == :lazy do
         known_membership_map = get_known_memberships_fxn.()
@@ -35,10 +35,16 @@ defmodule RadioBeam.Room.Timeline.Chunk do
         []
       end
 
-    timeline_events
-    |> Stream.reject(&(&1.sender in ignore_memberships_from))
-    |> Stream.uniq_by(& &1.sender)
-    |> Enum.map(&(room.state |> Map.fetch!({"m.room.member", &1.sender}) |> Event.new!()))
+    state_event_ids =
+      timeline_events
+      |> Stream.reject(&(&1.sender in ignore_memberships_from))
+      |> Stream.uniq_by(& &1.sender)
+      |> Enum.map(fn pdu ->
+        {:ok, %{event: %{id: event_id}}} = Room.State.fetch(room.state, "m.room.member", pdu.sender)
+        event_id
+      end)
+
+    get_events_for_user.(state_event_ids)
   end
 
   defimpl Jason.Encoder do
