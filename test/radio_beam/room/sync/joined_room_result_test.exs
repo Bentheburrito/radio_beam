@@ -14,85 +14,67 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
   describe "new/11" do
     setup do
       user = Fixtures.user()
-      {:ok, room_id} = Room.create(user)
-      {:ok, room} = RadioBeam.Repo.fetch(Room, room_id)
-      Fixtures.send_text_msg(room_id, user.id, "hellloooo")
-      %{user: user, room: room}
+      room = Fixtures.room("11", user.id)
+      Fixtures.send_room_msg(room, user.id, "hellloooo")
+      {user, device} = Fixtures.device(user)
+      %{user: user, device: device, room: room}
     end
 
     test "returns a JoinedRoomResult of the expected shape when its given a non-empty timeline", %{
       user: user,
+      device: device,
       room: room
     } do
-      {:ok, pdu_stream, :root} = EventGraph.traverse(room.id, :tip)
-      timeline_events = Enum.to_list(pdu_stream)
+      timeline_events =
+        Room.View.Core.Timeline
+        |> Fixtures.make_room_view(room)
+        |> Room.View.Core.Timeline.topological_stream(user.id, :root, &Room.DAG.fetch!(room.dag, &1))
+        |> Enum.to_list()
+
+      room_sync = Room.Sync.init(user, device.id, get_room_ids_to_sync: fn _ -> [room.id] end)
 
       %JoinedRoomResult{} =
-        joined_room_result =
-        JoinedRoomResult.new(
-          room,
-          user,
-          timeline_events,
-          false,
-          :no_earlier_events,
-          :initial,
-          &event_ids_to_pdus/1,
-          false,
-          "join",
-          %{},
-          EventFilter.new(%{})
-        )
+        joined_room_result = JoinedRoomResult.new(room_sync, room, timeline_events, :no_more_events, :initial, "join")
 
       assert joined_room_result.timeline_events == Enum.reverse(timeline_events)
       assert %{type: "m.room.create"} = List.first(joined_room_result.timeline_events)
       assert %{type: "m.room.message"} = List.last(joined_room_result.timeline_events)
       assert 0 = joined_room_result.state_events |> Enum.to_list() |> length()
-      assert :no_earlier_events = joined_room_result.maybe_prev_batch
+      assert :no_earlier_events = joined_room_result.maybe_next_order_id
     end
 
-    test "returns :no_update when given an empty timeline", %{user: user, room: room} do
-      assert :no_update =
-               JoinedRoomResult.new(
-                 room,
-                 user,
-                 [],
-                 false,
-                 :no_earlier_events,
-                 :initial,
-                 &event_ids_to_pdus/1,
-                 false,
-                 "join",
-                 %{},
-                 EventFilter.new(%{})
-               )
+    test "returns :no_update when given an empty timeline", %{user: user, device: device, room: room} do
+      room_sync = Room.Sync.init(user, device.id, get_room_ids_to_sync: fn _ -> [room.id] end)
+      state_pdus = room.state |> Room.State.get_all() |> Map.values()
+
+      assert :no_update = JoinedRoomResult.new(room_sync, room, [], :no_more_events, state_pdus, "join")
     end
   end
 
   describe "Jason.Encoder implementation" do
     test "encodes an JoinedRoomResult as expected by the C-S spec" do
       user = Fixtures.user()
-      {:ok, room_id} = Room.create(user)
-      {:ok, room} = RadioBeam.Repo.fetch(Room, room_id)
+      {user, device} = Fixtures.device(user)
+      room = Fixtures.room("11", user.id)
+      Fixtures.send_room_msg(room, user.id, "helloooooooo")
 
-      Fixtures.send_text_msg(room_id, user.id, "helloooooooo")
+      timeline_events =
+        Room.View.Core.Timeline
+        |> Fixtures.make_room_view(room)
+        |> Room.View.Core.Timeline.topological_stream(user.id, :root, &Room.DAG.fetch!(room.dag, &1))
+        |> Enum.to_list()
 
-      {:ok, pdu_stream, :root} = EventGraph.traverse(room.id, :tip)
-      timeline_events = Enum.to_list(pdu_stream)
+      room_sync = Room.Sync.init(user, device.id, get_room_ids_to_sync: fn _ -> [room.id] end)
 
       %JoinedRoomResult{} =
         joined_room_result =
         JoinedRoomResult.new(
+          room_sync,
           room,
-          user,
           timeline_events,
-          false,
-          :no_earlier_events,
+          :no_more_events,
           :initial,
-          &event_ids_to_pdus/1,
-          false,
-          "join",
-          %{},
-          EventFilter.new(%{})
+          "join"
         )
 
       assert {:ok, json} = Jason.encode(joined_room_result)

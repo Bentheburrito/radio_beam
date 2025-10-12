@@ -1,7 +1,7 @@
 defmodule RadioBeam.Sync do
-  alias RadioBeam.Room.EventGraph.PaginationToken
   alias RadioBeam.Repo
   alias RadioBeam.Room
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User
   alias RadioBeam.User.Device
   alias RadioBeam.User.Keys
@@ -12,11 +12,7 @@ defmodule RadioBeam.Sync do
   defstruct ~w|account_data device_lists device_one_time_keys_count device_unused_fallback_key_types next_batch rooms to_device|a
 
   def perform_v2(user_id, device_id, opts) do
-    since_or_nil =
-      with %PaginationToken{} = since <- Keyword.get(opts, :since) do
-        # IN PROGRESS maybe have a timestamp on PaginationToken, not the TopologicalID? idk I'm tired
-        nil
-      end
+    since_or_nil = Keyword.get(opts, :since)
 
     Repo.transaction!(fn ->
       with {:ok, user} <- Repo.fetch(User, user_id) do
@@ -25,7 +21,7 @@ defmodule RadioBeam.Sync do
           |> Room.Sync.init(device_id, opts)
           |> Room.Sync.perform()
 
-        next_batch = room_sync_result.next_batch_pdu_by_room_id |> Map.values() |> PaginationToken.new(:forward)
+        next_batch = PaginationToken.new(room_sync_result.next_batch_map, :forward, System.os_time(:millisecond))
 
         %__MODULE__{rooms: room_sync_result, next_batch: next_batch, to_device: %{}}
         |> put_account_data(user)

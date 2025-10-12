@@ -8,7 +8,6 @@ defmodule RadioBeam.Room.View.Core do
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Timeline
-  alias RadioBeam.Room.View.Core.Timeline.Event
 
   @views [
     Participating,

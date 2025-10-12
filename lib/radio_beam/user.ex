@@ -106,7 +106,6 @@ defmodule RadioBeam.User do
 
   ### DEVICE ###
 
-  @order_params if Mix.env() == :test, do: [:monotonic], else: []
   @doc "Puts a device for the given User, overriding any existing entry."
   @spec put_device(t(), Device.t()) :: t()
   def put_device(%__MODULE__{} = user, %Device{identity_keys: identity_keys} = device) do

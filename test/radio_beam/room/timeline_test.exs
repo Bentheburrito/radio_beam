@@ -5,7 +5,7 @@ defmodule RadioBeam.Room.TimelineTest do
   alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.User.EventFilter

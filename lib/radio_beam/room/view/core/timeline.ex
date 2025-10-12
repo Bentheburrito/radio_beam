@@ -2,9 +2,10 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   @moduledoc """
   Tracks a room's events and state that will be sent to clients when requested.
   """
-  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventRelationships
   alias RadioBeam.Room.PDU
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.EventMetadata
   alias RadioBeam.Room.View.Core.Timeline.TimestampToEventIDIndex
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
@@ -14,6 +15,8 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   @enforce_keys @attrs
   defstruct @attrs
   @typep t() :: %__MODULE__{}
+
+  @type from() :: {TopologicalID.t(), :forward | :backward} | :root | :tip
 
   def new! do
     %__MODULE__{
@@ -30,7 +33,9 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
   def handle_pdu(%__MODULE__{} = timeline, %Room{} = room, %PDU{} = pdu) do
     prev_events_topo_id_stream =
-      timeline.event_metadata |> Map.take(pdu.prev_event_ids) |> Stream.map(& &1.topological_id)
+      timeline.event_metadata
+      |> Map.take(pdu.prev_event_ids)
+      |> Stream.map(fn {_event_id, metadata} -> metadata.topological_id end)
 
     pdu_topo_id = TopologicalID.new!(pdu, prev_events_topo_id_stream)
 
@@ -47,7 +52,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
     event_metadata =
       with {:ok, %{"event_id" => parent_event_id}} <- Map.fetch(pdu.event.content, "m.relates_to"),
-           true <- Relationships.aggregable?(pdu) do
+           true <- EventRelationships.aggregable?(pdu.event) do
         timeline.event_metadata
         |> Map.update(
           parent_event_id,
@@ -94,11 +99,12 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     end
   end
 
-  defp put_vg_id_for_user(user_id_to_visibility_group, user_id, vg_id) do
-    Map.update(user_id_to_visibility_group, user_id, MapSet.new([vg_id]), &MapSet.put(&1, vg_id))
-  end
-
-  @spec topological_stream(t(), {TopologicalID.t(), :forward | :backward} | :root | :tip) ::
+  @spec topological_stream(
+          t(),
+          RadioBeam.User.id(),
+          from(),
+          (Room.event_id() -> PDU.t())
+        ) ::
           {Enumerable.t(Room.event_id()), TopologicalID.t(), :more | :done}
   def topological_stream(%__MODULE__{} = timeline, user_id, {%TopologicalID{} = from, direction}, fetch_pdu!) do
     latest_known_join_topo_id = get_in(timeline.member_metadata[user_id][:latest_known_join_topo_id]) || :never_joined
@@ -111,7 +117,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
       event_visible? =
         fn {_event_id, metadata} ->
-          visible_to_user?(timeline, user_id, latest_known_join_topo_id, metdata.topological_id)
+          visible_to_user?(timeline, user_id, latest_known_join_topo_id, metadata.topological_id)
         end
 
       visible_bundled_events =
@@ -125,10 +131,10 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   def topological_stream(timeline, user_id, :root, fetch_pdu!),
-    do: topological_stream(timeline, user_id, {timeline.set.first_id, :forward}, fetch_pdu!)
+    do: topological_stream(timeline, user_id, {timeline.topological_id_ord_set.first_id, :forward}, fetch_pdu!)
 
   def topological_stream(timeline, user_id, :tip, fetch_pdu!),
-    do: topological_stream(timeline, user_id, {timeline.set.last_id, :backward}, fetch_pdu!)
+    do: topological_stream(timeline, user_id, {timeline.topological_id_ord_set.last_id, :backward}, fetch_pdu!)
 
   defp visible_to_user?(timeline, user_id, latest_known_join_topo_id, topological_id) do
     event_id = Map.fetch!(timeline.topological_id_to_event_id, topological_id)
@@ -155,7 +161,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
     event_visible? =
       fn {_event_id, metadata} ->
-        visible_to_user?(timeline, user_id, latest_known_join_topo_id, metdata.topological_id)
+        visible_to_user?(timeline, user_id, latest_known_join_topo_id, metadata.topological_id)
       end
 
     event_ids
@@ -173,216 +179,34 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     end)
   end
 
-  defmodule TopologicalID do
-    @moduledoc """
-    Opaque ID for an event ordered among other events.
+  def get_latest_order_id(%__MODULE__{} = timeline), do: timeline.topological_id_ord_set.last_id
 
-    ## Internal
-
-    TODO
-    """
-    alias RadioBeam.Room.PDU
-
-    @attrs ~w|depth stream_number|a
-    @enforce_keys @attrs
-    defstruct @attrs
-    @opaque t() :: %__MODULE__{}
-
-    def new!(%PDU{} = pdu, prev_event_topo_ids) do
-      depth = (prev_event_topo_ids |> Stream.map(& &1.depth) |> Enum.max(fn -> 0 end)) + 1
-      %__MODULE__{depth: depth, stream_number: pdu.stream_number}
-    end
-
-    def group_key(%__MODULE__{} = tid), do: tid.depth
-
-    def group_iterator(:forward), do: &(&1 + 1)
-    def group_iterator(:backward), do: &(&1 - 1)
-
-    def compare(%__MODULE__{} = tid, %__MODULE__{} = tid), do: :eq
-
-    def compare(%__MODULE__{} = tid1, %__MODULE__{} = tid2) do
-      if {tid1.depth, tid1.stream_number} > {tid2.depth, tid2.stream_number}, do: :gt, else: :lt
-    end
-
-    def parse_string("tid(" <> param_string) do
-      with [depth_str, stream_num_str] <- String.split(param_string, ":"),
-           {depth, ""} <- Integer.parse(depth_str),
-           {stream_num, ")"} <- Integer.parse(stream_num_str) do
-        %__MODULE__{depth: depth, stream_number: stream_num}
-      else
-        _ -> {:error, :invalid}
-      end
-    end
-
-    def parse_string(_), do: {:error, :invalid}
-
-    defimpl String.Chars do
-      def to_string(topological_id), do: "tid(#{topological_id.depth}:#{topological_id.stream_number})"
-    end
-
-    defimpl Jason.Encoder do
-      def encode(topological_id, opts), do: Jason.Encode.string(to_string(topological_id), opts)
-    end
-
-    defmodule Range do
-      @moduledoc """
-      Represents an inclusive, continuous selection of events from one
-      TopologicalID to another.
-      """
-      @attrs ~w|lower upper|a
-      @enforce_keys @attrs
-      defstruct @attrs
-
-      def new!(lower, upper) do
-        case TopologicalID.compare(lower, upper) in ~w|lt eq|a do
-          true -> %__MODULE__{lower: lower, upper: upper}
-        end
-      end
-
-      def in?(%TopologicalID{} = tid, %__MODULE__{} = range) do
-        TopologicalID.compare(tid, range.lower) in ~w|gt eq|a and
-          TopologicalID.compare(tid, range.upper) in ~w|lt eq|a
-      end
-    end
-
-    defmodule OrderedSet do
-      alias RadioBeam.Room.View.Core.Timeline.TopologicalID
-
-      # index: %{topo_group_key => [TopologicalID.t()]}
-      defstruct index: %{}, first_id: nil, last_id: nil
-
-      def new!, do: %__MODULE__{}
-
-      def stream_from(%__MODULE__{} = set, %TopologicalID{} = from, direction) do
-        order_fxn = if direction == :forward, do: & &1, else: &Enum.reverse/1
-
-        from
-        |> TopologicalID.group_key()
-        |> Stream.iterate(TopologicalID.group_iterator(direction))
-        |> Stream.flat_map(&(set.index |> Map.get(&1, []) |> order_fxn.()))
-      end
-
-      def put(%__MODULE__{} = set, %TopologicalID{} = topo_id) do
-        first_id =
-          cond do
-            is_nil(set.first_id) -> topo_id
-            TopologicalID.compare(set.first_id, topo_id) == :lt -> set.first_id
-            :else -> topo_id
-          end
-
-        last_id =
-          cond do
-            is_nil(set.last_id) -> topo_id
-            TopologicalID.compare(set.last_id, topo_id) == :gt -> set.last_id
-            :else -> topo_id
-          end
-
-        struct!(set,
-          index: Map.update(set.index, TopologicalID.group_key(topo_id), [topo_id], &put_in_list/2),
-          first_id: first_id,
-          last_id: last_id
-        )
-      end
-
-      defp put_in_list(topo_id_list, topo_id), do: put_in_list(topo_id_list, topo_id, [])
-
-      defp put_in_list([last_topo_id], topo_id, topo_id_list_reversed) do
-        # if last_topo_id comes after (is greater than) topo_id, keep it the
-        # last ID in the list...
-        if TopologicalID.compare(last_topo_id, topo_id) == :gt do
-          Enum.reverse([last_topo_id, topo_id | topo_id_list_reversed])
-        else
-          # ...else it should be 2nd to last, and topo_id is the new last ID
-          Enum.reverse([topo_id, last_topo_id | topo_id_list_reversed])
-        end
-      end
-
-      defp put_in_list([tid1, tid2 | topo_id_list], topo_id, topo_id_list_reversed) do
-        if TopologicalID.Range.in?(topo_id, TopologicalID.Range.new!(tid1, tid2)) do
-          Enum.reverse(topo_id_list_reversed) ++ [tid1, topo_id, tid2 | topo_id_list]
-        else
-          put_in_list([tid2 | topo_id_list], topo_id, [tid1 | topo_id_list_reversed])
-        end
-      end
-    end
+  def order_id_to_event_id(%__MODULE__{} = timeline, %TopologicalID{} = topo_id) do
+    with :error <- Map.fetch(timeline.topological_id_to_event_id, topo_id), do: {:error, :not_found}
   end
 
-  defmodule VisibilityGroup do
-    defstruct ~w|joined invited history_visibility|a
+  def stream_event_ids_closest_to_ts(%__MODULE__{} = timeline, user_id, timestamp, direction) do
+    latest_known_join_topo_id = get_in(timeline.member_metadata[user_id][:latest_known_join_topo_id]) || :never_joined
 
-    def from_state!(state, pdu) do
-      init_group =
-        case Room.State.fetch_at(state, "m.room.history_visibility", pdu) do
-          {:ok, %PDU{} = pdu} -> %__MODULE__{history_visibility: pdu.event.content["history_visibility"]}
-          {:error, :not_found} -> %__MODULE__{history_visibility: "shared"}
-        end
-
-      state
-      |> Room.State.get_all_at(pdu)
-      |> Enum.reduce(init_group, fn
-        {{"m.room.member", user_id}, %PDU{event: %{state_key: user_id}} = pdu}, %__MODULE__{} = group ->
-          case pdu.event.content["membership"] do
-            "join" -> put_in(group.joined, user_id)
-            "invite" -> put_in(group.invited, user_id)
-            _ -> group
-          end
-
-        _, group ->
-          group
-      end)
-    end
-
-    def id(%__MODULE__{history_visibility: "world_readable"}), do: :world_readable
-    def id(%__MODULE__{} = group), do: :crypto.hash(:sha256, :erlang.term_to_binary(group))
-  end
-
-  defmodule Event do
-    alias RadioBeam.Room.AuthorizedEvent
-
-    defstruct [:order_id, :bundled_events] ++ AuthorizedEvent.keys()
-
-    def new!(id, %PDU{event: event}, bundled_events) when is_struct(id, TopologicalID) or id == :unknown do
-      struct!(
-        __MODULE__,
-        event
-        |> Map.from_struct()
-        |> Map.put(:order_id, id)
-        |> Map.put(:bundled_events, bundled_events)
-      )
-    end
-
-    # TOIMPL: choose client or federation format based on filter
-    @cs_event_keys [:content, :event_id, :origin_server_ts, :room_id, :sender, :state_key, :type, :unsigned]
-    def to_map(%__MODULE__{} = event, room_version) do
-      event
-      |> Map.take(@cs_event_keys)
-      |> adjust_redacts_key(room_version)
-      |> case do
-        %{state_key: :none} = event -> Map.delete(event, :state_key)
-        event -> event
+    event_visible? =
+      fn {_event_id, metadata} ->
+        visible_to_user?(timeline, user_id, latest_known_join_topo_id, metadata.topological_id)
       end
-    end
 
-    @pre_v11_format_versions ~w|1 2 3 4 5 6 7 8 9 10|
-    defp adjust_redacts_key(%{type: "m.room.redaction"} = event, room_version)
-         when room_version in @pre_v11_format_versions do
-      {redacts, content} = Map.pop!(event.content, "redacts")
-
-      event
-      |> Map.put(:redacts, redacts)
-      |> Map.put(:content, content)
-    end
-
-    defp adjust_redacts_key(event, _room_version), do: event
+    timeline.timestamp_to_event_id_index
+    |> TimestampToEventIDIndex.stream_nearest_event_ids(timestamp, direction)
+    |> Stream.map(&{&1, timeline.event_metadata[&1]})
+    |> Stream.reject(fn {_event_id, maybe_metadata} -> is_nil(maybe_metadata) end)
+    |> Stream.filter(event_visible?)
   end
 
   defmodule EventMetadata do
     @enforce_keys ~w|topological_id|a
     defstruct topological_id: nil, visibility_group_id: nil, bundled_event_ids: []
 
-    def new!(%TopologicalID{} = topological_id, visibility_group_id, bundled_event_ids \\ []) do
+    def new!(topological_id_or_unknown, visibility_group_id, bundled_event_ids \\ []) do
       %__MODULE__{
-        topological_id: topological_id,
+        topological_id: topological_id_or_unknown,
         visibility_group_id: visibility_group_id,
         bundled_event_ids: bundled_event_ids
       }

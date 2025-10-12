@@ -2,7 +2,7 @@ defmodule RadioBeam.Room.SyncTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult

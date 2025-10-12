@@ -277,8 +277,8 @@ defmodule RadioBeamWeb.RoomController do
     %{"dir" => dir, "ts" => timestamp} = conn.assigns.request
 
     case Room.get_nearest_event(room_id, conn.assigns.user.id, dir, timestamp) do
-      {:ok, pdu} -> json(conn, %{"event_id" => pdu.event_id, "origin_server_ts" => pdu.origin_server_ts})
-      :none -> handle_common_error(conn, :not_found)
+      {:ok, event} -> json(conn, %{"event_id" => event.id, "origin_server_ts" => event.origin_server_ts})
+      {:error, :not_found} -> handle_common_error(conn, :not_found)
       {:error, error} -> handle_common_error(conn, error)
     end
   end

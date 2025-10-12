@@ -43,6 +43,28 @@ defmodule Fixtures do
     Room.Core.send(room, event_attrs, deps)
   end
 
+  def make_room_view(view_module, room) do
+    all_pdus = make_room_view_pdus(room.dag)
+
+    view_state = view_module.new!()
+
+    Enum.reduce(all_pdus, view_state, &view_module.handle_pdu(&2, room, &1))
+  end
+
+  defp make_room_view_pdus(dag) do
+    make_room_view_pdus(dag, Room.DAG.forward_extremities(dag), [])
+  end
+
+  defp make_room_view_pdus(dag, next_event_ids, pdus) do
+    new_pdus = for event_id <- next_event_ids, do: Room.DAG.fetch!(dag, event_id)
+
+    if match?([], new_pdus) do
+      Enum.sort_by(pdus, & &1.stream_number, :asc)
+    else
+      make_room_view_pdus(dag, new_pdus |> Stream.flat_map(& &1.prev_event_ids) |> Stream.uniq(), new_pdus ++ pdus)
+    end
+  end
+
   def user_id(server_name \\ "localhost"), do: server_name |> UserIdentifier.generate() |> to_string()
 
   def user(user_id \\ user_id()) do
@@ -87,12 +109,6 @@ defmodule Fixtures do
     file_info = file_info(File.read!(tmp_upload_path), "jpg", "cool_picture")
     {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, repo_dir)
     upload
-  end
-
-  # TODO: remove
-  def send_text_msg(room_id, user_id, message, content_overrides \\ %{}) do
-    content = Map.merge(%{"msgtype" => "m.text", "body" => message}, content_overrides)
-    Room.send(room_id, user_id, "m.room.message", content)
   end
 
   def create_cross_signing_keys(user_id) do

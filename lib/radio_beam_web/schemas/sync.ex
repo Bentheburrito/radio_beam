@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.Schemas.Sync do
   @moduledoc false
 
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.Events.PaginationToken
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.Filter
   alias RadioBeamWeb.Schemas

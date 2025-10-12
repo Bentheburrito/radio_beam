@@ -1,7 +1,7 @@
-defmodule RadioBeam.PDU.RelationshipsTest do
+defmodule RadioBeam.Room.EventRelationshipsTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.PDU.Relationships
+  alias RadioBeam.Room.EventRelationships
   alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph

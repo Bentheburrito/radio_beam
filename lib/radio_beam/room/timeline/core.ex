@@ -5,10 +5,10 @@ defmodule RadioBeam.Room.Timeline.Core do
 
   # alias RadioBeam.User.EventFilter
 
-  @doc """
-  Creates a new Enumerable from the given user_event_stream, lazily filtering
-  for events that pass the given event filter and ignored_user_ids.
-  """
+  #   @doc """
+  #   Creates a new Enumerable from the given user_event_stream, lazily filtering
+  #   for events that pass the given event filter and ignored_user_ids.
+  #   """
   # def from_event_stream(user_event_stream, filter, ignored_user_ids) do
   #   user_event_stream
   #   |> Stream.reject(&from_ignored_user?(&1, ignored_user_ids))

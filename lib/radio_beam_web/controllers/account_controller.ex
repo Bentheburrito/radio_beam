@@ -51,9 +51,6 @@ defmodule RadioBeamWeb.AccountController do
   defp parse_scope(:global), do: {:ok, :global}
 
   defp parse_scope(room_id) do
-    case Room.get(room_id) do
-      {:ok, %Room{}} -> {:ok, room_id}
-      {:error, :not_found} -> {:error, :invalid_room_id}
-    end
+    if Room.exists?(room_id), do: {:ok, room_id}, else: {:error, :invalid_room_id}
   end
 end

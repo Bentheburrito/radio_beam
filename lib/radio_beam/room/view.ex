@@ -1,5 +1,6 @@
 defmodule RadioBeam.Room.View do
   alias RadioBeam.Repo
+  alias RadioBeam.Repo.Tables
   alias RadioBeam.Repo.Tables.ViewState
 
   alias RadioBeam.Room
@@ -8,6 +9,8 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Timeline
+  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
+  alias RadioBeam.User
 
   def handle_pdu(%Room{} = room, %PDU{} = pdu) do
     Core.handle_pdu(room, pdu, view_deps())
@@ -26,31 +29,69 @@ defmodule RadioBeam.Room.View do
   end
 
   def timeline_event_stream(room_id, user_id, from) do
-    with {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
+    with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
          {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
       Timeline.topological_stream(timeline, user_id, from, &Room.DAG.fetch!(room.dag, &1))
     end
   end
 
   def get_events(room_id, user_id, event_ids) do
-    with {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
+    with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
          {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
       Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))
     end
   end
 
-  @spec child_events(Room.id(), Room.event_id() | [Room.event_id()]) ::
-          MapSet.t(Room.event_iod()) | %{Room.event_id() => MapSet.t(Room.event_id())}
-  def child_events(room_id, event_ids) when is_list(event_ids) do
-    with {:ok, %RelatedEvents{} = relations} <- Repo.fetch(ViewState, {RelatedEvents, room_id}) do
-      Map.take(relations.related_by_event_id, event_ids)
+  def get_latest_order_id!(room_id) do
+    with {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}),
+         %TopologicalID{} = order_id <- Timeline.get_latest_order_id(timeline) do
+      order_id
+    else
+      _ -> raise "no room #{room_id} exists or its event timeline view was empty"
     end
   end
 
-  def child_events(room_id, event_id) do
-    case child_events(room_id, [event_id]) do
-      %{^event_id => %MapSet{} = related_event_ids} -> related_event_ids
-      %{} -> MapSet.new()
+  def order_id_to_event_id(room_id, order_id) do
+    with {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
+      Timeline.order_id_to_event_id(timeline, order_id)
+    end
+  end
+
+  def nearest_events_stream(room_id, user_id, timestamp, direction) do
+    with {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
+      Timeline.stream_event_ids_closest_to_ts(timeline, user_id, timestamp, direction)
+    end
+  end
+
+  @doc """
+  Get the immediate child events of the given `event_id`s. Returns a map from
+  `event_id` to `Enumerable.t(Event.t())`. If an `event_id` is absent from the resulting map,
+  it either does not exist or the user does not have permission to view it.
+  """
+  @spec get_child_events(Room.id(), User.id(), [Room.event_id()]) :: %{Room.event_id() => Enumerable.t(Event.t())}
+  def get_child_events(room_id, user_id, event_ids) when is_list(event_ids) do
+    with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
+         {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}),
+         {:ok, %RelatedEvents{} = relations} <- Repo.fetch(ViewState, {RelatedEvents, room_id}) do
+      fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
+      event_ids = timeline |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!) |> Stream.map(& &1.id)
+
+      relations.related_by_event_id
+      |> Map.take(event_ids)
+      |> Map.new(fn {parent_event_id, child_event_ids} ->
+        visible_child_event_stream =
+          Timeline.get_visible_events(timeline, child_event_ids, user_id, fetch_pdu!)
+
+        {parent_event_id, visible_child_event_stream}
+      end)
+    end
+  end
+
+  @spec get_child_event(Room.id(), User.id(), Room.event_id()) :: {:ok, Enumerable.t(Event.t())} | {:error, :not_found}
+  def get_child_event(room_id, user_id, event_id) do
+    case get_child_event(room_id, user_id, [event_id]) do
+      %{^event_id => related_events_stream} -> {:ok, related_events_stream}
+      %{} -> {:error, :not_found}
     end
   end
 

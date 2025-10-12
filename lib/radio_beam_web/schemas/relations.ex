@@ -2,12 +2,15 @@ defmodule RadioBeamWeb.Schemas.Relations do
   @moduledoc false
 
   alias Polyjuice.Util.Schema
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeamWeb.Schemas.Filter
 
   def get_children do
     %{
-      "dir" => [Schema.enum(%{"f" => :forward, "b" => :backward}, &String.downcase/1), default: :backward],
+      "dir" => [
+        Schema.enum(%{"f" => :chronological, "b" => :reverse_chronological}, &String.downcase/1),
+        default: :reverse_chronological
+      ],
       "from" => optional(&pagination_token/1),
       "limit" => [&Filter.limit/1, default: RadioBeam.max_timeline_events()],
       "to" => optional(&pagination_token/1),

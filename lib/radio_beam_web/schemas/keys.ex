@@ -4,7 +4,7 @@ defmodule RadioBeamWeb.Schemas.Keys do
   import RadioBeamWeb.Schemas, only: [user_id: 1]
 
   alias Polyjuice.Util.Schema
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.Events.PaginationToken
 
   def changes, do: %{"from" => &pagination_token/1}
 

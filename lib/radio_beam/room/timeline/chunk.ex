@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.Timeline.Chunk do
   A chunk of visible events in a user's timeline, as queried via /messages.
   """
 
-  alias RadioBeam.User.EventFilter
+  alias RadioBeam.Room
   alias RadioBeam.Room.View.Core.Timeline.Event
 
   defstruct ~w|timeline_events state_events start end to_event|a

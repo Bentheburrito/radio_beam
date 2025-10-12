@@ -3,16 +3,17 @@ defmodule RadioBeam.Room.Sync do
   alias RadioBeam.PDU
   alias RadioBeam.PubSub
   alias RadioBeam.Room
-  alias RadioBeam.Room.EventGraph
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Sync.Core
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
+  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
-  defstruct ~w|user device_id filter start room_ids last_sync_pdus_by_room_id known_memberships full_state? timeout functions|a
+  defstruct ~w|user device_id filter start room_ids known_memberships full_state? timeout functions|a
 
   @opaque t() :: %__MODULE__{}
 
@@ -53,23 +54,30 @@ defmodule RadioBeam.Room.Sync do
         :none -> &Function.identity/1
       end
 
-    last_sync_pdus_by_room_id =
+    # last_sync_pdus_by_room_id =
+    #   user.id
+    #   |> Room.all_where_has_membership()
+    #   |> Stream.filter(sync_room_id?)
+    #   |> Map.new(&{&1, :initial})
+
+    # last_sync_pdus_by_room_id =
+    #   case since do
+    #     nil ->
+    #       last_sync_pdus_by_room_id
+
+    #     %{event_ids: event_ids} ->
+    #       {:ok, pdus} = Repo.get_all(PDU, event_ids)
+    #       Enum.reduce(pdus, last_sync_pdus_by_room_id, &Map.replace(&2, &1.room_id, &1))
+    #   end
+
+    get_room_ids_with_membership =
+      Keyword.get(opts, :get_room_ids_to_sync, &Room.all_where_has_membership/1)
+
+    room_ids =
       user.id
-      |> Room.all_where_has_membership()
+      |> get_room_ids_with_membership.()
       |> Stream.filter(sync_room_id?)
-      |> Map.new(&{&1, :initial})
-
-    last_sync_pdus_by_room_id =
-      case since do
-        nil ->
-          last_sync_pdus_by_room_id
-
-        %{event_ids: event_ids} ->
-          {:ok, pdus} = Repo.get_all(PDU, event_ids)
-          Enum.reduce(pdus, last_sync_pdus_by_room_id, &Map.replace(&2, &1.room_id, &1))
-      end
-
-    room_ids = MapSet.new(last_sync_pdus_by_room_id, fn {room_id, _pdu} -> room_id end)
+      |> MapSet.new()
 
     %__MODULE__{
       user: user,
@@ -77,14 +85,13 @@ defmodule RadioBeam.Room.Sync do
       filter: filter,
       start: since,
       room_ids: room_ids,
-      last_sync_pdus_by_room_id: last_sync_pdus_by_room_id,
       known_memberships: LazyLoadMembersCache.get(room_ids, device_id),
       full_state?: Keyword.get(opts, :full_state?, false),
       timeout: Keyword.get(opts, :timeout, 0),
       functions: %{
-        event_stream: &EventGraph.stream_all_since(&1, since),
-        latest_known_join_pdu: &Room.get_latest_known_join(&1, user.id),
-        get_events_for_user: &Room.View.get_events(&1, user.id, &2)
+        event_stream: &Room.View.timeline_event_stream(&1, user.id, :tip),
+        get_events_for_user: &Room.View.get_events(&1, user.id, &2),
+        order_id_to_event_id: &Room.View.order_id_to_event_id/2
       }
     }
   end
@@ -97,8 +104,8 @@ defmodule RadioBeam.Room.Sync do
     sync_result =
       sync.room_ids
       |> Task.async_stream(&perform(sync, &1), @task_opts)
-      |> Enum.reduce(Sync.Result.new(), fn {:ok, {room_sync_result, room_id, maybe_next_batch_pdu}}, sync_result ->
-        Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_pdu)
+      |> Enum.reduce(Sync.Result.new(), fn {:ok, {room_sync_result, room_id, maybe_next_batch_order_id}}, sync_result ->
+        Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_order_id)
       end)
 
     # no new visible events since last sync? read room events as they arrive in
@@ -110,29 +117,28 @@ defmodule RadioBeam.Room.Sync do
         |> wait_for_room_events()
         |> Stream.filter(fn
           {:room_event, %PDU{room_id: room_id}} -> room_id in sync.room_ids
-          # invited to a new room? it won't be in sync.room_ids, let it through anyway
+          # invited to a new room? it won't be in sync.room_ids, let it through
           {:room_invite, room_id} -> room_id
         end)
         |> Enum.reduce_while(sync_result, fn
           {:room_event, %PDU{} = pdu}, sync_result ->
-            {room_sync_result, room_id, maybe_next_batch_pdu} =
+            {room_sync_result, room_id, maybe_next_batch_order_id} =
               sync.functions.event_stream
               |> put_in(fn _room_id -> [pdu] end)
               |> perform(pdu.room_id)
 
-            case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_pdu) do
+            case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_order_id) do
               %Sync.Result{data: []} = sync_result -> {:cont, sync_result}
               %Sync.Result{data: [_ | _]} = sync_result -> {:halt, sync_result}
             end
 
           {:room_invite, room_id}, sync_result ->
             sync = put_in(sync.functions.event_stream, fn _room_id -> [] end)
-            sync = put_in(sync.last_sync_pdus_by_room_id[room_id], :initial)
-            sync = update_in(sync.room_ids, &[room_id | &1])
+            sync = update_in(sync.room_ids, &MapSet.put(&1, room_id))
 
-            {room_sync_result, room_id, maybe_next_batch_pdu} = perform(sync, room_id)
+            {room_sync_result, room_id, maybe_next_batch_order_id} = perform(sync, room_id)
 
-            case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_pdu) do
+            case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_order_id) do
               %Sync.Result{data: []} = sync_result -> {:cont, sync_result}
               %Sync.Result{data: [_ | _]} = sync_result -> {:halt, sync_result}
             end
@@ -152,25 +158,26 @@ defmodule RadioBeam.Room.Sync do
   @spec perform(t(), Room.id()) :: :no_update | JoinedRoomResult.t() | InvitedRoomResult.t()
   defp perform(%__MODULE__{} = sync, room_id) do
     with {:ok, room} <- Repo.fetch(Room, room_id) do
-      {:ok, latest_known_join_pdu} = sync.functions.latest_known_join_pdu.(room)
-      room_sync_result = Core.perform(sync, room, latest_known_join_pdu)
+      room_sync_result = Core.perform(sync, room)
 
-      maybe_next_batch_pdu =
+      maybe_next_batch_order_id =
         case room_sync_result do
           # invites from ignored users will return :no_update, and won't have a next_batch_pdu
-          :no_update -> first_last_sync_pdu_or_nil(sync.last_sync_pdus_by_room_id, room_id)
-          %JoinedRoomResult{latest_seen_pdu: %PDU{} = pdu} -> pdu
-          %InvitedRoomResult{stripped_state_events: events} -> Enum.max_by(events, & &1.depth)
+          :no_update -> use_last_sync_order_id_or_nil(sync.start, room_id)
+          %JoinedRoomResult{latest_order_id: order_id} -> order_id
+          %InvitedRoomResult{} -> Room.View.get_latest_order_id!(room_id)
         end
 
-      {room_sync_result, room_id, maybe_next_batch_pdu}
+      {room_sync_result, room_id, maybe_next_batch_order_id}
     end
   end
 
-  defp first_last_sync_pdu_or_nil(last_sync_pdus_by_room_id, room_id) do
-    case last_sync_pdus_by_room_id[room_id] do
-      %PDU{} = pdu -> pdu
-      :initial -> nil
+  defp use_last_sync_order_id_or_nil(nil, _room_id), do: nil
+
+  defp use_last_sync_order_id_or_nil(%PaginationToken{} = since, room_id) do
+    case PaginationToken.room_last_seen_order_id(since, room_id) do
+      {:ok, %TopologicalID{} = order_id} -> order_id
+      {:error, :not_found} -> nil
     end
   end
 

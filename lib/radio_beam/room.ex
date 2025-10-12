@@ -8,12 +8,12 @@ defmodule RadioBeam.Room do
 
   require Logger
 
-  alias RadioBeam.Room.Timeline
+  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Repo
-  alias RadioBeam.PDU
   alias RadioBeam.Room
+  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Events
-  alias RadioBeam.Room.EventGraph
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User
 
   @attrs ~w|id dag state redactions relationships|a
@@ -26,6 +26,8 @@ defmodule RadioBeam.Room do
 
   ### API ###
 
+  def generate_id(domain \\ RadioBeam.server_name()), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
+
   @doc """
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
   room was successfully started.
@@ -33,24 +35,12 @@ defmodule RadioBeam.Room do
   @spec create(User.t(), [Room.Core.create_opt()]) :: {:ok, id()} | {:error, any()}
   def create(room_version, %User{} = creator, opts \\ []), do: Room.Server.create(room_version, creator.id, opts)
 
-  # read models per user:
-  # - all rooms they have a m.room.member event in
-  #   - all joined rooms
-  # read models per user per room:
-  # - latest visible state (all or by type + state_key)
-  #   - latest known join event
-  # - visible member state events at a given visible event
-  #     NOTE: this can take an `at` pagination token
-  # - read visible event by ID (via timeline?)
-  # - nearest visible event to a timestamp in a direction
-  # - relationships - get all visible children for a given visible event (with
-  #   a certain level of recursion 
-  # - room timeline
-  #   - topological ordering of event history, filtered by visible to user (/messages, initial /sync)
-  #   - stream ordering of event history, filtered by visible to user (/sync)
-  #     - state delta if there are tons of msgs since `since`
-  # read models per user per device per room:
-  # - unchanged member events previously sent to the device (lazy loading members)
+  def exists?(room_id) do
+    case get(room_id) do
+      {:ok, %Room{}} -> true
+      {:error, _} -> false
+    end
+  end
 
   @doc "Returns all room IDs that `user_id` is joined to"
   @spec joined(user_id :: String.t()) :: MapSet.t(id())
@@ -214,28 +204,41 @@ defmodule RadioBeam.Room do
     end
   end
 
-  @default_cutoff :timer.hours(24)
-  def get_nearest_event(room_id, user_id, dir, timestamp, cutoff_ms \\ @default_cutoff) do
-    Repo.transaction(fn ->
-      room_id
-      |> EventGraph.get_nearest_event(dir, timestamp, cutoff_ms)
-      |> get_nearest_event(user_id)
-    end)
+  def get_nearest_event(room_id, user_id, dir, timestamp) when dir in ~w|forward backward|a do
+    room_id
+    |> Room.View.nearest_events_stream(user_id, timestamp, dir)
+    |> Enum.take(1)
+    |> case do
+      [] -> {:error, :not_found}
+      [%Event{} = event] -> {:ok, event}
+    end
   end
 
-  defp get_nearest_event({:ok, pdu}, user_id) do
-    if Timeline.pdu_visible_to_user?(pdu, user_id), do: {:ok, pdu}, else: {:error, :not_found}
+  def get_children(room_id, user_id, event_id, opts) do
+    with {:ok, child_event_stream} <- Room.View.get_child_event(room_id, user_id, event_id) do
+      rel_type = Keyword.get(opts, :rel_type)
+      event_type = Keyword.get(opts, :event_type)
+
+      child_events =
+        child_event_stream
+        |> Stream.filter(&(filter_rel_type(&1, rel_type) and filter_event_type(&1, event_type)))
+        |> apply_order(Keyword.get(opts, :order, :reverse_chronological))
+
+      # TOIMPL: support for `recurse?` option
+      {:ok, child_events, _recurse_depth = 1}
+    end
   end
 
-  defp get_nearest_event({:ok, pdu, cont}, user_id) do
-    if Timeline.pdu_visible_to_user?(pdu, user_id),
-      do: {:ok, pdu},
-      else: get_nearest_event(EventGraph.get_nearest_event(cont), user_id)
-  end
+  defp filter_rel_type(_pdu, nil), do: true
+  defp filter_rel_type(%{content: %{"m.relates_to" => %{"rel_type" => rel_type}}}, rel_type), do: true
+  defp filter_rel_type(_pdu, _rel_type), do: false
 
-  defp get_nearest_event({:error, :not_found}, _user_id), do: :none
+  defp filter_event_type(_pdu, nil), do: true
+  defp filter_event_type(%{type: event_type}, event_type), do: true
+  defp filter_event_type(_pdu, _event_type), do: false
+
+  defp apply_order(event_stream, :chronological), do: Enum.sort(event_stream, {:asc, TopologicalID})
+  defp apply_order(event_stream, :reverse_chronological), do: Enum.sort(event_stream, {:desc, TopologicalID})
 
   defp get(id), do: Repo.fetch(Repo.Tables.Room, id)
-
-  def generate_id(domain \\ RadioBeam.server_name()), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
 end

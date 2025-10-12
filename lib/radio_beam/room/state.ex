@@ -141,10 +141,14 @@ defmodule RadioBeam.Room.State do
   end
 
   def get_all_at(%__MODULE__{} = state, %PDU{} = pdu) do
-    Map.new(state.mapping, fn {{type, state_key}, _value} ->
-      {:ok, state_pdu} = fetch_at(state, type, state_key, pdu)
-      {{type, state_key}, state_pdu}
+    state.mapping
+    |> Stream.map(fn {{type, state_key}, _value} ->
+      with {:ok, state_pdu} <- fetch_at(state, type, state_key, pdu) do
+        {{type, state_key}, state_pdu}
+      end
     end)
+    |> Stream.reject(&(&1 == {:error, :not_found}))
+    |> Map.new()
   end
 
   def replace_pdu!(%__MODULE__{} = state, %PDU{event: %{state_key: :none}}), do: state

@@ -3,10 +3,7 @@ defmodule RadioBeamWeb.RelationsController do
 
   import RadioBeamWeb.Utils, only: [handle_common_error: 2]
 
-  alias RadioBeam.Room.Timeline
-  alias RadioBeam.PDU
   alias RadioBeam.Room
-  alias RadioBeam.Room.EventGraph
   alias RadioBeam.User
   alias RadioBeamWeb.Schemas.Relations, as: RelationsSchema
 
@@ -17,48 +14,24 @@ defmodule RadioBeamWeb.RelationsController do
 
   def get_children(conn, %{"event_id" => event_id, "room_id" => room_id} = params) do
     %User{} = user = conn.assigns.user
-    %{"dir" => dir, "recurse" => recurse} = _request = conn.assigns.request
+    %{"dir" => order, "recurse" => recurse?} = _request = conn.assigns.request
 
-    recurse_level =
-      if recurse, do: Application.fetch_env!(:radio_beam, :max_event_recurse), else: 1
+    opts = [
+      event_type: Map.get(params, "event_type"),
+      order: order,
+      recurse?: recurse?,
+      rel_type: Map.get(params, "rel_type")
+    ]
 
-    # TOIMPL: this endpoint can take a from/to token returned from /messages
-    # and /sync (so a PaginationToken). EventGraph.get_children does not currently
-    # support this (nor a `limit`), so just returning all children for now -
-    # need to come back to do this properly
-    with {:ok, user_latest_known_join} <- Room.get_latest_known_join(room_id, user.id),
-         {:ok, %PDU{} = pdu} <- Room.get_event(room_id, user.id, event_id, _bundle_aggregates? = false),
-         {:ok, children} <- EventGraph.get_children(pdu, recurse_level) do
-      rel_type = Map.get(params, "rel_type")
-      event_type = Map.get(params, "event_type")
+    with {:ok, child_events, recurse_depth} <- Room.get_children(room_id, user.id, event_id, opts) do
+      # TOIMPL: this endpoint can take a from/to token returned from /messages
+      # and /sync (so a PaginationToken). EventGraph.get_children does not currently
+      # support this (nor a `limit`), so just returning all children for now -
+      # need to come back to do this properly
 
-      children =
-        if dir == :forward do
-          children |> filter(user.id, rel_type, event_type, user_latest_known_join) |> Enum.reverse()
-        else
-          children |> filter(user.id, rel_type, event_type, user_latest_known_join) |> Enum.to_list()
-        end
-
-      json(conn, %{chunk: children, recursion_depth: recurse_level})
+      json(conn, %{chunk: child_events, recursion_depth: recurse_depth})
     else
       {:error, _error} -> handle_common_error(conn, :not_found)
     end
   end
-
-  defp filter(children, user_id, rel_type, event_type, user_latest_known_join) do
-    # we can't use Timeline.filter_authz here because it assumes we're
-    # filtering against a contiguous slice of the room history, (and thus
-    # certain assumptions used to update state/membership don't hold up).
-    children
-    |> Stream.filter(&(filter_rel_type(&1, rel_type) and filter_event_type(&1, event_type)))
-    |> Timeline.reject_unauthorized_child_pdus(user_id, user_latest_known_join)
-  end
-
-  defp filter_rel_type(_pdu, nil), do: true
-  defp filter_rel_type(%PDU{content: %{"m.relates_to" => %{"rel_type" => rel_type}}}, rel_type), do: true
-  defp filter_rel_type(_pdu, _rel_type), do: false
-
-  defp filter_event_type(_pdu, nil), do: true
-  defp filter_event_type(%PDU{type: event_type}, event_type), do: true
-  defp filter_event_type(_pdu, _event_type), do: false
 end

@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.EventGraph
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User.EventFilter
   alias RadioBeam.Room.Timeline.Chunk
 

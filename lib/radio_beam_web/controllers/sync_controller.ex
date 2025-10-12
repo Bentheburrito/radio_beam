@@ -5,7 +5,7 @@ defmodule RadioBeamWeb.SyncController do
 
   require Logger
 
-  alias RadioBeam.Room.EventGraph.PaginationToken
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Sync
   alias RadioBeam.User
@@ -46,17 +46,15 @@ defmodule RadioBeamWeb.SyncController do
         :error -> if dir == :forward, do: :root, else: :tip
       end
 
-    to = Map.get(request, "to", :limit)
-
     opts =
       request
       |> Map.take(["filter", "limit"])
-      |> Enum.reduce([], fn
+      |> Enum.reduce([to: :limit], fn
         {"filter", filter}, opts -> Keyword.put(opts, :filter, filter)
         {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
       end)
 
-    case Timeline.get_messages(room_id, user.id, device.id, from_and_dir, to, opts) do
+    case Timeline.get_messages(room_id, user.id, device.id, from_and_dir, opts) do
       {:ok, response} -> json(conn, response)
       {:error, error} -> handle_common_error(conn, error)
     end

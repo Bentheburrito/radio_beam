@@ -1,60 +1,45 @@
 defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   @moduledoc false
 
-  alias RadioBeam.User
   alias RadioBeam.User.EventFilter
   alias RadioBeam.Room
+  alias RadioBeam.Room.EventRelationships
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Timeline.Event
 
-  defstruct ~w|room_id room_version timeline_events limited? maybe_prev_batch latest_seen_event state_events sender_ids filter current_membership account_data|a
+  defstruct ~w|room_id room_version timeline_events maybe_next_order_id latest_order_id state_events sender_ids filter current_membership account_data|a
 
-  @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [PDU.t()], state_events: [PDU.event_id()]}
-  @type maybe_prev_batch() :: :no_earlier_events | TopologicalID.t()
+  @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [Event.t()], state_events: [Room.event_id()]}
+  @type maybe_next_order_id() :: :no_more_events | TopologicalID.t()
+  @typep user_membership() :: String.t()
 
-  # TODO: reduce args by taking `opts`
   @spec new(
+          Room.Sync.t(),
           Room.t(),
-          User.t(),
-          [PDU.t()],
-          boolean(),
-          maybe_prev_batch(),
+          Enumerable.t(Event.t()),
+          maybe_next_order_id(),
           [PDU.t()] | :initial,
-          ([PDU.event_id()] -> [PDU.t()]),
-          boolean(),
-          String.t(),
-          %{Room.id() => User.id()},
-          EventFilter.t()
+          user_membership()
         ) ::
           t() | :no_update
-  def new(
-        room,
-        user,
-        timeline_events,
-        limited?,
-        maybe_prev_batch,
-        maybe_room_state_event_ids_at_last_sync,
-        get_events_for_user,
-        full_state?,
-        membership,
-        known_memberships,
-        filter
-      ) do
-    sender_ids = if filter.state.memberships == :all, do: MapSet.new(), else: MapSet.new(timeline_events, & &1.sender)
-    sender_ids = MapSet.put(sender_ids, user.id)
+  def new(sync, room, timeline_events, maybe_next_order_id, maybe_last_sync_room_state_pdus, membership) do
+    sender_ids =
+      if sync.filter.state.memberships == :all, do: MapSet.new(), else: MapSet.new(timeline_events, & &1.sender)
+
+    sender_ids = MapSet.put(sender_ids, sync.user.id)
 
     state_events =
-      if EventFilter.allow_state_in_room?(filter, room.id) do
+      if EventFilter.allow_state_in_room?(sync.filter, room.id) do
         determine_state_events(
           room,
           timeline_events,
-          maybe_room_state_event_ids_at_last_sync,
-          get_events_for_user,
-          full_state?,
-          known_memberships,
+          maybe_last_sync_room_state_pdus,
+          sync.functions.get_events_for_user,
+          sync.full_state?,
+          sync.known_memberships,
           sender_ids,
-          filter
+          sync.filter
         )
       else
         []
@@ -63,12 +48,12 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     if Enum.empty?(timeline_events) and Enum.empty?(state_events) do
       :no_update
     else
-      latest_seen_event = hd(timeline_events)
+      latest_order_id = hd(timeline_events).order_id
 
       timeline_events =
-        if EventFilter.allow_timeline_in_room?(filter, room.id) do
+        if EventFilter.allow_timeline_in_room?(sync.filter, room.id) do
           timeline_events
-          |> bundle_aggregations(user.id)
+          |> bundle_aggregations(sync.user.id)
           |> Enum.sort_by(& &1.order_id)
         else
           []
@@ -78,14 +63,13 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         room_id: room.id,
         room_version: room.version,
         timeline_events: timeline_events,
-        limited?: limited?,
-        maybe_prev_batch: maybe_prev_batch,
-        latest_seen_event: latest_seen_event,
+        maybe_next_order_id: maybe_next_order_id,
+        latest_order_id: latest_order_id,
         state_events: state_events,
         sender_ids: sender_ids,
-        filter: filter,
+        filter: sync.filter,
         current_membership: membership,
-        account_data: Map.get(user.account_data, room.id, %{})
+        account_data: Map.get(sync.user.account_data, room.id, %{})
       }
     end
   end
@@ -93,21 +77,22 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   defp determine_state_events(
          room,
          timeline_events,
-         maybe_room_state_event_ids_at_last_sync,
+         maybe_last_sync_room_state_pdus,
          get_events_for_user,
          full_state?,
          known_memberships,
          sender_ids,
          filter
        ) do
-    {room_state_event_ids_at_last_sync, desired_state_events} =
-      if maybe_room_state_event_ids_at_last_sync == :initial or full_state?,
+    {room_state_pdus_at_last_sync, desired_state_events} =
+      if maybe_last_sync_room_state_pdus == :initial or full_state?,
         do: {[], :at_timeline_start},
-        else: {maybe_room_state_event_ids_at_last_sync, :delta}
+        else: {maybe_last_sync_room_state_pdus, :delta}
 
-    # we will never be in a situation where maybe_room_state_event_ids_at_last_sync = :initial
-    # AND List.last(timeline_events) = nil, because an init sync will always return some
-    # events, and an incremental sync will always have a "last known state" of the last sync
+    # we will never be in a situation where maybe_last_sync_room_state_pdus =
+    # :initial AND List.last(timeline_events) = nil, because an init sync will
+    # always return some events, and an incremental sync will always have a
+    # "last known state" of the last sync
     state_event_ids_at_tl_start =
       case List.last(timeline_events) do
         %Event{} = oldest_tl_event ->
@@ -118,11 +103,11 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
           |> Enum.map(fn {_k, pdu} -> pdu.event.id end)
 
         nil ->
-          room_state_event_ids_at_last_sync
+          Enum.map(room_state_pdus_at_last_sync, & &1.event.id)
       end
 
     state_event_ids =
-      determine_state_event_ids(room_state_event_ids_at_last_sync, state_event_ids_at_tl_start, desired_state_events)
+      determine_state_event_ids(room_state_pdus_at_last_sync, state_event_ids_at_tl_start, desired_state_events)
 
     known_memberships = Map.get(known_memberships, room.id, MapSet.new())
 
@@ -143,20 +128,22 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     alias RadioBeam.Room.Sync.JoinedRoomResult
 
     def encode(%JoinedRoomResult{} = room_result, opts) do
-      format = String.to_existing_atom(room_result.filter.format)
+      # format = String.to_existing_atom(room_result.filter.format)
 
-      to_event = fn pdu ->
-        pdu
-        |> RadioBeam.PDU.to_event(room_result.room_version, :strings, format)
-        |> RadioBeam.User.EventFilter.take_fields(room_result.filter.fields)
+      to_event = fn event ->
+        event
+        |> Event.to_map(room_result.room_version)
+        |> EventFilter.take_fields(room_result.filter.fields)
       end
 
-      timeline = %{events: Enum.map(room_result.timeline_events, to_event), limited: room_result.limited?}
+      limited? = room_result.maybe_next_order_id != :no_more_events
+
+      timeline = %{events: Enum.map(room_result.timeline_events, to_event), limited: limited?}
 
       timeline =
-        case room_result.maybe_prev_batch do
+        case room_result.maybe_next_order_id do
           :no_earlier_events -> timeline
-          %TopologicalID{} = prev_batch -> Map.put(timeline, :prev_batch, prev_batch)
+          %TopologicalID{} = next_order_id -> Map.put(timeline, :prev_batch, next_order_id)
         end
 
       Jason.Encode.map(
@@ -173,17 +160,23 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   # since /sync returns the latest events of a timeline, and children define
   # relationships with their parents, we can be sure any aggregations we need
   # to bundle are already in the timeline.
-  defp bundle_aggregations(pdus, user_id) do
-    event_ids = MapSet.new(pdus, & &1.event_id)
+  defp bundle_aggregations(events, user_id) do
+    event_ids = MapSet.new(events, & &1.id)
 
-    {child_pdus, pdus} = Enum.split_with(pdus, &(&1.parent_id in event_ids and PDU.Relationships.aggregable?(&1)))
-    child_pdus_by_parent_id = Enum.group_by(child_pdus, & &1.parent_id)
+    {child_events, events} =
+      Enum.split_with(events, &(parent_id(&1) in event_ids and EventRelationships.aggregable?(&1)))
 
-    Enum.map(pdus, fn %PDU{} = pdu ->
-      case Map.fetch(child_pdus_by_parent_id, pdu.event_id) do
-        {:ok, child_pdus} -> PDU.Relationships.get_aggregations(pdu, user_id, child_pdus)
-        :error -> pdu
+    child_events_by_parent_id =
+      Enum.group_by(child_events, &(parent_id(&1) in event_ids and EventRelationships.aggregable?(&1)))
+
+    Enum.map(events, fn %Event{} = event ->
+      case Map.fetch(child_events_by_parent_id, event.id) do
+        {:ok, child_events} -> EventRelationships.get_aggregations(event, user_id, child_events)
+        :error -> event
       end
     end)
   end
+
+  defp parent_id(%Event{content: %{"m.relates_to" => %{"event_id" => parent_id}}}), do: parent_id
+  defp parent_id(_event_with_no_parent), do: nil
 end

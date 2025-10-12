@@ -27,7 +27,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
       {:ok, _} = RadioBeam.Room.join(room_id, user.id)
       {someone, _device} = Fixtures.create_and_put_device_keys(someone, device)
 
-      since_encoded = RadioBeam.Room.EventGraph.PaginationToken.encode(since)
+      since_encoded = RadioBeam.Room.Events.PaginationToken.encode(since)
       conn = get(conn, ~p"/_matrix/client/v3/keys/changes?from=#{since_encoded}", %{})
 
       someone_id = someone.id

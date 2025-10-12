@@ -1,8 +1,9 @@
 defmodule RadioBeam.Room.Core.Relationships do
   @moduledoc """
   Metadata about event relationships in the room, **only as it pertains to
-  writing new events**. For reading event relations (bundled aggregations, etc.)
-  see `RadioBeam.Room.PDU.Relationships`.
+  writing new events**. For reading event relations (bundled aggregations,
+  etc.) see `RadioBeam.Room.EventRelationships` and
+  `RadioBeam.Room.View.Core.RelatedEvents`.
   """
 
   # children_by_event_id: %{event_id => %{event_type => [event_id_or_type_specific_data]}}
