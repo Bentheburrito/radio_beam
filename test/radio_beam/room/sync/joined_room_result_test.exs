@@ -25,16 +25,17 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
       device: device,
       room: room
     } do
+      timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
+
       timeline_events =
-        Room.View.Core.Timeline
-        |> Fixtures.make_room_view(room)
+        timeline
         |> Room.View.Core.Timeline.topological_stream(user.id, :root, &Room.DAG.fetch!(room.dag, &1))
         |> Enum.to_list()
 
-      room_sync = Room.Sync.init(user, device.id, get_room_ids_to_sync: fn _ -> [room.id] end)
+      get_events_for_user = get_events_for_user_fxn(room, timeline, user.id)
 
       %JoinedRoomResult{} =
-        joined_room_result = JoinedRoomResult.new(room_sync, room, timeline_events, :no_more_events, :initial, "join")
+        joined_room_result = JoinedRoomResult.new(room, user, timeline_events, get_events_for_user, "join")
 
       assert joined_room_result.timeline_events == Enum.reverse(timeline_events)
       assert %{type: "m.room.create"} = List.first(joined_room_result.timeline_events)
@@ -44,10 +45,15 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
     end
 
     test "returns :no_update when given an empty timeline", %{user: user, device: device, room: room} do
-      room_sync = Room.Sync.init(user, device.id, get_room_ids_to_sync: fn _ -> [room.id] end)
+      timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
+
+      get_events_for_user = get_events_for_user_fxn(room, timeline, user.id)
+
       state_pdus = room.state |> Room.State.get_all() |> Map.values()
 
-      assert :no_update = JoinedRoomResult.new(room_sync, room, [], :no_more_events, state_pdus, "join")
+      opts = [maybe_last_sync_room_state_pdus: state_pdus]
+
+      assert :no_update = JoinedRoomResult.new(room, user, [], get_events_for_user, "join", opts)
     end
   end
 
@@ -58,24 +64,17 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
       room = Fixtures.room("11", user.id)
       Fixtures.send_room_msg(room, user.id, "helloooooooo")
 
+      timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
+
       timeline_events =
-        Room.View.Core.Timeline
-        |> Fixtures.make_room_view(room)
+        timeline
         |> Room.View.Core.Timeline.topological_stream(user.id, :root, &Room.DAG.fetch!(room.dag, &1))
         |> Enum.to_list()
 
-      room_sync = Room.Sync.init(user, device.id, get_room_ids_to_sync: fn _ -> [room.id] end)
+      get_events_for_user = get_events_for_user_fxn(room, timeline, user.id)
 
       %JoinedRoomResult{} =
-        joined_room_result =
-        JoinedRoomResult.new(
-          room_sync,
-          room,
-          timeline_events,
-          :no_more_events,
-          :initial,
-          "join"
-        )
+        joined_room_result = JoinedRoomResult.new(room, user, timeline_events, get_events_for_user, "join")
 
       assert {:ok, json} = Jason.encode(joined_room_result)
       assert json =~ ~s|"state":{"events":[]|
@@ -84,6 +83,12 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
       assert json =~ ~s|"type":"m.room.history_visibility"|
       assert json =~ ~s|"type":"m.room.member"|
       assert json =~ ~s|"type":"m.room.message"|
+    end
+  end
+
+  defp get_events_for_user_fxn(%{id: room_id} = room, timeline, user_id) do
+    fn ^room_id, event_ids ->
+      Room.View.Core.Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))
     end
   end
 end

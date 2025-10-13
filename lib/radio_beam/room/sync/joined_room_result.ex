@@ -11,35 +11,42 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   defstruct ~w|room_id room_version timeline_events maybe_next_order_id latest_order_id state_events sender_ids filter current_membership account_data|a
 
   @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [Event.t()], state_events: [Room.event_id()]}
-  @type maybe_next_order_id() :: :no_more_events | TopologicalID.t()
-  @typep user_membership() :: String.t()
 
-  @spec new(
-          Room.Sync.t(),
-          Room.t(),
-          Enumerable.t(Event.t()),
-          maybe_next_order_id(),
-          [PDU.t()] | :initial,
-          user_membership()
-        ) ::
+  @type get_events_for_user() :: (Room.id(), [Room.event_id()] -> [Event.t()])
+  @type user_membership() :: String.t()
+
+  @type opt() ::
+          {:next_order_id, TopologicalID.t() | :no_more_events}
+          | {:maybe_last_sync_room_state_pdus, [PDU.t()] | :initial}
+          | {:full_state?, boolean()}
+          | {:known_memberships, %{Room.id() => MapSet.t(User.id())}}
+          | {:filter, EventFilter.t()}
+  @type opts() :: [opt()]
+
+  @spec new(Room.t(), User.t(), Enumerable.t(Event.t()), get_events_for_user(), user_membership(), opts()) ::
           t() | :no_update
-  def new(sync, room, timeline_events, maybe_next_order_id, maybe_last_sync_room_state_pdus, membership) do
-    sender_ids =
-      if sync.filter.state.memberships == :all, do: MapSet.new(), else: MapSet.new(timeline_events, & &1.sender)
+  def new(room, user, timeline_events, get_events_for_user, membership, opts) do
+    filter = Keyword.get_lazy(opts, :filter, fn -> EventFilter.new(%{}) end)
+    maybe_last_sync_room_state_pdus = Keyword.get(opts, :maybe_last_sync_room_state_pdus, :initial)
+    full_state? = Keyword.get(opts, :full_state?, false)
+    known_memberships = Keyword.get(opts, :known_memberships, %{})
 
-    sender_ids = MapSet.put(sender_ids, sync.user.id)
+    sender_ids =
+      if filter.state.memberships == :all, do: MapSet.new(), else: MapSet.new(timeline_events, & &1.sender)
+
+    sender_ids = MapSet.put(sender_ids, user.id)
 
     state_events =
-      if EventFilter.allow_state_in_room?(sync.filter, room.id) do
+      if EventFilter.allow_state_in_room?(filter, room.id) do
         determine_state_events(
           room,
           timeline_events,
           maybe_last_sync_room_state_pdus,
-          sync.functions.get_events_for_user,
-          sync.full_state?,
-          sync.known_memberships,
+          get_events_for_user,
+          full_state?,
+          known_memberships,
           sender_ids,
-          sync.filter
+          filter
         )
       else
         []
@@ -51,9 +58,9 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
       latest_order_id = hd(timeline_events).order_id
 
       timeline_events =
-        if EventFilter.allow_timeline_in_room?(sync.filter, room.id) do
+        if EventFilter.allow_timeline_in_room?(filter, room.id) do
           timeline_events
-          |> bundle_aggregations(sync.user.id)
+          |> bundle_aggregations(user.id)
           |> Enum.sort_by(& &1.order_id)
         else
           []
@@ -63,13 +70,13 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         room_id: room.id,
         room_version: room.version,
         timeline_events: timeline_events,
-        maybe_next_order_id: maybe_next_order_id,
+        maybe_next_order_id: Keyword.get(opts, :next_order_id, :no_more_events),
         latest_order_id: latest_order_id,
         state_events: state_events,
         sender_ids: sender_ids,
-        filter: sync.filter,
+        filter: filter,
         current_membership: membership,
-        account_data: Map.get(sync.user.account_data, room.id, %{})
+        account_data: Map.get(user.account_data, room.id, %{})
       }
     end
   end

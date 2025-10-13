@@ -83,6 +83,14 @@ defmodule RadioBeam.Room.Sync.Core do
         last_event.order_id
       end
 
-    JoinedRoomResult.new(sync, room, timeline_events, maybe_next_order_id, maybe_last_sync_room_state_pdus, membership)
+    opts = [
+      next_order_id: maybe_next_order_id,
+      maybe_last_sync_room_state_pdus: maybe_last_sync_room_state_pdus,
+      full_state?: sync.full_state?,
+      known_memberships: sync.known_memberships,
+      filter: sync.filter
+    ]
+
+    JoinedRoomResult.new(room, sync.user, timeline_events, sync.functions.get_events_for_user, membership, opts)
   end
 end

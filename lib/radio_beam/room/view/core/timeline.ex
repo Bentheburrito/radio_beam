@@ -107,7 +107,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
         ) ::
           {Enumerable.t(Room.event_id()), TopologicalID.t(), :more | :done}
   def topological_stream(%__MODULE__{} = timeline, user_id, {%TopologicalID{} = from, direction}, fetch_pdu!) do
-    latest_known_join_topo_id = get_in(timeline.member_metadata[user_id][:latest_known_join_topo_id]) || :never_joined
+    latest_known_join_topo_id = timeline.member_metadata[user_id][:latest_known_join_topo_id] || :never_joined
 
     timeline.topological_id_ord_set
     |> TopologicalID.OrderedSet.stream_from(from, direction)
@@ -157,7 +157,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   def get_visible_events(%__MODULE__{} = timeline, event_ids, user_id, fetch_pdu!) do
-    latest_known_join_topo_id = get_in(timeline.member_metadata[user_id][:latest_known_join_topo_id]) || :never_joined
+    latest_known_join_topo_id = timeline.member_metadata[user_id][:latest_known_join_topo_id] || :never_joined
 
     event_visible? =
       fn {_event_id, metadata} ->
@@ -186,7 +186,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   def stream_event_ids_closest_to_ts(%__MODULE__{} = timeline, user_id, timestamp, direction) do
-    latest_known_join_topo_id = get_in(timeline.member_metadata[user_id][:latest_known_join_topo_id]) || :never_joined
+    latest_known_join_topo_id = timeline.member_metadata[user_id][:latest_known_join_topo_id] || :never_joined
 
     event_visible? =
       fn {_event_id, metadata} ->
