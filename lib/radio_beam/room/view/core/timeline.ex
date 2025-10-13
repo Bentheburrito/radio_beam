@@ -107,7 +107,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
         ) ::
           {Enumerable.t(Room.event_id()), TopologicalID.t(), :more | :done}
   def topological_stream(%__MODULE__{} = timeline, user_id, {%TopologicalID{} = from, direction}, fetch_pdu!) do
-    latest_known_join_topo_id = timeline.member_metadata[user_id][:latest_known_join_topo_id] || :never_joined
+    latest_known_join_topo_id = get_latest_known_join_topo_id(timeline, user_id)
 
     timeline.topological_id_ord_set
     |> TopologicalID.OrderedSet.stream_from(from, direction)
@@ -136,6 +136,13 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   def topological_stream(timeline, user_id, :tip, fetch_pdu!),
     do: topological_stream(timeline, user_id, {timeline.topological_id_ord_set.last_id, :backward}, fetch_pdu!)
 
+  defp get_latest_known_join_topo_id(timeline, user_id) do
+    case timeline.member_metadata do
+      %{^user_id => %{latest_known_join_topo_id: %TopologicalID{} = topo_id}} -> topo_id
+      _ -> :never_joined
+    end
+  end
+
   defp visible_to_user?(timeline, user_id, latest_known_join_topo_id, topological_id) do
     event_id = Map.fetch!(timeline.topological_id_to_event_id, topological_id)
     event_metadata = Map.fetch!(timeline.event_metadata, event_id)
@@ -148,7 +155,11 @@ defmodule RadioBeam.Room.View.Core.Timeline do
         %VisibilityGroup{history_visibility: visibility_at_event} =
           event_visibility_group = Map.fetch!(timeline.visibility_groups, event_visibility_group_id)
 
-        user_joined_after_event? = TopologicalID.compare(latest_known_join_topo_id, topological_id) == :gt
+        user_joined_after_event? =
+          case latest_known_join_topo_id do
+            :never_joined -> false
+            latest_known_join_topo_id -> TopologicalID.compare(latest_known_join_topo_id, topological_id) == :gt
+          end
 
         user_id in event_visibility_group.joined or
           (visibility_at_event == "shared" and user_joined_after_event?) or
@@ -157,7 +168,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   def get_visible_events(%__MODULE__{} = timeline, event_ids, user_id, fetch_pdu!) do
-    latest_known_join_topo_id = timeline.member_metadata[user_id][:latest_known_join_topo_id] || :never_joined
+    latest_known_join_topo_id = get_latest_known_join_topo_id(timeline, user_id)
 
     event_visible? =
       fn {_event_id, metadata} ->

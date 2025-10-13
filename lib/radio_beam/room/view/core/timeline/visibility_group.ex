@@ -1,5 +1,5 @@
 defmodule RadioBeam.Room.View.Core.Timeline.VisibilityGroup do
-  defstruct ~w|joined invited history_visibility|a
+  defstruct joined: MapSet.new(), invited: MapSet.new(), history_visibility: "shared"
 
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
@@ -16,8 +16,8 @@ defmodule RadioBeam.Room.View.Core.Timeline.VisibilityGroup do
     |> Enum.reduce(init_group, fn
       {{"m.room.member", user_id}, %PDU{event: %{state_key: user_id}} = pdu}, %__MODULE__{} = group ->
         case pdu.event.content["membership"] do
-          "join" -> put_in(group.joined, user_id)
-          "invite" -> put_in(group.invited, user_id)
+          "join" -> update_in(group.joined, &MapSet.put(&1, user_id))
+          "invite" -> update_in(group.invited, &MapSet.put(&1, user_id))
           _ -> group
         end
 
