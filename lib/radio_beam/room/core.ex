@@ -30,7 +30,7 @@ defmodule RadioBeam.Room.Core do
 
   ### CREATE / WRITE ###
 
-  @spec new(String.t(), User.id(), [create_opt()]) :: Room.t() | {:error, :unauthorized}
+  @spec new(String.t(), User.id(), [create_opt()]) :: {Room.t(), :queue.queue(PDU.t())} | {:error, :unauthorized}
   def new(version, creator_id, deps, opts \\ []) do
     state = State.new!()
 
@@ -50,11 +50,13 @@ defmodule RadioBeam.Room.Core do
         relationships: Relationships.new!()
       }
 
+      init_acc = {room, :queue.from_list([create_pdu])}
+
       create_event
       |> Events.initial_state_stream(opts)
-      |> Enum.reduce_while(room, fn event_attrs, %Room{} = room ->
+      |> Enum.reduce_while(init_acc, fn event_attrs, {%Room{} = room, pdu_queue} ->
         case send(room, event_attrs, deps) do
-          {:sent, %Room{} = room, _pdu} -> {:cont, room}
+          {:sent, %Room{} = room, pdu} -> {:cont, {room, :queue.in(pdu, pdu_queue)}}
           {:error, _error} = error -> {:halt, error}
         end
       end)

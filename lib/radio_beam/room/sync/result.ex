@@ -1,13 +1,12 @@
 defmodule RadioBeam.Room.Sync.Result do
   alias RadioBeam.Room.Sync.Core.InvitedRoomResult
   alias RadioBeam.Room.Sync.Core.JoinedRoomResult
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   defstruct data: [], next_batch_map: %{}
 
   @type t() :: %__MODULE__{
           data: [JoinedRoomResult.t() | InvitedRoomResult.t()],
-          next_batch_map: %{Room.id() => TopologicalID.t()}
+          next_batch_map: %{Room.id() => Room.event_id()}
         }
 
   @spec new() :: t()
@@ -17,22 +16,22 @@ defmodule RadioBeam.Room.Sync.Result do
           t(),
           :no_update | JoinedRoomResult.t() | InvitedRoomResult.t(),
           Room.id(),
-          maybe_last_order_id :: TopologicalID.t() | nil
+          maybe_last_event_id :: Room.event_id() | nil
         ) :: t()
-  def put_result(sync_result, :no_update, room_id, maybe_last_order_id),
-    do: update_in(sync_result.next_batch_map, &put_next_batch_pdu(&1, room_id, maybe_last_order_id))
+  def put_result(sync_result, :no_update, room_id, maybe_last_event_id),
+    do: update_in(sync_result.next_batch_map, &put_next_batch_pdu(&1, room_id, maybe_last_event_id))
 
-  def put_result(sync_result, room_sync_result, room_id, maybe_last_order_id) do
+  def put_result(sync_result, room_sync_result, room_id, maybe_last_event_id) do
     struct!(sync_result,
       data: [room_sync_result | sync_result.data],
-      next_batch_map: put_next_batch_pdu(sync_result.next_batch_map, room_id, maybe_last_order_id)
+      next_batch_map: put_next_batch_pdu(sync_result.next_batch_map, room_id, maybe_last_event_id)
     )
   end
 
   defp put_next_batch_pdu(next_batch_map, _room_id, nil), do: next_batch_map
 
-  defp put_next_batch_pdu(next_batch_map, room_id, %TopologicalID{} = last_order_id),
-    do: Map.put(next_batch_map, room_id, last_order_id)
+  defp put_next_batch_pdu(next_batch_map, room_id, last_event_id),
+    do: Map.put(next_batch_map, room_id, last_event_id)
 
   defimpl Jason.Encoder do
     alias RadioBeam.Room.Sync

@@ -17,4 +17,8 @@ defmodule RadioBeam.Room.Server.Supervisor do
   def start_room(%RadioBeam.Room{} = room) do
     DynamicSupervisor.start_child(__MODULE__, {RadioBeam.Room.Server, room})
   end
+
+  def start_room(%RadioBeam.Room{} = room, pdu_queue) do
+    DynamicSupervisor.start_child(__MODULE__, {RadioBeam.Room.Server, {room, pdu_queue}})
+  end
 end

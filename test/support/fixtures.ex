@@ -20,7 +20,8 @@ defmodule Fixtures do
     do: server_name |> Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate() |> to_string()
 
   def room(version \\ "11", creator_id \\ user_id(), deps \\ default_room_deps(), opts \\ []) do
-    Room.Core.new(version, creator_id, deps, opts)
+    {room, _pdus} = Room.Core.new(version, creator_id, deps, opts)
+    room
   end
 
   defp default_room_deps do
@@ -34,7 +35,7 @@ defmodule Fixtures do
   end
 
   def send_room_msg(room, sender_id, msg, deps \\ default_room_deps()) do
-    event_attrs = Events.message(room.id, sender_id, "m.room.message", msg)
+    event_attrs = Events.message(room.id, sender_id, "m.room.message", %{"msgtype" => "m.text", "body" => msg})
     Room.Core.send(room, event_attrs, deps)
   end
 

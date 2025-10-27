@@ -32,8 +32,11 @@ defmodule RadioBeam.Room do
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
   room was successfully started.
   """
-  @spec create(User.t(), [Room.Core.create_opt()]) :: {:ok, id()} | {:error, any()}
-  def create(room_version, %User{} = creator, opts \\ []), do: Room.Server.create(room_version, creator.id, opts)
+  @spec create(User.t(), [Room.Core.create_opt() | {:version, String.t()}]) :: {:ok, id()} | {:error, any()}
+  def create(%User{} = creator, opts \\ []) do
+    room_version = Keyword.get(opts, :version, RadioBeam.default_room_version())
+    Room.Server.create(room_version, creator.id, opts)
+  end
 
   def exists?(room_id) do
     case get(room_id) do
@@ -53,7 +56,10 @@ defmodule RadioBeam.Room do
   """
   @spec all_where_has_membership(user_id :: String.t()) :: MapSet.t(id())
   def all_where_has_membership(user_id) do
-    with {:ok, %{all: all}} <- Room.View.all_participating(user_id), do: all
+    case Room.View.all_participating(user_id) do
+      {:ok, %{all: all}} -> all
+      _ -> MapSet.new()
+    end
   end
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
@@ -113,6 +119,12 @@ defmodule RadioBeam.Room do
           {:ok, event_id :: String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
   def send(room_id, user_id, type, content) do
     Room.Server.send(room_id, Events.message(room_id, user_id, type, content))
+  end
+
+  @spec send_text_message(room_id :: String.t(), sender_id :: String.t(), message :: String.t()) ::
+          {:ok, event_id :: String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
+  def send_text_message(room_id, sender_id, message) do
+    Room.Server.send(room_id, Events.text_message(room_id, sender_id, message))
   end
 
   def get_event(room_id, user_id, event_id, _bundle_aggregates? \\ true) do
@@ -188,7 +200,8 @@ defmodule RadioBeam.Room do
   def get_state(room_id, user_id, type, state_key) do
     with {:ok, room} <- get(room_id),
          {:ok, pdu} <- Room.State.fetch(room.state, type, state_key),
-         [event] <- Room.View.get_events(room_id, user_id, [pdu.event.id]) do
+         event_stream <- Room.View.get_events(room_id, user_id, [pdu.event.id]),
+         [event] <- Enum.take(event_stream, 1) do
       {:ok, event}
     else
       _ -> {:error, :unauthorized}

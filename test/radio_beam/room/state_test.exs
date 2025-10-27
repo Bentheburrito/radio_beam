@@ -121,16 +121,22 @@ defmodule RadioBeam.Room.StateTest do
         |> Fixtures.authz_event([first_membership_pdu.event.id])
         |> PDU.new!([message_pdu.event.id], 2)
 
+      another_message_pdu =
+        Fixtures.authz_message_event(room_id, user_id, [second_membership_pdu.event.id], "anyone there?")
+        |> PDU.new!([second_membership_pdu.event.id], 3)
+
       %State{} =
         state =
         State.new!()
         |> State.handle_pdu(first_membership_pdu)
         |> State.handle_pdu(message_pdu)
         |> State.handle_pdu(second_membership_pdu)
+        |> State.handle_pdu(another_message_pdu)
 
       assert {:ok, ^first_membership_pdu} = State.fetch_at(state, "m.room.member", user_id, first_membership_pdu)
       assert {:ok, ^first_membership_pdu} = State.fetch_at(state, "m.room.member", user_id, message_pdu)
       assert {:ok, ^second_membership_pdu} = State.fetch_at(state, "m.room.member", user_id, second_membership_pdu)
+      assert {:ok, ^second_membership_pdu} = State.fetch_at(state, "m.room.member", user_id, another_message_pdu)
     end
   end
 

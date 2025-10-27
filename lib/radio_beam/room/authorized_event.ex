@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.AuthorizedEvent do
   A validated and authorized room message event.
   """
 
-  @attrs ~w|auth_events content id origin_server_ts room_id sender state_key type unsigned|a
+  @attrs ~w|auth_events content id origin_server_ts room_id sender state_key type unsigned prev_state_content|a
   @enforce_keys @attrs
   defstruct @attrs
   @type t() :: %__MODULE__{}
@@ -18,7 +18,8 @@ defmodule RadioBeam.Room.AuthorizedEvent do
       sender: Map.fetch!(event_attrs, "sender"),
       state_key: Map.get(event_attrs, "state_key", :none),
       type: Map.fetch!(event_attrs, "type"),
-      unsigned: Map.get(event_attrs, "unsigned", %{})
+      unsigned: Map.get(event_attrs, "unsigned", %{}),
+      prev_state_content: Map.get(event_attrs, "prev_state_content", :none)
     )
   end
 

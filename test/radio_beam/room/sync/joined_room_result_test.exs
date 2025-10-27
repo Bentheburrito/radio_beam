@@ -14,8 +14,12 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
   describe "new/11" do
     setup do
       user = Fixtures.user()
-      room = Fixtures.room("11", user.id)
-      Fixtures.send_room_msg(room, user.id, "hellloooo")
+
+      {:sent, room, _pdu} =
+        "11"
+        |> Fixtures.room(user.id)
+        |> Fixtures.send_room_msg(user.id, "hellloooo")
+
       {user, device} = Fixtures.device(user)
       %{user: user, device: device, room: room}
     end
@@ -29,7 +33,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
 
       timeline_events =
         timeline
-        |> Room.View.Core.Timeline.topological_stream(user.id, :root, &Room.DAG.fetch!(room.dag, &1))
+        |> Room.View.Core.Timeline.topological_stream(user.id, :tip, &Room.DAG.fetch!(room.dag, &1))
         |> Enum.to_list()
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, user.id)
@@ -41,7 +45,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
       assert %{type: "m.room.create"} = List.first(joined_room_result.timeline_events)
       assert %{type: "m.room.message"} = List.last(joined_room_result.timeline_events)
       assert 0 = joined_room_result.state_events |> Enum.to_list() |> length()
-      assert :no_earlier_events = joined_room_result.maybe_next_order_id
+      assert :no_more_events = joined_room_result.maybe_next_order_id
     end
 
     test "returns :no_update when given an empty timeline", %{user: user, device: device, room: room} do
@@ -61,14 +65,13 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
     test "encodes an JoinedRoomResult as expected by the C-S spec" do
       user = Fixtures.user()
       {user, device} = Fixtures.device(user)
-      room = Fixtures.room("11", user.id)
-      Fixtures.send_room_msg(room, user.id, "helloooooooo")
+      {:sent, room, _pdu} = "11" |> Fixtures.room(user.id) |> Fixtures.send_room_msg(user.id, "helloooooooo")
 
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
 
       timeline_events =
         timeline
-        |> Room.View.Core.Timeline.topological_stream(user.id, :root, &Room.DAG.fetch!(room.dag, &1))
+        |> Room.View.Core.Timeline.topological_stream(user.id, :tip, &Room.DAG.fetch!(room.dag, &1))
         |> Enum.to_list()
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, user.id)

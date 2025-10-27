@@ -11,7 +11,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Timeline.VisibilityGroup
 
-  @attrs ~w|topological_id_to_event_id topological_id_ord_set event_metadata member_metadata visibility_groups timestamp_to_event_id_index|a
+  @attrs ~w|topological_id_to_event_id topological_id_ord_set event_metadata member_metadata visibility_groups visibility_exceptions timestamp_to_event_id_index|a
   @enforce_keys @attrs
   defstruct @attrs
   @typep t() :: %__MODULE__{}
@@ -25,6 +25,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
       event_metadata: %{},
       member_metadata: %{},
       visibility_groups: %{},
+      visibility_exceptions: %{},
       timestamp_to_event_id_index: TimestampToEventIDIndex.new!()
     }
   end
@@ -42,7 +43,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     member_metadata =
       if pdu.event.type == "m.room.member" and pdu.event.content["membership"] == "join" do
         latest_topo_id = later_join_topo_id(timeline, pdu.event.state_key, pdu_topo_id)
-        put_in(timeline.member_metadata[pdu.event.state_key], %{latest_known_join_topo_id: latest_topo_id})
+        Map.put(timeline.member_metadata, pdu.event.state_key, %{latest_known_join_topo_id: latest_topo_id})
       else
         timeline.member_metadata
       end
@@ -74,12 +75,41 @@ defmodule RadioBeam.Room.View.Core.Timeline do
           )
       end
 
+    visibility_exceptions =
+      case pdu.event.type do
+        "m.room.history_visibility" ->
+          if pdu.event.prev_state_content != :none do
+            Map.put(
+              timeline.visibility_exceptions,
+              pdu.event.id,
+              {:history_visibility, pdu.event.prev_state_content["history_visibility"]}
+            )
+          else
+            timeline.visibility_exceptions
+          end
+
+        "m.room.member" ->
+          if pdu.event.prev_state_content != :none do
+            Map.put(
+              timeline.visibility_exceptions,
+              pdu.event.id,
+              {:member, pdu.event.state_key, pdu.event.prev_state_content["membership"]}
+            )
+          else
+            timeline.visibility_exceptions
+          end
+
+        _ ->
+          timeline.visibility_exceptions
+      end
+
     struct!(timeline,
       topological_id_to_event_id: Map.put(timeline.topological_id_to_event_id, pdu_topo_id, pdu.event.id),
       topological_id_ord_set: TopologicalID.OrderedSet.put(timeline.topological_id_ord_set, pdu_topo_id),
       event_metadata: event_metadata,
       member_metadata: member_metadata,
       visibility_groups: Map.put(timeline.visibility_groups, visibility_group_id, visibility_group),
+      visibility_exceptions: visibility_exceptions,
       timestamp_to_event_id_index:
         TimestampToEventIDIndex.put(timeline.timestamp_to_event_id_index, pdu.event.origin_server_ts, pdu.event.id)
     )
@@ -161,9 +191,34 @@ defmodule RadioBeam.Room.View.Core.Timeline do
             latest_known_join_topo_id -> TopologicalID.compare(latest_known_join_topo_id, topological_id) == :gt
           end
 
-        user_id in event_visibility_group.joined or
-          (visibility_at_event == "shared" and user_joined_after_event?) or
-          (visibility_at_event == "invited" and user_id in event_visibility_group.invited and user_joined_after_event?)
+        # For m.room.history_visibility events themselves, the user should be
+        # allowed to see the event if the history_visibility before or after
+        # the event would allow them to see it
+        visibilities_before_and_at_event =
+          case Map.get(timeline.visibility_exceptions, event_id) do
+            {:history_visibility, visibility_before_event} -> [visibility_at_event, visibility_before_event]
+            _else -> [visibility_at_event]
+          end
+
+        # for the user’s own m.room.member events, the user should be allowed to
+        # see the event if their membership before or after the event would
+        # allow them to see it
+        user_joined_at_event? =
+          case Map.get(timeline.visibility_exceptions, event_id) do
+            {:member, ^user_id, "join"} -> true
+            _else -> user_id in event_visibility_group.joined
+          end
+
+        user_invited_at_event? =
+          case Map.get(timeline.visibility_exceptions, event_id) do
+            {:member, ^user_id, "invite"} -> true
+            _else -> user_id in event_visibility_group.invited
+          end
+
+        user_joined_at_event? or
+          "world_readable" in visibilities_before_and_at_event or
+          ("shared" in visibilities_before_and_at_event and user_joined_after_event?) or
+          ("invited" in visibilities_before_and_at_event and user_invited_at_event? and user_joined_after_event?)
     end
   end
 
@@ -188,12 +243,6 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
       Event.new!(metadata.topological_id, fetch_pdu!.(event_id), visible_bundled_events)
     end)
-  end
-
-  def get_latest_order_id(%__MODULE__{} = timeline), do: timeline.topological_id_ord_set.last_id
-
-  def order_id_to_event_id(%__MODULE__{} = timeline, %TopologicalID{} = topo_id) do
-    with :error <- Map.fetch(timeline.topological_id_to_event_id, topo_id), do: {:error, :not_found}
   end
 
   def stream_event_ids_closest_to_ts(%__MODULE__{} = timeline, user_id, timestamp, direction) do

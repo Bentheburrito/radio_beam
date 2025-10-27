@@ -46,20 +46,32 @@ defmodule RadioBeam.User.Keys do
   def all_changed_since(%User{} = user, %PaginationToken{} = since) do
     since_created_at = PaginationToken.created_at(since)
 
-    shared_memberships_by_user =
+    {shared_memberships_by_user, since_event_map} =
       Repo.transaction(fn ->
-        user.id
-        |> Room.joined()
-        |> Stream.flat_map(fn room_id ->
-          case Room.get_members(room_id, user.id, :current, &(&1 in ~w|join leave|)) do
-            {:ok, member_events} -> Stream.map(member_events, &Map.put(&1, :room_id, room_id))
-            _ -> []
-          end
-        end)
-        |> Stream.reject(&(&1.state_key == user.id))
-        |> Stream.map(&zip_with_user/1)
-        |> Stream.reject(fn {maybe_user, _} -> is_nil(maybe_user) end)
-        |> Enum.group_by(fn {user, _} -> user end, fn {_, member_event} -> member_event end)
+        room_ids = Room.joined(user.id)
+
+        shared_memberships_by_user =
+          room_ids
+          |> Stream.flat_map(fn room_id ->
+            case Room.get_members(room_id, user.id, :current, &(&1 in ~w|join leave|)) do
+              {:ok, member_events} -> Stream.map(member_events, &Map.put(&1, :room_id, room_id))
+              _ -> []
+            end
+          end)
+          |> Stream.reject(&(&1.state_key == user.id))
+          |> Stream.map(&zip_with_user/1)
+          |> Stream.reject(fn {maybe_user, _} -> is_nil(maybe_user) end)
+          |> Enum.group_by(fn {user, _} -> user end, fn {_, member_event} -> member_event end)
+
+        since_event_map =
+          Map.new(room_ids, fn room_id ->
+            with {:ok, since_event_id} <- PaginationToken.room_last_seen_event_id(since, room_id),
+                 [since_event] <- Room.View.get_events(room_id, user.id, [since_event_id]) do
+              {room_id, since_event}
+            end
+          end)
+
+        {shared_memberships_by_user, since_event_map}
       end)
 
     Enum.reduce(shared_memberships_by_user, %{changed: MapSet.new(), left: MapSet.new()}, fn
@@ -72,11 +84,13 @@ defmodule RadioBeam.User.Keys do
 
         cond do
           # check for any joined members in any room that we did not share before the last sync
-          not Enum.empty?(join_events) and Enum.all?(join_events, &event_occurred_later?(&1, since, &1.room_id)) ->
+          not Enum.empty?(join_events) and
+              Enum.all?(join_events, &event_occurred_later?(&1, Map.get(since_event_map, &1.room_id))) ->
             Map.update!(acc, :changed, &MapSet.put(&1, user.id))
 
           # check for any user we no longer share a room with, who left since the last sync
-          Enum.empty?(join_events) and Enum.any?(leave_events, &event_occurred_later?(&1, since, &1.room_id)) ->
+          Enum.empty?(join_events) and
+              Enum.any?(leave_events, &event_occurred_later?(&1, Map.get(since_event_map, &1.room_id))) ->
             Map.update!(acc, :left, &MapSet.put(&1, user.id))
 
           :else ->
@@ -92,12 +106,8 @@ defmodule RadioBeam.User.Keys do
     end
   end
 
-  defp event_occurred_later?(event, %PaginationToken{} = token, room_id) do
-    case PaginationToken.room_last_seen_order_id(token, room_id) do
-      {:ok, last_seen_order_id} -> TopologicalID.compare(event.order_id, last_seen_order_id) == :gt
-      {:error, :not_found} -> false
-    end
-  end
+  defp event_occurred_later?(_event, nil), do: false
+  defp event_occurred_later?(event, since_event), do: TopologicalID.compare(event.order_id, since_event.order_id) == :gt
 
   @doc """
   Queries all local users' keys by the given map of %{user_id => [device_id]}.

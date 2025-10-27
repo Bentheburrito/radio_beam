@@ -51,7 +51,22 @@ defmodule RadioBeam.Room.State do
       authz_event_attrs = Map.put(event_attrs, "auth_events", Enum.map(auth_event_pdus, & &1.event.id))
 
       with {:ok, event_id} <- Events.reference_hash(authz_event_attrs, room_version) do
-        authz_event = authz_event_attrs |> Map.put("id", event_id) |> AuthorizedEvent.new!()
+        prev_state_content =
+          if state_key = Map.get(event_attrs, "state_key") do
+            case fetch(state, event_attrs["type"], state_key) do
+              {:ok, %{event: %{content: prev_state_content}}} -> prev_state_content
+              {:error, :not_found} -> :none
+            end
+          else
+            :none
+          end
+
+        authz_event =
+          authz_event_attrs
+          |> Map.put("id", event_id)
+          |> Map.put("prev_state_content", prev_state_content)
+          |> AuthorizedEvent.new!()
+
         {:ok, authz_event}
       end
     else
@@ -123,6 +138,10 @@ defmodule RadioBeam.Room.State do
     end
   end
 
+  defp find_pdu_at([%{stream_number: state_stream_num} = state_pdu | _], stream_number)
+       when stream_number > state_stream_num,
+       do: {:ok, state_pdu}
+
   # builds a sliding window of stream_number ranges where each state PDU in
   # pdu_list is the effective state event. Returns the effective state event
   # where `upper_bound > stream_number >= state_pdu.stream_number`
@@ -165,8 +184,9 @@ defmodule RadioBeam.Room.State do
 
   @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
   @doc "Returns the stripped state of the given room."
-  def get_invite_state_events(%__MODULE__{} = state, user_id) do
+  def get_invite_state_pdus(%__MODULE__{} = state, user_id) do
     # we additionally include the calling user's membership event
+
     @stripped_state_types
     |> Stream.map(&{&1, ""})
     |> Stream.concat([{"m.room.member", user_id}])

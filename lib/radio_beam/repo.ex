@@ -76,10 +76,12 @@ defmodule RadioBeam.Repo do
     end
   end
 
-  @spec fetch(table :: module(), id :: any(), opts :: Keyword.t()) :: {:ok, struct()} | {:error, :not_found}
-  def fetch(table, id, opts \\ [])
+  @spec fetch(table_or_struct :: module(), id :: any(), opts :: Keyword.t()) :: {:ok, struct()} | {:error, :not_found}
+  def fetch(table_or_struct, id, opts \\ [])
 
-  def fetch(table, id, opts) when table in @tables do
+  def fetch(table_or_struct, id, opts) do
+    table = table_for(table_or_struct)
+
     transaction(fn ->
       case Memento.Query.read(table, id, opts) do
         nil -> {:error, :not_found}
@@ -105,15 +107,16 @@ defmodule RadioBeam.Repo do
     transaction(fn -> {:ok, data |> table.dump!() |> Memento.Query.write()} end)
   end
 
-  def insert!(%table{} = data) do
-    transaction!(fn -> data |> table.dump!() |> Memento.Query.write() end)
+  def insert!(%struct{} = data) do
+    table = table_for(struct)
+    transaction!(fn -> data |> table.dump!() |> Memento.Query.write() |> table.load!() end)
   end
 
   def insert_new(%table{} = data) when table in @tables do
     transaction(fn ->
       case fetch(table, data.id, lock: :write) do
         {:ok, %^table{}} -> {:error, :already_exists}
-        {:error, :not_found} -> {:ok, data |> table.dump!() |> Memento.Query.write()}
+        {:error, :not_found} -> {:ok, data |> table.dump!() |> Memento.Query.write() |> table.load!()}
       end
     end)
   end
@@ -131,4 +134,7 @@ defmodule RadioBeam.Repo do
   def select(table, match_spec, opts) when table in @tables do
     transaction(fn -> Memento.Query.select_raw(table, match_spec, opts) end)
   end
+
+  defp table_for(Room), do: Tables.Room
+  defp table_for(module), do: module
 end

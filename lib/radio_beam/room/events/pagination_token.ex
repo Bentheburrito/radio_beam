@@ -1,41 +1,40 @@
 defmodule RadioBeam.Room.Events.PaginationToken do
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
-  @attrs ~w|direction room_id_order_id_pairs created_at_ms|a
+  @attrs ~w|direction room_id_event_id_pairs created_at_ms|a
   @enforce_keys @attrs
   defstruct @attrs
 
   @type t() :: %__MODULE__{
           direction: :forward | :backward,
-          room_id_order_id_pairs: [{Room.id(), TopologicalID.t()}],
+          room_id_event_id_pairs: [{Room.id(), Room.event_id()}],
           created_at_ms: non_neg_integer()
         }
 
-  def new(room_id, %TopologicalID{} = topo_id, dir, created_at), do: new(%{room_id => topo_id}, dir, created_at)
+  def new(room_id, event_id, dir, created_at), do: new(%{room_id => event_id}, dir, created_at)
 
   def new(pairs, direction, created_at)
       when is_map(pairs) and direction in [:forward, :backward] and is_integer(created_at) and created_at >= 0 do
     %__MODULE__{
       direction: direction,
-      room_id_order_id_pairs: pairs,
+      room_id_event_id_pairs: pairs,
       created_at_ms: created_at
     }
   end
 
-  def room_last_seen_order_id(%__MODULE__{} = token, room_id) do
-    with :error <- Map.fetch(token.room_id_order_id_pairs, room_id), do: {:error, :not_found}
+  def room_last_seen_event_id(%__MODULE__{} = token, room_id) do
+    with :error <- Map.fetch(token.room_id_event_id_pairs, room_id), do: {:error, :not_found}
   end
 
   def created_at(%__MODULE__{created_at_ms: created_at}), do: created_at
 
-  # NOTE: the length of this token grows linearly with the number of rooms..
+  # NOTE: the length of this token grows linearly with the number of rooms.
   # This may begin to become an issue for users in 100s of rooms (or more).
   # Consider `:zlib` when the length of `event_ids` exceeds a certain size.
-  def encode(%__MODULE__{direction: dir, room_id_order_id_pairs: pairs, created_at_ms: created_at}) do
-    for {"!" <> _ = room_id, %TopologicalID{} = order_id} <- pairs,
+  def encode(%__MODULE__{direction: dir, room_id_event_id_pairs: pairs, created_at_ms: created_at}) do
+    for {"!" <> _ = room_id, "$" <> _ = event_id} <- pairs,
         into: "batch:#{dir}:#{created_at}",
-        do: ":#{Base.url_encode64(room_id)}:#{order_id}"
+        do: ":#{Base.url_encode64(room_id)}:#{event_id}"
   end
 
   def parse("batch:" <> token) do
@@ -43,7 +42,7 @@ defmodule RadioBeam.Room.Events.PaginationToken do
          {:ok, dir} <- parse_direction(dir_string),
          {:ok, created_at} <- parse_created_at(created_at_string),
          {:ok, pairs} <- parse_pairs(pairs_string) do
-      {:ok, %__MODULE__{direction: dir, room_id_order_id_pairs: pairs, created_at_ms: created_at}}
+      {:ok, %__MODULE__{direction: dir, room_id_event_id_pairs: pairs, created_at_ms: created_at}}
     else
       _ -> {:error, :invalid_token}
     end
@@ -65,17 +64,17 @@ defmodule RadioBeam.Room.Events.PaginationToken do
   defp parse_pairs(:done, pairs), do: {:ok, pairs}
 
   defp parse_pairs(pairs_string, pairs) do
-    with {:ok, maybe_room_id, maybe_order_id, rest} <- parse_pairs_string(pairs_string),
+    with {:ok, maybe_room_id, maybe_event_id, rest} <- parse_pairs_string(pairs_string),
          {:ok, room_id} <- validate_room_id(maybe_room_id),
-         {:ok, order_id} <- validate_order_id(maybe_order_id) do
-      parse_pairs(rest, Map.put(pairs, room_id, order_id))
+         {:ok, event_id} <- validate_event_id(maybe_event_id) do
+      parse_pairs(rest, Map.put(pairs, room_id, event_id))
     end
   end
 
   defp parse_pairs_string(pairs_string) do
     case String.split(pairs_string, ":", parts: 3) do
-      [maybe_room_id, maybe_order_id] -> {:ok, maybe_room_id, maybe_order_id, :done}
-      [maybe_room_id, maybe_order_id, rest] -> {:ok, maybe_room_id, maybe_order_id, rest}
+      [maybe_room_id, maybe_event_id] -> {:ok, maybe_room_id, maybe_event_id, :done}
+      [maybe_room_id, maybe_event_id, rest] -> {:ok, maybe_room_id, maybe_event_id, rest}
       _else -> {:error, :invalid}
     end
   end
@@ -87,10 +86,10 @@ defmodule RadioBeam.Room.Events.PaginationToken do
     end
   end
 
-  defp validate_order_id(order_id), do: TopologicalID.parse_string(order_id)
+  defp validate_event_id("$" <> _ = event_id), do: {:ok, event_id}
+  defp validate_event_id(_), do: {:error, :invalid}
 
   defimpl Jason.Encoder do
-    def encode(token, opts), do: Jason.Encode.string(RadioBeam.Room.EventGraph.PaginationToken.encode(token), opts)
+    def encode(token, opts), do: Jason.Encode.string(RadioBeam.Room.Events.PaginationToken.encode(token), opts)
   end
 end
-

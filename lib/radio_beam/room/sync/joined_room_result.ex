@@ -3,12 +3,11 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
   alias RadioBeam.User.EventFilter
   alias RadioBeam.Room
-  alias RadioBeam.Room.EventRelationships
   alias RadioBeam.Room.PDU
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
-  defstruct ~w|room_id room_version timeline_events maybe_next_order_id latest_order_id state_events sender_ids filter current_membership account_data|a
+  defstruct ~w|room_id room_version timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data|a
 
   @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [Event.t()], state_events: [Room.event_id()]}
 
@@ -16,7 +15,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   @type user_membership() :: String.t()
 
   @type opt() ::
-          {:next_order_id, TopologicalID.t() | :no_more_events}
+          {:next_event_id, Room.event_id() | :no_more_events}
           | {:maybe_last_sync_room_state_pdus, [PDU.t()] | :initial}
           | {:full_state?, boolean()}
           | {:known_memberships, %{Room.id() => MapSet.t(User.id())}}
@@ -25,7 +24,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
   @spec new(Room.t(), User.t(), Enumerable.t(Event.t()), get_events_for_user(), user_membership(), opts()) ::
           t() | :no_update
-  def new(room, user, timeline_events, get_events_for_user, membership, opts) do
+  def new(room, user, timeline_events, get_events_for_user, membership, opts \\ []) do
     filter = Keyword.get_lazy(opts, :filter, fn -> EventFilter.new(%{}) end)
     maybe_last_sync_room_state_pdus = Keyword.get(opts, :maybe_last_sync_room_state_pdus, :initial)
     full_state? = Keyword.get(opts, :full_state?, false)
@@ -55,23 +54,24 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     if Enum.empty?(timeline_events) and Enum.empty?(state_events) do
       :no_update
     else
-      latest_order_id = hd(timeline_events).order_id
+      latest_event_id = hd(timeline_events).id
 
       timeline_events =
         if EventFilter.allow_timeline_in_room?(filter, room.id) do
           timeline_events
-          |> bundle_aggregations(user.id)
-          |> Enum.sort_by(& &1.order_id)
+          |> Enum.sort_by(& &1.order_id, {:asc, TopologicalID})
+          |> remove_bundled_from_timeline()
+          |> Enum.to_list()
         else
           []
         end
 
       %__MODULE__{
         room_id: room.id,
-        room_version: room.version,
+        room_version: Room.State.room_version(room.state),
         timeline_events: timeline_events,
-        maybe_next_order_id: Keyword.get(opts, :next_order_id, :no_more_events),
-        latest_order_id: latest_order_id,
+        maybe_next_event_id: Keyword.get(opts, :next_event_id, :no_more_events),
+        latest_event_id: latest_event_id,
         state_events: state_events,
         sender_ids: sender_ids,
         filter: filter,
@@ -93,7 +93,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
        ) do
     {room_state_pdus_at_last_sync, desired_state_events} =
       if maybe_last_sync_room_state_pdus == :initial or full_state?,
-        do: {[], :at_timeline_start},
+        do: {[], :before_timeline_start},
         else: {maybe_last_sync_room_state_pdus, :delta}
 
     # we will never be in a situation where maybe_last_sync_room_state_pdus =
@@ -105,16 +105,38 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         %Event{} = oldest_tl_event ->
           %PDU{} = oldest_tl_pdu = Room.DAG.fetch!(room.dag, oldest_tl_event.id)
 
+          oldest_tl_event_id = oldest_tl_event.id
+
           room.state
           |> Room.State.get_all_at(oldest_tl_pdu)
-          |> Enum.map(fn {_k, pdu} -> pdu.event.id end)
+          # |> Stream.reject(fn {_k, pdu} -> pdu.event.id == oldest_tl_event.id end)
+          |> Enum.flat_map(fn
+            # If the oldest TL event is a state event, we want to get the
+            # previous value/state event it changed from. I.e. the state
+            # *before* the first event in the TL. Yes, I know it's fugly.
+            {_k, %{event: %{id: ^oldest_tl_event_id}, prev_event_ids: [prev_event_id]} = pdu} ->
+              prev_pdu = Room.DAG.fetch!(room.dag, prev_event_id)
+
+              case Room.State.fetch_at(room.state, pdu.event.type, pdu.event.state_key, prev_pdu) do
+                {:ok, prev_state_pdu} -> [prev_state_pdu.event.id]
+                {:error, :not_found} -> []
+              end
+
+            {_k, %{event: %{id: ^oldest_tl_event_id}, prev_event_ids: []}} ->
+              []
+
+            {_k, pdu} ->
+              [pdu.event.id]
+          end)
 
         nil ->
           Enum.map(room_state_pdus_at_last_sync, & &1.event.id)
       end
 
     state_event_ids =
-      determine_state_event_ids(room_state_pdus_at_last_sync, state_event_ids_at_tl_start, desired_state_events)
+      room_state_pdus_at_last_sync
+      |> Stream.map(& &1.event.id)
+      |> determine_state_event_ids(state_event_ids_at_tl_start, desired_state_events)
 
     known_memberships = Map.get(known_memberships, room.id, MapSet.new())
 
@@ -123,7 +145,8 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     |> Stream.filter(&EventFilter.allow_state_event?(filter, &1, sender_ids, known_memberships))
   end
 
-  defp determine_state_event_ids(_, state_event_ids_at_tl_start, :at_timeline_start), do: state_event_ids_at_tl_start
+  defp determine_state_event_ids(_, state_event_ids_at_tl_start, :before_timeline_start),
+    do: state_event_ids_at_tl_start
 
   defp determine_state_event_ids(last_sync_state_ids, state_event_ids_at_tl_start, :delta) do
     state_event_ids_at_tl_start
@@ -143,14 +166,14 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         |> EventFilter.take_fields(room_result.filter.fields)
       end
 
-      limited? = room_result.maybe_next_order_id != :no_more_events
+      limited? = room_result.maybe_next_event_id != :no_more_events
 
       timeline = %{events: Enum.map(room_result.timeline_events, to_event), limited: limited?}
 
       timeline =
-        case room_result.maybe_next_order_id do
-          :no_earlier_events -> timeline
-          %TopologicalID{} = next_order_id -> Map.put(timeline, :prev_batch, next_order_id)
+        case room_result.maybe_next_event_id do
+          :no_more_events -> timeline
+          next_event_id -> Map.put(timeline, :prev_batch, next_event_id)
         end
 
       Jason.Encode.map(
@@ -164,26 +187,19 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     end
   end
 
-  # since /sync returns the latest events of a timeline, and children define
-  # relationships with their parents, we can be sure any aggregations we need
-  # to bundle are already in the timeline.
-  defp bundle_aggregations(events, user_id) do
-    event_ids = MapSet.new(events, & &1.id)
-
-    {child_events, events} =
-      Enum.split_with(events, &(parent_id(&1) in event_ids and EventRelationships.aggregable?(&1)))
-
-    child_events_by_parent_id =
-      Enum.group_by(child_events, &(parent_id(&1) in event_ids and EventRelationships.aggregable?(&1)))
-
-    Enum.map(events, fn %Event{} = event ->
-      case Map.fetch(child_events_by_parent_id, event.id) do
-        {:ok, child_events} -> EventRelationships.get_aggregations(event, user_id, child_events)
-        :error -> event
-      end
+  # we need to remove events that have been bundled with an older event
+  # included in this sync response.
+  # this fxn assumes the bundled event ID comes after the bundled-to event in
+  # the timeline...which may not hold true in some federated cases, where we
+  # receive the bundled event before the bundled-to event...
+  defp remove_bundled_from_timeline(events) do
+    Stream.transform(events, _seen_bundled_event_ids = MapSet.new(), fn
+      event, seen_bundled_event_ids ->
+        if event.id in seen_bundled_event_ids do
+          {[], seen_bundled_event_ids}
+        else
+          {[event], MapSet.union(seen_bundled_event_ids, MapSet.new(event.bundled_events, & &1.id))}
+        end
     end)
   end
-
-  defp parent_id(%Event{content: %{"m.relates_to" => %{"event_id" => parent_id}}}), do: parent_id
-  defp parent_id(_event_with_no_parent), do: nil
 end

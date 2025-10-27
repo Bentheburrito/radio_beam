@@ -19,9 +19,13 @@ defmodule RadioBeam.Room.Server do
 
   def start_link(%Room{id: room_id} = room), do: GenServer.start_link(__MODULE__, room, name: via(room_id))
 
+  def start_link({%Room{id: room_id} = room, pdu_queue}),
+    do: GenServer.start_link(__MODULE__, {room, pdu_queue}, name: via(room_id))
+
   def create(version, creator_id, opts) do
-    with %Room{} = room <- Room.Core.new(version, creator_id, opts),
-         {:ok, _pid} <- Supervisor.start_room(room) do
+    with {%Room{} = room, pdu_queue} <- Room.Core.new(version, creator_id, deps(), opts),
+         %Room{} <- Repo.insert!(room),
+         {:ok, _pid} <- Supervisor.start_room(room, pdu_queue) do
       {:ok, room.id}
     end
   end
@@ -54,6 +58,22 @@ defmodule RadioBeam.Room.Server do
 
   @impl GenServer
   def init(%Room{} = room), do: {:ok, room}
+  def init({%Room{} = room, pdu_queue}), do: {:ok, room, {:continue, pdu_queue}}
+
+  @impl GenServer
+  def handle_continue(pdu_queue, %Room{} = room) do
+    pdu_stream =
+      Stream.unfold(pdu_queue, fn pdu_queue ->
+        case :queue.out(pdu_queue) do
+          {{:value, %PDU{} = pdu}, pdu_queue} -> {pdu, pdu_queue}
+          {:empty, ^pdu_queue} -> nil
+        end
+      end)
+
+    for pdu <- pdu_stream, do: Room.View.handle_pdu(room, pdu)
+
+    {:noreply, room}
+  end
 
   @impl GenServer
   def handle_call({:send, event_attrs}, _from, %Room{} = room) do
@@ -74,7 +94,7 @@ defmodule RadioBeam.Room.Server do
           LazyLoadMembersCache.mark_dirty(room.id, event.state_key)
         end
 
-        {:reply, {:ok, pdu}, room}
+        {:reply, {:ok, event.id}, room}
 
       {:error, :unauthorized} = e ->
         Logger.info("rejecting an event for being unauthorized: #{inspect(event_attrs)}")

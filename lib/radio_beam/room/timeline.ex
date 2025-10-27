@@ -32,7 +32,7 @@ defmodule RadioBeam.Room.Timeline do
       with {:ok, user} = Repo.fetch(User, user_id),
            {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
            :ok <- check_membership(room.id, user_id),
-           {:ok, event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
+           %Stream{} = event_stream <- Room.View.timeline_event_stream(room.id, user_id, from) do
         ignored_user_ids =
           MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
 

@@ -9,7 +9,6 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Timeline
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.User
 
   def handle_pdu(%Room{} = room, %PDU{} = pdu) do
@@ -18,11 +17,11 @@ defmodule RadioBeam.Room.View do
 
   def all_participating(user_id) do
     # TODO: should hide view_state key behind fxn in Participating here?
-    Repo.fetch(ViewState, {Participating, user_id})
+    fetch_view({Participating, user_id})
   end
 
   def latest_known_join_pdu(room_id, user_id) do
-    with {:ok, %Participating{} = participating} <- Repo.fetch(ViewState, {Participating, user_id}),
+    with {:ok, %Participating{} = participating} <- fetch_view({Participating, user_id}),
          :error <- Map.fetch(participating.latest_known_join_pdus, room_id) do
       {:error, :never_joined}
     end
@@ -30,35 +29,20 @@ defmodule RadioBeam.Room.View do
 
   def timeline_event_stream(room_id, user_id, from) do
     with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
-         {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
+         {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
       Timeline.topological_stream(timeline, user_id, from, &Room.DAG.fetch!(room.dag, &1))
     end
   end
 
   def get_events(room_id, user_id, event_ids) do
     with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
-         {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
+         {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
       Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))
     end
   end
 
-  def get_latest_order_id!(room_id) do
-    with {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}),
-         %TopologicalID{} = order_id <- Timeline.get_latest_order_id(timeline) do
-      order_id
-    else
-      _ -> raise "no room #{room_id} exists or its event timeline view was empty"
-    end
-  end
-
-  def order_id_to_event_id(room_id, order_id) do
-    with {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
-      Timeline.order_id_to_event_id(timeline, order_id)
-    end
-  end
-
   def nearest_events_stream(room_id, user_id, timestamp, direction) do
-    with {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}) do
+    with {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
       Timeline.stream_event_ids_closest_to_ts(timeline, user_id, timestamp, direction)
     end
   end
@@ -71,8 +55,8 @@ defmodule RadioBeam.Room.View do
   @spec get_child_events(Room.id(), User.id(), [Room.event_id()]) :: %{Room.event_id() => Enumerable.t(Event.t())}
   def get_child_events(room_id, user_id, event_ids) when is_list(event_ids) do
     with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
-         {:ok, %Timeline{} = timeline} <- Repo.fetch(ViewState, {Timeline, room_id}),
-         {:ok, %RelatedEvents{} = relations} <- Repo.fetch(ViewState, {RelatedEvents, room_id}) do
+         {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}),
+         {:ok, %RelatedEvents{} = relations} <- fetch_view({RelatedEvents, room_id}) do
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
       event_ids = timeline |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!) |> Stream.map(& &1.id)
 
@@ -97,8 +81,14 @@ defmodule RadioBeam.Room.View do
 
   defp view_deps do
     %{
-      fetch_view: fn key -> Repo.fetch(ViewState, key) end,
+      fetch_view: &fetch_view/1,
       save_view!: fn view_state, key -> Repo.insert!(%ViewState{key: key, value: view_state}) end
     }
+  end
+
+  defp fetch_view(key) do
+    with {:ok, %ViewState{value: view_state}} <- Repo.fetch(ViewState, key) do
+      {:ok, view_state}
+    end
   end
 end

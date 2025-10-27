@@ -1,16 +1,22 @@
 defmodule RadioBeam.Room.Sync.InvitedRoomResult do
   alias RadioBeam.Room
+  alias RadioBeam.Room.View.Core.Timeline.Event
 
-  defstruct ~w|room_id stripped_state_events|a
+  defstruct ~w|room_id stripped_state_events user_invite_event_id|a
 
-  @type t() :: %__MODULE__{room_id: Room.id(), stripped_state_events: [map()]}
+  @type t() :: %__MODULE__{room_id: Room.id(), stripped_state_events: [map()], user_invite_event_id: Room.event_id()}
 
-  def new(room, user_id) do
-    state_event_ids = room.state |> Room.State.get_invite_state_events(user_id) |> Stream.map(& &1.event.id)
+  def new!(room, user_id, user_invite_event_id) do
+    stripped_state_events =
+      room.state
+      |> Room.State.get_invite_state_pdus(user_id)
+      |> Stream.map(&Event.new!(:unknown, &1, []))
 
-    # this isn't going to work bc get_events will filter by what user is allowed to see, which doesn't take into account stripped state for invited users
-
-    %__MODULE__{room_id: room.id, stripped_state_events: Room.View.get_events(room.id, user_id, state_event_ids)}
+    %__MODULE__{
+      room_id: room.id,
+      stripped_state_events: stripped_state_events,
+      user_invite_event_id: user_invite_event_id
+    }
   end
 
   defimpl Jason.Encoder do
