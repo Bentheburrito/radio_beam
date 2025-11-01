@@ -49,7 +49,12 @@ defmodule Fixtures do
 
     view_state = view_module.new!()
 
-    Enum.reduce(all_pdus, view_state, &view_module.handle_pdu(&2, room, &1))
+    Enum.reduce(all_pdus, view_state, fn pdu, view_state ->
+      case view_module.handle_pdu(view_state, room, pdu) do
+        {view_state, _pubsub} -> view_state
+        view_state -> view_state
+      end
+    end)
   end
 
   defp make_room_view_pdus(dag) do

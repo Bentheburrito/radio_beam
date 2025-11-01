@@ -14,7 +14,7 @@ defmodule RadioBeam.Room.Timeline.Chunk do
       state_events: get_state_events(room, timeline_events, get_known_memberships_fxn, get_events_for_user, filter),
       start: start_token,
       end: end_token,
-      to_event: &encode_event(&1, room.version, filter)
+      to_event: &encode_event(&1, Room.State.room_version(room.state), filter)
     }
   end
 
