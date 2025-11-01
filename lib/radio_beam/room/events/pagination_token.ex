@@ -22,6 +22,12 @@ defmodule RadioBeam.Room.Events.PaginationToken do
     }
   end
 
+  def direction(%__MODULE__{direction: direction}), do: direction
+
+  def topologically_equal?(%__MODULE__{} = pt1, %__MODULE__{} = pt2) do
+    pt1.room_id_event_id_pairs == pt2.room_id_event_id_pairs and pt1.direction == pt2.direction
+  end
+
   def room_last_seen_event_id(%__MODULE__{} = token, room_id) do
     with :error <- Map.fetch(token.room_id_event_id_pairs, room_id), do: {:error, :not_found}
   end

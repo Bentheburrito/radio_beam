@@ -15,6 +15,12 @@ defmodule RadioBeam.Room.View.Core.Timeline.Event do
     )
   end
 
+  def compare(%__MODULE__{order_id: %TopologicalID{} = order_id1}, %__MODULE__{order_id: %TopologicalID{} = order_id2}) do
+    TopologicalID.compare(order_id1, order_id2)
+  end
+
+  def compare(%__MODULE__{order_id: :unknown}, %__MODULE__{order_id: maybe_order_id2}), do: maybe_order_id2 > :unknown
+
   # TOIMPL: choose client or federation format based on filter
   @cs_event_keys [:content, :event_id, :origin_server_ts, :room_id, :sender, :state_key, :type, :unsigned]
   def to_map(%__MODULE__{} = event, room_version) do

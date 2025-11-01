@@ -28,11 +28,12 @@ defmodule RadioBeam.Room.Timeline do
   - `limit`: If `filter` is not supplied, this will apply a maximum limit of
     events returned. Otherwise the `EventFilter`'s limits will be applied.
   """
-  def get_messages(room_id, user_id, device_id, from, opts \\ []) do
+  def get_messages(room_id, user_id, device_id, from_token, opts \\ []) do
     Repo.transaction(fn ->
-      with {:ok, user} = Repo.fetch(User, user_id),
+      with :ok <- check_membership(room_id, user_id),
+           {:ok, user} = Repo.fetch(User, user_id),
            {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
-           :ok <- check_membership(room.id, user_id),
+           {:ok, from, direction} <- map_from_pagination_token(from_token, room_id),
            {:ok, event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
         ignored_user_ids =
           MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
@@ -49,13 +50,6 @@ defmodule RadioBeam.Room.Timeline do
             _ -> :none
           end
 
-        direction =
-          case from do
-            :root -> :forward
-            :tip -> :backward
-            {_from, dir} when dir in [:forward, :backward] -> dir
-          end
-
         [%Event{} = first_event] = Enum.take(event_stream, 1)
 
         not_passed_to =
@@ -63,6 +57,19 @@ defmodule RadioBeam.Room.Timeline do
             maybe_to_event == :none -> fn _ -> true end
             direction == :forward -> &(TopologicalID.compare(&1, maybe_to_event.order_id) != :gt)
             direction == :backward -> &(TopologicalID.compare(&1, maybe_to_event.order_id) != :lt)
+          end
+
+        event_stream =
+          case from_token do
+            {%PaginationToken{} = from, _dir} ->
+              if PaginationToken.direction(from) != direction do
+                event_stream
+              else
+                Stream.drop(event_stream, 1)
+              end
+
+            _else ->
+              event_stream
           end
 
         {timeline_events, maybe_next_event_id} =
@@ -84,8 +91,18 @@ defmodule RadioBeam.Room.Timeline do
         get_known_memberships_fxn = fn -> LazyLoadMembersCache.get([room.id], device_id) end
         get_events_for_user = &Room.View.get_events(room_id, user_id, &1)
 
-        start_token = PaginationToken.new(room_id, first_event.id, direction, System.os_time(:millisecond))
-        end_token = PaginationToken.new(room_id, maybe_next_event_id, direction, System.os_time(:millisecond))
+        start_direction =
+          case from_token do
+            {%PaginationToken{} = from, _dir} -> PaginationToken.direction(from)
+            _else -> if direction == :forward, do: :backward, else: :forward
+          end
+
+        start_token = PaginationToken.new(room_id, first_event.id, start_direction, System.os_time(:millisecond))
+
+        end_token =
+          if maybe_next_event_id == :no_more_events,
+            do: :no_more_events,
+            else: PaginationToken.new(room_id, maybe_next_event_id, direction, System.os_time(:millisecond))
 
         {:ok,
          Chunk.new(
@@ -115,11 +132,16 @@ defmodule RadioBeam.Room.Timeline do
     with {:ok, %Participating{all: room_ids_with_membership}} <- Room.View.all_participating(user_id) do
       if room_id in room_ids_with_membership, do: :ok, else: {:error, :unauthorized}
     end
+  end
 
-    # case Room.State.fetch(room.state, "m.room.member", user_id) do
-    #   {:ok, _pdu} -> :ok
-    #   {:error, :not_found} -> {:error, :unauthorized}
-    # end
+  defp map_from_pagination_token(:root, _room_id), do: {:ok, :root, :forward}
+  defp map_from_pagination_token(:tip, _room_id), do: {:ok, :tip, :backward}
+
+  defp map_from_pagination_token({%PaginationToken{} = token, direction}, room_id) do
+    case PaginationToken.room_last_seen_event_id(token, room_id) do
+      {:ok, event_id} -> {:ok, {event_id, direction}, direction}
+      {:error, :not_found} -> {:error, :from_token_missing_room_id}
+    end
   end
 
   defp get_filter_from_opts(opts, user) do

@@ -138,8 +138,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
           RadioBeam.User.id(),
           from(),
           (Room.event_id() -> PDU.t())
-        ) ::
-          {Enumerable.t(Room.event_id()), TopologicalID.t(), :more | :done}
+        ) :: Enumerable.t(Room.event_id()) | {:error, :event_id_not_found | :event_not_ordered_yet}
   def topological_stream(%__MODULE__{} = timeline, user_id, {%TopologicalID{} = from, direction}, fetch_pdu!) do
     latest_known_join_topo_id = get_latest_known_join_topo_id(timeline, user_id)
 
@@ -169,6 +168,19 @@ defmodule RadioBeam.Room.View.Core.Timeline do
 
   def topological_stream(timeline, user_id, :tip, fetch_pdu!),
     do: topological_stream(timeline, user_id, {timeline.topological_id_ord_set.last_id, :backward}, fetch_pdu!)
+
+  def topological_stream(timeline, user_id, {"$" <> _ = from_event_id, dir}, fetch_pdu!) do
+    case Map.fetch(timeline.event_metadata, from_event_id) do
+      {:ok, %{topological_id: %TopologicalID{} = from_topo_id}} ->
+        topological_stream(timeline, user_id, {from_topo_id, dir}, fetch_pdu!)
+
+      {:ok, %{}} ->
+        {:error, :event_not_ordered_yet}
+
+      :error ->
+        {:error, :event_id_not_found}
+    end
+  end
 
   defp get_latest_known_join_topo_id(timeline, user_id) do
     case timeline.member_metadata do

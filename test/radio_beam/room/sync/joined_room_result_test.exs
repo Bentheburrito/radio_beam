@@ -1,15 +1,8 @@
 defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room.EventGraph
   alias RadioBeam.Room
   alias RadioBeam.Room.Sync.JoinedRoomResult
-  alias RadioBeam.User.EventFilter
-
-  defp event_ids_to_pdus(event_ids) do
-    {:ok, pdus} = RadioBeam.Repo.get_all(RadioBeam.PDU, event_ids)
-    pdus
-  end
 
   describe "new/11" do
     setup do
@@ -20,13 +13,11 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
         |> Fixtures.room(user.id)
         |> Fixtures.send_room_msg(user.id, "hellloooo")
 
-      {user, device} = Fixtures.device(user)
-      %{user: user, device: device, room: room}
+      %{user: user, room: room}
     end
 
     test "returns a JoinedRoomResult of the expected shape when its given a non-empty timeline", %{
       user: user,
-      device: device,
       room: room
     } do
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
@@ -45,10 +36,10 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
       assert %{type: "m.room.create"} = List.first(joined_room_result.timeline_events)
       assert %{type: "m.room.message"} = List.last(joined_room_result.timeline_events)
       assert 0 = joined_room_result.state_events |> Enum.to_list() |> length()
-      assert :no_more_events = joined_room_result.maybe_next_order_id
+      assert :no_more_events = joined_room_result.maybe_next_event_id
     end
 
-    test "returns :no_update when given an empty timeline", %{user: user, device: device, room: room} do
+    test "returns :no_update when given an empty timeline", %{user: user, room: room} do
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, user.id)
@@ -64,7 +55,6 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
   describe "Jason.Encoder implementation" do
     test "encodes an JoinedRoomResult as expected by the C-S spec" do
       user = Fixtures.user()
-      {user, device} = Fixtures.device(user)
       {:sent, room, _pdu} = "11" |> Fixtures.room(user.id) |> Fixtures.send_room_msg(user.id, "helloooooooo")
 
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
