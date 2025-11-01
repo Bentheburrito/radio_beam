@@ -8,17 +8,15 @@ defmodule RadioBeam.Room.Timeline.Chunk do
 
   defstruct ~w|timeline_events state_events start end to_event|a
 
-  def new(room, timeline_events, maybe_next_order_id, get_known_memberships_fxn, get_events_for_user, filter) do
+  def new(room, timeline_events, start_token, end_token, get_known_memberships_fxn, get_events_for_user, filter) do
     %__MODULE__{
       timeline_events: timeline_events,
       state_events: get_state_events(room, timeline_events, get_known_memberships_fxn, get_events_for_user, filter),
-      start: timeline_events |> hd() |> start_token(),
-      end: maybe_next_order_id,
+      start: start_token,
+      end: end_token,
       to_event: &encode_event(&1, room.version, filter)
     }
   end
-
-  defp start_token(%Event{order_id: order_id}), do: order_id
 
   defp encode_event(%Event{} = event, room_version, _filter) do
     Event.to_map(event, room_version)
@@ -61,6 +59,6 @@ defmodule RadioBeam.Room.Timeline.Chunk do
     end
 
     defp maybe_put_end(to_encode, :no_more_events), do: to_encode
-    defp maybe_put_end(to_encode, pagination_token), do: Map.put(to_encode, :end, pagination_token)
+    defp maybe_put_end(to_encode, end_token), do: Map.put(to_encode, :end, end_token)
   end
 end

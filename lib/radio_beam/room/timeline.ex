@@ -7,6 +7,7 @@ defmodule RadioBeam.Room.Timeline do
   require Logger
 
   alias RadioBeam.Repo
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room.View.Core.Timeline.Event
@@ -32,14 +33,21 @@ defmodule RadioBeam.Room.Timeline do
       with {:ok, user} = Repo.fetch(User, user_id),
            {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
            :ok <- check_membership(room.id, user_id),
-           %Stream{} = event_stream <- Room.View.timeline_event_stream(room.id, user_id, from) do
+           {:ok, event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
         ignored_user_ids =
           MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
 
         filter = get_filter_from_opts(opts, user)
 
-        # an order_id or :none
-        to = Keyword.get(opts, :to, :none)
+        maybe_to_event =
+          with %PaginationToken{} = since <- Keyword.get(opts, :to, :none),
+               {:ok, to_event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
+               to_event_stream <- Room.View.get_events(room.id, user.id, [to_event_id]),
+               [to_event] <- Enum.take(to_event_stream, 1) do
+            to_event
+          else
+            _ -> :none
+          end
 
         direction =
           case from do
@@ -52,25 +60,23 @@ defmodule RadioBeam.Room.Timeline do
 
         not_passed_to =
           cond do
-            to == :none -> fn _ -> true end
-            direction == :forward -> &(TopologicalID.compare(&1, to) != :gt)
-            direction == :backward -> &(TopologicalID.compare(&1, to) != :lt)
+            maybe_to_event == :none -> fn _ -> true end
+            direction == :forward -> &(TopologicalID.compare(&1, maybe_to_event.order_id) != :gt)
+            direction == :backward -> &(TopologicalID.compare(&1, maybe_to_event.order_id) != :lt)
           end
 
-        {timeline_events, last_event} =
+        {timeline_events, maybe_next_event_id} =
           event_stream
-          |> Stream.reject(&from_ignored_user?(&1, ignored_user_ids))
-          |> Stream.filter(&EventFilter.allow_timeline_event?(filter, &1))
+          |> Stream.filter(&allow_event_for_user?(&1, filter, ignored_user_ids, maybe_to_event))
           |> Stream.take(filter.timeline.limit)
           |> Stream.take_while(not_passed_to)
-          |> Enum.flat_map_reduce(first_event, &{[&1], &1})
-
-        maybe_next_order_id =
-          cond do
-            last_event.order_id == to -> :no_more_events
-            last_event.type == "m.room.create" and direction == :backward -> :no_more_events
-            :else -> last_event.order_id
-          end
+          |> Enum.flat_map_reduce(first_event.id, fn event, _last_event_id ->
+            cond do
+              maybe_to_event != :none and event.id == maybe_to_event.id -> {[], :no_more_events}
+              event.type == "m.room.create" and direction == :backward -> {[event], :no_more_events}
+              :else -> {[event], event.id}
+            end
+          end)
 
         # TODO: need to detect when we have reached the end of a chunk, and
         #       initiate a backfill over federation
@@ -78,13 +84,32 @@ defmodule RadioBeam.Room.Timeline do
         get_known_memberships_fxn = fn -> LazyLoadMembersCache.get([room.id], device_id) end
         get_events_for_user = &Room.View.get_events(room_id, user_id, &1)
 
+        start_token = PaginationToken.new(room_id, first_event.id, direction, System.os_time(:millisecond))
+        end_token = PaginationToken.new(room_id, maybe_next_event_id, direction, System.os_time(:millisecond))
+
         {:ok,
-         Chunk.new(room, timeline_events, maybe_next_order_id, get_known_memberships_fxn, get_events_for_user, filter)}
+         Chunk.new(
+           room,
+           timeline_events,
+           start_token,
+           end_token,
+           get_known_memberships_fxn,
+           get_events_for_user,
+           filter
+         )}
       end
     end)
   end
 
-  def from_ignored_user?(event, ignored_user_ids), do: is_nil(event.state_key) and event.sender in ignored_user_ids
+  def allow_event_for_user?(event, filter, ignored_user_ids, %{id: to_event_id}),
+    do: allow_event_for_user?(event, filter, ignored_user_ids, to_event_id)
+
+  def allow_event_for_user?(event, filter, ignored_user_ids, maybe_to_event_id) do
+    event.id == maybe_to_event_id or
+      (not from_ignored_user?(event, ignored_user_ids) and EventFilter.allow_timeline_event?(filter, event))
+  end
+
+  defp from_ignored_user?(event, ignored_user_ids), do: is_nil(event.state_key) and event.sender in ignored_user_ids
 
   defp check_membership(room_id, user_id) do
     with {:ok, %Participating{all: room_ids_with_membership}} <- Room.View.all_participating(user_id) do

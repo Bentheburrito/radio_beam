@@ -15,7 +15,9 @@ defmodule RadioBeam.Room.View.Core do
     Timeline
   ]
 
-  def handle_pdu(%Room{} = room, %PDU{} = pdu, %{fetch_view: fetch_view, save_view!: save_view!}) do
+  def handle_pdu(%Room{} = room, %PDU{} = pdu, deps) do
+    %{fetch_view: fetch_view, save_view!: save_view!, broadcast!: broadcast!} = deps
+
     for view <- @views, {:ok, view_key} <- [view.key_for(room, pdu)] do
       view_state =
         case fetch_view.(view_key) do
@@ -25,7 +27,18 @@ defmodule RadioBeam.Room.View.Core do
 
       view_state
       |> view.handle_pdu(room, pdu)
+      |> maybe_broadcast(broadcast!)
       |> save_view!.(view_key)
     end
   end
+
+  defp maybe_broadcast({view_state, pubsub_messages}, broadcast!) do
+    for {pubsub_topic, pubsub_message} <- pubsub_messages do
+      broadcast!.(pubsub_topic, pubsub_message)
+    end
+
+    view_state
+  end
+
+  defp maybe_broadcast(view_state, _broadcast!), do: view_state
 end

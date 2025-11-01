@@ -1,10 +1,10 @@
 defmodule RadioBeam.Room.View do
+  alias RadioBeam.PubSub
   alias RadioBeam.Repo
-  alias RadioBeam.Repo.Tables
-  alias RadioBeam.Repo.Tables.ViewState
-
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
+  alias RadioBeam.Repo.Tables
+  alias RadioBeam.Repo.Tables.ViewState
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
@@ -30,7 +30,14 @@ defmodule RadioBeam.Room.View do
   def timeline_event_stream(room_id, user_id, from) do
     with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
          {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
-      Timeline.topological_stream(timeline, user_id, from, &Room.DAG.fetch!(room.dag, &1))
+      {:ok, Timeline.topological_stream(timeline, user_id, from, &Room.DAG.fetch!(room.dag, &1))}
+    end
+  end
+
+  def timeline_event_stream!(room_id, user_id, from) do
+    case timeline_event_stream(room_id, user_id, from) do
+      {:ok, stream} -> stream
+      {:error, error} -> raise error
     end
   end
 
@@ -82,7 +89,8 @@ defmodule RadioBeam.Room.View do
   defp view_deps do
     %{
       fetch_view: &fetch_view/1,
-      save_view!: fn view_state, key -> Repo.insert!(%ViewState{key: key, value: view_state}) end
+      save_view!: &save_view!/2,
+      broadcast!: &broadcast!/2
     }
   end
 
@@ -91,4 +99,8 @@ defmodule RadioBeam.Room.View do
       {:ok, view_state}
     end
   end
+
+  defp save_view!(view_state, key), do: Repo.insert!(%ViewState{key: key, value: view_state})
+
+  defp broadcast!(broadcast_topic, broadcast_message), do: PubSub.broadcast(broadcast_topic, broadcast_message)
 end

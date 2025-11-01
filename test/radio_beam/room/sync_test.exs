@@ -30,7 +30,7 @@ defmodule RadioBeam.Room.SyncTest do
       join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream(user.id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream!(user.id, :tip) |> Enum.take(1)
 
       user_id = user.id
 
@@ -99,7 +99,7 @@ defmodule RadioBeam.Room.SyncTest do
       join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream(user.id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream!(user.id, :tip) |> Enum.take(1)
 
       assert [
                %JoinedRoomResult{
@@ -162,7 +162,7 @@ defmodule RadioBeam.Room.SyncTest do
       join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream(user.id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream!(user.id, :tip) |> Enum.take(1)
 
       assert [
                %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream},
@@ -917,11 +917,13 @@ defmodule RadioBeam.Room.SyncTest do
         end)
 
       Process.sleep(100)
+
       Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
 
       assert is_nil(Task.yield(sync_task, 0))
 
       Process.sleep(100)
+
       Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
 
       assert %Sync.Result{

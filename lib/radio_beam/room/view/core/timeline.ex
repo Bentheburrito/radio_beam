@@ -2,6 +2,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   @moduledoc """
   Tracks a room's events and state that will be sent to clients when requested.
   """
+  alias RadioBeam.PubSub
   alias RadioBeam.Room
   alias RadioBeam.Room.EventRelationships
   alias RadioBeam.Room.PDU
@@ -103,16 +104,19 @@ defmodule RadioBeam.Room.View.Core.Timeline do
           timeline.visibility_exceptions
       end
 
-    struct!(timeline,
-      topological_id_to_event_id: Map.put(timeline.topological_id_to_event_id, pdu_topo_id, pdu.event.id),
-      topological_id_ord_set: TopologicalID.OrderedSet.put(timeline.topological_id_ord_set, pdu_topo_id),
-      event_metadata: event_metadata,
-      member_metadata: member_metadata,
-      visibility_groups: Map.put(timeline.visibility_groups, visibility_group_id, visibility_group),
-      visibility_exceptions: visibility_exceptions,
-      timestamp_to_event_id_index:
-        TimestampToEventIDIndex.put(timeline.timestamp_to_event_id_index, pdu.event.origin_server_ts, pdu.event.id)
-    )
+    timeline =
+      struct!(timeline,
+        topological_id_to_event_id: Map.put(timeline.topological_id_to_event_id, pdu_topo_id, pdu.event.id),
+        topological_id_ord_set: TopologicalID.OrderedSet.put(timeline.topological_id_ord_set, pdu_topo_id),
+        event_metadata: event_metadata,
+        member_metadata: member_metadata,
+        visibility_groups: Map.put(timeline.visibility_groups, visibility_group_id, visibility_group),
+        visibility_exceptions: visibility_exceptions,
+        timestamp_to_event_id_index:
+          TimestampToEventIDIndex.put(timeline.timestamp_to_event_id_index, pdu.event.origin_server_ts, pdu.event.id)
+      )
+
+    {timeline, pubsub_messages(room.id, pdu_topo_id, pdu)}
   end
 
   defp later_join_topo_id(timeline, user_id, pdu_topo_id) do
@@ -260,8 +264,21 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     |> Stream.filter(event_visible?)
   end
 
+  defp pubsub_messages(room_id, topological_id, pdu) do
+    new_event_message = {PubSub.all_room_events(room_id), {:room_event, room_id, Event.new!(topological_id, pdu, [])}}
+
+    if pdu.event.type == "m.room.member" and pdu.event.content["membership"] == "invite" do
+      [
+        new_event_message,
+        {PubSub.invite_events(pdu.event.state_key), {:room_invite, room_id}}
+      ]
+    else
+      [new_event_message]
+    end
+  end
+
   defmodule EventMetadata do
-    @enforce_keys ~w|topological_id|a
+    @enforce_keys ~w|topological_id visibility_group_id|a
     defstruct topological_id: nil, visibility_group_id: nil, bundled_event_ids: []
 
     def new!(topological_id_or_unknown, visibility_group_id, bundled_event_ids \\ []) do

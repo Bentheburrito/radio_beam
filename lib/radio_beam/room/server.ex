@@ -6,7 +6,6 @@ defmodule RadioBeam.Room.Server do
   """
   use GenServer
 
-  alias RadioBeam.PubSub
   alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
@@ -83,14 +82,9 @@ defmodule RadioBeam.Room.Server do
 
         Room.View.handle_pdu(room, pdu)
 
-        # TODO: remove
-        PubSub.broadcast(PubSub.all_room_events(room.id), {:room_event, event})
-
-        if event.type == "m.room.member" do
-          if event.content["membership"] == "invite" do
-            PubSub.broadcast(PubSub.invite_events(event.state_key), {:room_invite, room.id})
-          end
-
+        if event.type == "m.room.member" and event.content["membership"] == "invite" do
+          # note: `mark_dirty` needs to be called after Views are updated, not
+          # just when write model is updated
           LazyLoadMembersCache.mark_dirty(room.id, event.state_key)
         end
 

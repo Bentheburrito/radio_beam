@@ -8,7 +8,6 @@ defmodule RadioBeam.Room.Sync.Core do
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
-  alias RadioBeam.User.EventFilter
 
   def perform(%Sync{} = sync, %Room{} = room) do
     {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", sync.user.id)
@@ -32,9 +31,8 @@ defmodule RadioBeam.Room.Sync.Core do
         :no_update
 
       membership when membership in ~w|ban join leave| ->
-        with %Stream{} = event_stream <- sync.functions.event_stream.(room.id) do
-          joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus)
-        end
+        event_stream = sync.functions.event_stream.(room.id)
+        joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus)
 
       # TODO: should the invite reflect changes to stripped state events that
       # happened after the invite?
@@ -55,7 +53,7 @@ defmodule RadioBeam.Room.Sync.Core do
   end
 
   defp joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus) do
-    to_event =
+    maybe_to_event =
       with %PaginationToken{} = since <- sync.start,
            {:ok, to_event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
            to_event_stream <- sync.functions.get_events_for_user.(room.id, [to_event_id]),
@@ -65,25 +63,25 @@ defmodule RadioBeam.Room.Sync.Core do
         _ -> :none
       end
 
-    not_reached_to =
-      if to_event == :none, do: fn _ -> true end, else: &(TopologicalID.compare(&1.order_id, to_event.order_id) == :gt)
+    not_passed_to =
+      if maybe_to_event == :none,
+        do: fn _ -> true end,
+        else: &(TopologicalID.compare(&1.order_id, maybe_to_event.order_id) != :lt)
 
     [%Event{} = first_event] = Enum.take(event_stream, 1)
 
-    {timeline_events, last_event} =
+    {timeline_events, maybe_next_event_id} =
       event_stream
-      |> Stream.reject(&Timeline.from_ignored_user?(&1, ignored_user_ids))
-      |> Stream.filter(&EventFilter.allow_timeline_event?(sync.filter, &1))
+      |> Stream.filter(&Timeline.allow_event_for_user?(&1, sync.filter, ignored_user_ids, maybe_to_event))
       |> Stream.take(sync.filter.timeline.limit)
-      |> Stream.take_while(not_reached_to)
-      |> Enum.flat_map_reduce(first_event, fn event, _last_event -> {[event], event} end)
-
-    maybe_next_event_id =
-      if (to_event != :none and last_event.id == to_event.id) or last_event.type == "m.room.create" do
-        :no_more_events
-      else
-        last_event.id
-      end
+      |> Stream.take_while(not_passed_to)
+      |> Enum.flat_map_reduce(first_event.id, fn event, _last_event_id ->
+        cond do
+          maybe_to_event != :none and event.id == maybe_to_event.id -> {[], :no_more_events}
+          event.type == "m.room.create" -> {[event], :no_more_events}
+          :else -> {[event], event.id}
+        end
+      end)
 
     opts = [
       next_event_id: maybe_next_event_id,

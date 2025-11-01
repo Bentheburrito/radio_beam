@@ -2,13 +2,13 @@ defmodule RadioBeam.Room.Sync do
   alias RadioBeam.Repo
   alias RadioBeam.PubSub
   alias RadioBeam.Room
-  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Sync.Core
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
@@ -72,7 +72,7 @@ defmodule RadioBeam.Room.Sync do
       full_state?: Keyword.get(opts, :full_state?, false),
       timeout: Keyword.get(opts, :timeout, 0),
       functions: %{
-        event_stream: &Room.View.timeline_event_stream(&1, user.id, :tip),
+        event_stream: &Room.View.timeline_event_stream!(&1, user.id, :tip),
         get_events_for_user: &Room.View.get_events(&1, user.id, &2)
       }
     }
@@ -96,18 +96,15 @@ defmodule RadioBeam.Room.Sync do
     sync_result =
       if Enum.empty?(sync_result.data) do
         sync.timeout
-        |> wait_for_room_events()
+        |> new_room_events_stream()
         |> Stream.filter(fn
-          {:room_event, %PDU{event: %{room_id: room_id}}} -> room_id in sync.room_ids
+          {:room_event, room_id, %Event{}} -> room_id in sync.room_ids
           # invited to a new room? it won't be in sync.room_ids, let it through
           {:room_invite, room_id} -> room_id
         end)
         |> Enum.reduce_while(sync_result, fn
-          {:room_event, %PDU{} = pdu}, sync_result ->
-            {room_sync_result, room_id, maybe_next_batch_event_id} =
-              sync.functions.event_stream
-              |> put_in(fn _room_id -> [pdu] end)
-              |> perform(pdu.event.room_id)
+          {:room_event, room_id, %Event{} = _event}, sync_result ->
+            {room_sync_result, room_id, maybe_next_batch_event_id} = perform(sync, room_id)
 
             case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_event_id) do
               %Sync.Result{data: []} = sync_result -> {:cont, sync_result}
@@ -163,18 +160,18 @@ defmodule RadioBeam.Room.Sync do
     end
   end
 
-  defp wait_for_room_events(timeout) do
+  defp new_room_events_stream(timeout) do
     Stream.resource(
       fn -> timeout end,
       fn timeout ->
-        time_before_receive = :os.system_time(:millisecond)
+        time_before_receive = System.os_time(:millisecond)
 
         receive do
           message ->
-            remaining_timeout = max(0, timeout - (:os.system_time(:millisecond) - time_before_receive))
+            remaining_timeout = max(0, timeout - (System.os_time(:millisecond) - time_before_receive))
 
             case message do
-              {:room_event, %PDU{}} = room_event_message -> {[room_event_message], remaining_timeout}
+              {:room_event, "!" <> _, %Event{}} = room_event_message -> {[room_event_message], remaining_timeout}
               {:room_invite, "!" <> _} = room_invite_message -> {[room_invite_message], remaining_timeout}
               _ -> {[], remaining_timeout}
             end
