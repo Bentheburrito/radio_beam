@@ -12,7 +12,7 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.User
 
   def handle_pdu(%Room{} = room, %PDU{} = pdu) do
-    Core.handle_pdu(room, pdu, view_deps())
+    Core.handle_pdu(room, pdu, deps())
   end
 
   def all_participating(user_id) do
@@ -59,16 +59,17 @@ defmodule RadioBeam.Room.View do
   `event_id` to `Enumerable.t(Event.t())`. If an `event_id` is absent from the resulting map,
   it either does not exist or the user does not have permission to view it.
   """
-  @spec get_child_events(Room.id(), User.id(), [Room.event_id()]) :: %{Room.event_id() => Enumerable.t(Event.t())}
+  @spec get_child_events(Room.id(), User.id(), [Room.event_id()] | Room.event_id()) ::
+          %{Room.event_id() => Enumerable.t(Event.t())} | {:ok, Enumerable.t(Event.t())} | {:error, :not_found}
   def get_child_events(room_id, user_id, event_ids) when is_list(event_ids) do
     with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
          {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}),
          {:ok, %RelatedEvents{} = relations} <- fetch_view({RelatedEvents, room_id}) do
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
-      event_ids = timeline |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!) |> Stream.map(& &1.id)
 
-      relations.related_by_event_id
-      |> Map.take(event_ids)
+      timeline
+      |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!)
+      |> Stream.map(&{&1.id, Map.get(relations.related_by_event_id, &1.id, MapSet.new())})
       |> Map.new(fn {parent_event_id, child_event_ids} ->
         visible_child_event_stream =
           Timeline.get_visible_events(timeline, child_event_ids, user_id, fetch_pdu!)
@@ -78,15 +79,14 @@ defmodule RadioBeam.Room.View do
     end
   end
 
-  @spec get_child_event(Room.id(), User.id(), Room.event_id()) :: {:ok, Enumerable.t(Event.t())} | {:error, :not_found}
-  def get_child_event(room_id, user_id, event_id) do
-    case get_child_event(room_id, user_id, [event_id]) do
+  def get_child_events(room_id, user_id, "$" <> _ = event_id) do
+    case get_child_events(room_id, user_id, [event_id]) do
       %{^event_id => related_events_stream} -> {:ok, related_events_stream}
       %{} -> {:error, :not_found}
     end
   end
 
-  defp view_deps do
+  defp deps do
     %{
       fetch_view: &fetch_view/1,
       save_view!: &save_view!/2,
@@ -102,5 +102,5 @@ defmodule RadioBeam.Room.View do
 
   defp save_view!(view_state, key), do: Repo.insert!(%ViewState{key: key, value: view_state})
 
-  defp broadcast!(broadcast_topic, broadcast_message), do: PubSub.broadcast(broadcast_topic, broadcast_message)
+  defp broadcast!(pubsub_topic, pubsub_message), do: PubSub.broadcast(pubsub_topic, pubsub_message)
 end

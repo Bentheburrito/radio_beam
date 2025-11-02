@@ -48,7 +48,8 @@ defmodule RadioBeam.Room do
   @doc "Returns all room IDs that `user_id` is joined to"
   @spec joined(user_id :: String.t()) :: MapSet.t(id())
   def joined(user_id) do
-    with {:ok, %{joined: joined}} <- Room.View.all_participating(user_id), do: joined
+    with {:ok, %{latest_known_join_pdus: join_pdus_map}} <- Room.View.all_participating(user_id),
+         do: Stream.map(join_pdus_map, fn {room_id, _pdu} -> room_id end)
   end
 
   @doc """
@@ -138,16 +139,6 @@ defmodule RadioBeam.Room do
     Room.Server.send(room_id, Events.redaction(room_id, user_id, event_id, reason))
   end
 
-  # this is only used in tests, so delete and assert in another way...
-  #   def member?(room_id, user_id) do
-  #     with {:ok, room} <- get(room_id) do
-  #       case Room.State.fetch(room.state, "m.room.member", user_id) do
-  #         {:ok, %{event: %{content: %{"membership" => "join"}}}} -> true
-  #         _else -> false
-  #       end
-  #     end
-  #   end
-
   def get_members(room_id, user_id, at_event_id \\ :current, membership_filter \\ fn _ -> true end)
 
   def get_members(room_id, user_id, :current, membership_filter) do
@@ -228,7 +219,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_children(room_id, user_id, event_id, opts) do
-    with {:ok, child_event_stream} <- Room.View.get_child_event(room_id, user_id, event_id) do
+    with {:ok, child_event_stream} <- Room.View.get_child_events(room_id, user_id, event_id) do
       rel_type = Keyword.get(opts, :rel_type)
       event_type = Keyword.get(opts, :event_type)
 
