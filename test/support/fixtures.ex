@@ -34,6 +34,11 @@ defmodule Fixtures do
     }
   end
 
+  def send_room_event(room, sender_id, type, content, deps \\ default_room_deps()) do
+    event_attrs = Events.message(room.id, sender_id, type, content)
+    Room.Core.send(room, event_attrs, deps)
+  end
+
   def send_room_msg(room, sender_id, msg, deps \\ default_room_deps()) do
     event_attrs = Events.message(room.id, sender_id, "m.room.message", %{"msgtype" => "m.text", "body" => msg})
     Room.Core.send(room, event_attrs, deps)

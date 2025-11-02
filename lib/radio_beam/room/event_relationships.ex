@@ -4,8 +4,6 @@ defmodule RadioBeam.Room.EventRelationships do
   them.
   """
 
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
-
   require RadioBeam
 
   @aggregable_rel_types ~w|m.thread m.replace m.reference|
@@ -43,16 +41,18 @@ defmodule RadioBeam.Room.EventRelationships do
   defp get_aggregator_by_rel_type("m.thread", parent, user_id),
     do: {&aggregate_thread(&1, &2, user_id), init_thread_acc(parent, user_id)}
 
-  defp get_aggregator_by_rel_type("m.replace", parent, _user_id), do: {&aggregate_replace/2, parent}
+  defp get_aggregator_by_rel_type("m.replace", _parent, _user_id), do: {&aggregate_replace/2, nil}
   defp get_aggregator_by_rel_type("m.reference", _parent, _user_id), do: {&aggregate_reference/2, %{"chunk" => []}}
   defp get_aggregator_by_rel_type(_rel_type, _parent, _user_id), do: :no_known_aggregator
 
+  defp aggregate_replace(%{} = edit1, nil), do: edit1
+
   defp aggregate_replace(%{} = edit1, %{} = edit2) do
     cond do
-      edit1.event.origin_server_ts > edit2.event.origin_server_ts ->
+      edit1.origin_server_ts > edit2.origin_server_ts ->
         edit1
 
-      edit1.event.origin_server_ts == edit2.event.origin_server_ts and edit1.event.event_id > edit2.event.event_id ->
+      edit1.origin_server_ts == edit2.origin_server_ts and edit1.id > edit2.id ->
         edit1
 
       :else ->
@@ -61,9 +61,7 @@ defmodule RadioBeam.Room.EventRelationships do
   end
 
   defp aggregate_thread(event, %{} = acc, user_id) do
-    # latest_event = if PDU.compare(pdu, acc.latest_event) == :gt, do: pdu, else: acc.latest_event
-    latest_event =
-      if TopologicalID.compare(event.order_id, acc.latest_event.order_id) == :gt, do: event, else: acc.latest_event
+    latest_event = if event.origin_server_ts >= acc.latest_event.origin_server_ts, do: event, else: acc.latest_event
 
     %{
       acc
@@ -74,7 +72,7 @@ defmodule RadioBeam.Room.EventRelationships do
   end
 
   defp init_thread_acc(parent, user_id),
-    do: %{latest_event: parent, count: 0, current_user_participated: user_id == parent.event.sender}
+    do: %{latest_event: parent, count: 0, current_user_participated: user_id == parent.sender}
 
   defp aggregate_reference(%{} = child_event, %{"chunk" => chunk}) do
     %{"chunk" => [child_event.id | chunk]}

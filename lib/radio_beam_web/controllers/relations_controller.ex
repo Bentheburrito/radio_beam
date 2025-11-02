@@ -25,7 +25,7 @@ defmodule RadioBeamWeb.RelationsController do
 
     with {:ok, child_events, recurse_depth} <- Room.get_children(room_id, user.id, event_id, opts) do
       # TOIMPL: this endpoint can take a from/to token returned from /messages
-      # and /sync (so a PaginationToken). EventGraph.get_children does not currently
+      # and /sync (so a PaginationToken). Room.get_children does not currently
       # support this (nor a `limit`), so just returning all children for now -
       # need to come back to do this properly
 
