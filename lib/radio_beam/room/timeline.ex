@@ -44,7 +44,7 @@ defmodule RadioBeam.Room.Timeline do
         maybe_to_event =
           with %PaginationToken{} = since <- Keyword.get(opts, :to, :none),
                {:ok, to_event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
-               to_event_stream <- Room.View.get_events(room.id, user.id, [to_event_id]),
+               {:ok, to_event_stream} <- Room.View.get_events(room.id, user.id, [to_event_id]),
                [to_event] <- Enum.take(to_event_stream, 1) do
             to_event
           else
@@ -90,7 +90,7 @@ defmodule RadioBeam.Room.Timeline do
         #       initiate a backfill over federation
 
         get_known_memberships_fxn = fn -> LazyLoadMembersCache.get([room.id], device_id) end
-        get_events_for_user = &Room.View.get_events(room_id, user_id, &1)
+        get_events_for_user = &Room.View.get_events!(room_id, user_id, &1)
 
         start_direction =
           case from_token do

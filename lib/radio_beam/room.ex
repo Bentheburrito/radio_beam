@@ -48,8 +48,10 @@ defmodule RadioBeam.Room do
   @doc "Returns all room IDs that `user_id` is joined to"
   @spec joined(user_id :: String.t()) :: MapSet.t(id())
   def joined(user_id) do
-    with {:ok, %{latest_known_join_pdus: join_pdus_map}} <- Room.View.all_participating(user_id),
-         do: Stream.map(join_pdus_map, fn {room_id, _pdu} -> room_id end)
+    case Room.View.all_participating(user_id) do
+      {:ok, %{latest_known_join_pdus: join_pdus_map}} -> Stream.map(join_pdus_map, fn {room_id, _pdu} -> room_id end)
+      {:error, :not_found} -> []
+    end
   end
 
   @doc """
@@ -129,46 +131,55 @@ defmodule RadioBeam.Room do
   end
 
   def get_event(room_id, user_id, event_id, _bundle_aggregates? \\ true) do
-    case Room.View.get_events(room_id, user_id, [event_id]) do
-      [event] -> {:ok, event}
-      [] -> {:error, :unauthorized}
-    end
+    expect_one_event(room_id, user_id, event_id)
   end
 
   def redact_event(room_id, user_id, event_id, reason \\ nil) do
     Room.Server.send(room_id, Events.redaction(room_id, user_id, event_id, reason))
   end
 
-  def get_members(room_id, user_id, at_event_id \\ :current, membership_filter \\ fn _ -> true end)
+  def get_members(room_id, user_id, at_event_id \\ :latest_visible, membership_filter \\ fn _ -> true end)
 
-  def get_members(room_id, user_id, :current, membership_filter) do
-    with {:ok, state_events} <- get_state(room_id, user_id) do
-      filter_member_events(state_events, membership_filter)
-    end
-  end
-
-  def get_members(room_id, user_id, "$" <> _ = at_event_id, membership_filter) do
-    with {:ok, room} <- get(room_id),
-         {:ok, pdu} <- Room.DAG.fetch(room.dag, at_event_id),
-         {:ok, state_pdus_at_pdu} <- Room.State.get_all_at(room.state, pdu) do
-      state_event_ids = Stream.map(state_pdus_at_pdu, fn {_key, pdu} -> pdu.event.id end)
-
-      room_id
-      |> Room.View.get_events(user_id, state_event_ids)
-      |> filter_member_events(membership_filter)
+  def get_members(room_id, user_id, at_event_id_or_current, membership_filter) do
+    with true <- room_id in all_where_has_membership(user_id),
+         {:ok, room} <- get(room_id),
+         {:ok, latest_visible_state_pdus} <- get_latest_visible_state(room, at_event_id_or_current, user_id),
+         {:ok, member_event_ids} <- get_member_event_ids_at_pdu(latest_visible_state_pdus, membership_filter),
+         {:ok, member_events} <- Room.View.get_events(room_id, user_id, member_event_ids) do
+      {:ok, member_events}
     else
       _ -> {:error, :unauthorized}
     end
   end
 
-  defp filter_member_events(state_events, membership_filter) do
-    member_events =
-      Enum.filter(state_events, fn
-        %{type: "m.room.member"} = event -> membership_filter.(get_in(event.content["membership"]))
-        _ -> false
-      end)
+  defp get_latest_visible_state(room, :latest_visible, user_id) do
+    case Room.State.fetch(room.state, "m.room.member", user_id) do
+      {:ok, %{event: %{content: %{"membership" => "join"}}}} ->
+        {:ok, Room.State.get_all(room.state)}
 
-    {:ok, member_events}
+      {:ok, %{event: %{content: %{"membership" => "leave"}, id: event_id}}} ->
+        pdu = Room.DAG.fetch!(room.dag, event_id)
+        {:ok, Room.State.get_all_at(room.state, pdu)}
+
+      _else ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp get_latest_visible_state(room, "$" <> _ = at_event_id, _user_id) do
+    pdu = Room.DAG.fetch!(room.dag, at_event_id)
+    {:ok, Room.State.get_all_at(room.state, pdu)}
+  end
+
+  defp get_member_event_ids_at_pdu(state_pdus, membership_filter) do
+    state_pdus
+    |> Stream.map(fn {_key, pdu} -> pdu.event end)
+    |> Stream.filter(fn
+      %{type: "m.room.member"} = event -> membership_filter.(get_in(event.content["membership"]))
+      _ -> false
+    end)
+    |> Stream.map(fn event -> event.id end)
+    |> then(&{:ok, &1})
   end
 
   def get_state(room_id, user_id) do
@@ -182,7 +193,7 @@ defmodule RadioBeam.Room do
 
       state_event_ids = Stream.map(state, fn {_key, pdu} -> pdu.event.id end)
 
-      {:ok, Room.View.get_events(room_id, user_id, state_event_ids)}
+      Room.View.get_events(room_id, user_id, state_event_ids)
     else
       _ -> {:error, :unauthorized}
     end
@@ -190,21 +201,34 @@ defmodule RadioBeam.Room do
 
   def get_state(room_id, user_id, type, state_key) do
     with {:ok, room} <- get(room_id),
-         {:ok, pdu} <- Room.State.fetch(room.state, type, state_key),
-         event_stream <- Room.View.get_events(room_id, user_id, [pdu.event.id]),
-         [event] <- Enum.take(event_stream, 1) do
-      {:ok, event}
-    else
-      _ -> {:error, :unauthorized}
+         {:ok, %PDU{} = state_pdu} <- get_state_at(room.state, user_id, type, state_key) do
+      expect_one_event(room_id, user_id, state_pdu.event.id)
+    end
+  end
+
+  defp get_state_at(room_state, user_id, type, state_key) do
+    case use_state_at(room_state, user_id) do
+      {:ok, :latest_event} -> Room.State.fetch(room_state, type, state_key)
+      {:ok, %PDU{} = pdu} -> Room.State.fetch_at(room_state, type, state_key, pdu)
+      {:error, _} = error -> error
     end
   end
 
   defp use_state_at(room_state, user_id) do
     case Room.State.fetch(room_state, "m.room.member", user_id) do
       {:ok, %{event: %{content: %{"membership" => "join"}}}} -> {:ok, :latest_event}
-      {:ok, %{event: %{content: %{"membership" => membership}}}} = pdu when membership in ~w|leave kick| -> {:ok, pdu}
+      {:ok, %{event: %{content: %{"membership" => membership}}} = pdu} when membership in ~w|leave kick| -> {:ok, pdu}
       {:ok, _} -> {:error, :unauthorized}
       {:error, :not_found} -> {:error, :unauthorized}
+    end
+  end
+
+  defp expect_one_event(room_id, user_id, event_id) do
+    with {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [event_id]),
+         [event] <- Enum.take(event_stream, 1) do
+      {:ok, event}
+    else
+      _ -> {:error, :unauthorized}
     end
   end
 
@@ -244,5 +268,7 @@ defmodule RadioBeam.Room do
   defp apply_order(event_stream, :chronological), do: Enum.sort(event_stream, {:asc, TopologicalID})
   defp apply_order(event_stream, :reverse_chronological), do: Enum.sort(event_stream, {:desc, TopologicalID})
 
-  defp get(id), do: Repo.fetch(Repo.Tables.Room, id)
+  defp get(id) do
+    with {:error, :not_found} <- Repo.fetch(Repo.Tables.Room, id), do: {:error, :unauthorized}
+  end
 end

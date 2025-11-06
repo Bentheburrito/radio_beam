@@ -41,7 +41,7 @@ defmodule RadioBeam.Room.Alias do
           # Unicode codepoints except : and NUL."
           not String.valid?(localpart) -> {:error, :invalid_alias_localpart}
           server_name != RadioBeam.server_name() -> {:error, :invalid_or_unknown_server_name}
-          :else -> :ok
+          :else -> {:ok, localpart, server_name}
         end
 
       _ ->

@@ -73,7 +73,7 @@ defmodule RadioBeam.Room.Sync do
       timeout: Keyword.get(opts, :timeout, 0),
       functions: %{
         event_stream: &Room.View.timeline_event_stream!(&1, user.id, :tip),
-        get_events_for_user: &Room.View.get_events(&1, user.id, &2)
+        get_events_for_user: &Room.View.get_events!(&1, user.id, &2)
       }
     }
   end

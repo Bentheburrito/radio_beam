@@ -66,7 +66,8 @@ defmodule RadioBeam.User.Keys do
         since_event_map =
           Map.new(room_ids, fn room_id ->
             with {:ok, since_event_id} <- PaginationToken.room_last_seen_event_id(since, room_id),
-                 [since_event] <- Room.View.get_events(room_id, user.id, [since_event_id]) do
+                 {:ok, event_stream} <- Room.View.get_events(room_id, user.id, [since_event_id]),
+                 [since_event] <- Enum.take(event_stream, 1) do
               {room_id, since_event}
             end
           end)

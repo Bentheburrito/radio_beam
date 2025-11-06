@@ -30,7 +30,8 @@ defmodule RadioBeam.Room.Core do
 
   ### CREATE / WRITE ###
 
-  @spec new(String.t(), User.id(), [create_opt()]) :: {Room.t(), :queue.queue(PDU.t())} | {:error, :unauthorized}
+  @spec new(String.t(), User.id(), deps :: map(), [create_opt()]) ::
+          {Room.t(), :queue.queue(PDU.t())} | {:error, :unauthorized}
   def new(version, creator_id, deps, opts \\ []) do
     state = State.new!()
 
@@ -64,18 +65,16 @@ defmodule RadioBeam.Room.Core do
   end
 
   def send(%Room{} = room, %AuthorizedEvent{type: "m.room.redaction"} = event, _deps) do
-    room
-    |> Redactions.apply_or_queue(event)
-    |> send_common(event)
+    room |> Redactions.apply_or_queue(event) |> send_common(event)
   end
 
   def send(%Room{id: room_id} = room, %AuthorizedEvent{type: "m.room.canonical_alias"} = event, deps) do
     [event.content["alias"] | Map.get(event.content, "alt_aliases", [])]
     |> Stream.filter(&is_binary/1)
     |> Enum.find_value(send_common(room, event), fn alias ->
-      case deps.resolve_room_alias.(alias) do
-        {:ok, ^room_id} -> false
-        {:ok, _different_room_id} -> {:error, :alias_room_id_mismatch}
+      case deps.register_room_alias.(alias, room_id) do
+        :ok -> false
+        {:error, :already_registered} -> {:error, :alias_room_id_mismatch}
         {:error, _} = error -> error
       end
     end)

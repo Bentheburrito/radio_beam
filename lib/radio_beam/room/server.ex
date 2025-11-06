@@ -31,6 +31,8 @@ defmodule RadioBeam.Room.Server do
 
   def send(room_id, event_attrs), do: call(room_id, {:send, event_attrs})
 
+  def ping(room_id), do: call(room_id, :ping)
+
   defp call(room_id, message) do
     case Registry.lookup(RadioBeam.RoomRegistry, room_id) do
       [{pid, _}] ->
@@ -107,8 +109,11 @@ defmodule RadioBeam.Room.Server do
     end
   end
 
+  @impl GenServer
+  def handle_call(:ping, _from, %Room{} = room), do: {:reply, :pong, room}
+
   defp deps do
-    %{resolve_room_alias: &Room.Alias.get_room_id/1}
+    %{register_room_alias: fn alias, room_id -> with {:ok, _} <- Room.Alias.put(alias, room_id), do: :ok end}
   end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}

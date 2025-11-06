@@ -44,7 +44,14 @@ defmodule RadioBeam.Room.View do
   def get_events(room_id, user_id, event_ids) do
     with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
          {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
-      Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))
+      {:ok, Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))}
+    end
+  end
+
+  def get_events!(room_id, user_id, event_ids) do
+    case get_events(room_id, user_id, event_ids) do
+      {:ok, event_stream} -> event_stream
+      {:error, error} -> raise error
     end
   end
 

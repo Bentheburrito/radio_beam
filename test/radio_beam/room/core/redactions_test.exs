@@ -72,10 +72,10 @@ defmodule RadioBeam.Room.Core.RedactionsTest do
 
   defp default_deps do
     %{
-      resolve_room_alias: fn
-        "#invalid:localhost" -> {:error, :invalid_alias}
-        "#not_mapped:localhost" -> {:error, :not_found}
-        _alias -> {:ok, Fixtures.room_id()}
+      register_room_alias: fn
+        "#invalid:localhost", _ -> {:error, :invalid_alias}
+        "#not_mapped:localhost", _ -> :ok
+        _alias, _ -> {:error, :already_registered}
       end
     }
   end

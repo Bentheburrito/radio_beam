@@ -42,7 +42,7 @@ defmodule RadioBeam.Room.Core.RelationshipsTest do
 
   defp default_deps do
     %{
-      resolve_room_alias: fn _ -> {:error, :not_found} end
+      register_room_alias: fn _, _ -> :ok end
     }
   end
 end

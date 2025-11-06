@@ -156,7 +156,7 @@ defmodule RadioBeam.Room.StateTest do
           Events.from_preset(:public_chat, room_id, user_id)
         )
 
-      %{user_id: user_id, room_id: room_id, room_version: room_version, init_state_events_stream: init_state_events}
+      %{user_id: user_id, room_id: room_id, init_state_events_stream: init_state_events}
     end
 
     test "authorizes the core new-room state events", %{init_state_events_stream: init_state_events} do

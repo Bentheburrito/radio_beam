@@ -746,7 +746,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
     test "returns a state event content (200) with an empty state_key", %{conn: conn, user: user} do
       rv = "10"
-      {:ok, room_id} = Room.create(user, room_version: rv)
+      {:ok, room_id} = Room.create(user, version: rv)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.create/", %{})
       assert %{"room_version" => ^rv} = json_response(conn, 200)

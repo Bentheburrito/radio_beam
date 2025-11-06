@@ -27,7 +27,7 @@ defmodule RadioBeamWeb.RoomController do
         {"power_level_content_override", pls}, acc -> Keyword.put(acc, :power_levels, pls)
         {"room_alias_name", room_alias}, acc -> Keyword.put(acc, :alias, room_alias.opaque_id)
         {"creation_content", content}, acc -> Keyword.put(acc, :content, content)
-        {"room_version", version}, acc -> Keyword.put(acc, :room_version, version)
+        {"room_version", version}, acc -> Keyword.put(acc, :version, version)
         {"visibility", visibility}, acc -> Keyword.put(acc, :visibility, visibility)
         {key, value}, acc -> [{String.to_existing_atom(key), value} | acc]
       end)
