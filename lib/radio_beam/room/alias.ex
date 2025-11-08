@@ -34,12 +34,12 @@ defmodule RadioBeam.Room.Alias do
   end
 
   defp validate(alias) do
-    case String.split(alias, ":", parts: 2) do
+    case String.split(alias, ":", parts: 3) do
       ["#" <> localpart, server_name] ->
         cond do
           # TOIMPL: "The localpart of a room alias may contain any valid non-surrogate
           # Unicode codepoints except : and NUL."
-          not String.valid?(localpart) -> {:error, :invalid_alias_localpart}
+          not String.valid?(localpart) or not String.printable?(localpart) -> {:error, :invalid_alias_localpart}
           server_name != RadioBeam.server_name() -> {:error, :invalid_or_unknown_server_name}
           :else -> {:ok, localpart, server_name}
         end

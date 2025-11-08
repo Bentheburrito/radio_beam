@@ -11,13 +11,30 @@ defmodule RadioBeam.Room.AliasTest do
 
     test "successfully maps a new alias if the room exists and the alias is not already used", %{user: user} do
       {:ok, room_id} = Room.create(user)
-      alias = "#nottaken:localhost"
-      assert {:ok, %Alias{alias: ^alias, room_id: ^room_id}} = Alias.put(alias, room_id)
+
+      alias_localpart = "nottaken"
+      alias_servername = "localhost"
+      alias = "##{alias_localpart}:#{alias_servername}"
+
+      assert {:ok, %Alias{alias_tuple: {^alias_localpart, ^alias_servername}, room_id: ^room_id}} =
+               Alias.put(alias, room_id)
     end
 
-    test "errors with :room_does_not_exist when the room ID doesn't exist" do
-      alias = "#validnottaken:localhost"
-      assert {:error, :room_does_not_exist} = Alias.put(alias, "!some:room")
+    test "errors with :invalid_aliaswhen localpart contains ':'" do
+      invalid_alias_localpart = "hello:world"
+      alias = "##{invalid_alias_localpart}:localhost"
+      assert {:error, :invalid_alias} = Alias.put(alias, "!asdf:localhost")
+    end
+
+    test "errors with :invalid_alias_localpart when localpart contains null byte or ':'" do
+      invalid_alias_localpart = <<"helloworld", 0>>
+      alias = "##{invalid_alias_localpart}:localhost"
+      assert {:error, :invalid_alias_localpart} = Alias.put(alias, "!asdf:localhost")
+    end
+
+    test "errors with :invalid_or_unknown_server_name when servername does not match this homeserver" do
+      alias = "#helloworld:blahblah"
+      assert {:error, :invalid_or_unknown_server_name} = Alias.put(alias, "!asdf:localhost")
     end
 
     test "errors with :alias_in_use when the given alias is already mapped to a room ID", %{user: user} do

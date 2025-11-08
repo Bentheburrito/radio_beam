@@ -53,7 +53,7 @@ defmodule RadioBeam.User.Keys do
         shared_memberships_by_user =
           room_ids
           |> Stream.flat_map(fn room_id ->
-            case Room.get_members(room_id, user.id, :current, &(&1 in ~w|join leave|)) do
+            case Room.get_members(room_id, user.id, :latest_visible, &(&1 in ~w|join leave|)) do
               {:ok, member_events} -> Stream.map(member_events, &Map.put(&1, :room_id, room_id))
               _ -> []
             end

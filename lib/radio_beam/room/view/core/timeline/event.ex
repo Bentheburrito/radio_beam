@@ -22,26 +22,26 @@ defmodule RadioBeam.Room.View.Core.Timeline.Event do
   def compare(%__MODULE__{order_id: :unknown}, %__MODULE__{order_id: maybe_order_id2}), do: maybe_order_id2 > :unknown
 
   # TOIMPL: choose client or federation format based on filter
-  @cs_event_keys [:content, :event_id, :origin_server_ts, :room_id, :sender, :state_key, :type, :unsigned]
-  def to_map(%__MODULE__{} = event, room_version) do
+  @cs_event_keys [:content, :origin_server_ts, :room_id, :sender, :state_key, :type, :unsigned]
+  def to_map(%__MODULE__{} = event) do
     event
     |> Map.take(@cs_event_keys)
-    |> adjust_redacts_key(room_version)
+    |> Map.put(:event_id, event.id)
+    |> adjust_redacts_key()
     |> case do
       %{state_key: :none} = event -> Map.delete(event, :state_key)
       event -> event
     end
   end
 
-  @pre_v11_format_versions ~w|1 2 3 4 5 6 7 8 9 10|
-  defp adjust_redacts_key(%{type: "m.room.redaction"} = event, room_version)
-       when room_version in @pre_v11_format_versions do
-    {redacts, content} = Map.pop!(event.content, "redacts")
+  defp adjust_redacts_key(%{type: "m.room.redaction"} = event),
+    do: Map.put(event, :redacts, get_in(event.content["redacts"]))
 
-    event
-    |> Map.put(:redacts, redacts)
-    |> Map.put(:content, content)
+  defp adjust_redacts_key(event), do: event
+
+  defimpl Jason.Encoder do
+    alias RadioBeam.Room.View.Core.Timeline.Event
+
+    def encode(event, opts), do: event |> Event.to_map() |> Jason.Encode.map(opts)
   end
-
-  defp adjust_redacts_key(event, _room_version), do: event
 end

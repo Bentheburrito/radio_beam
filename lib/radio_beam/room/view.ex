@@ -57,7 +57,7 @@ defmodule RadioBeam.Room.View do
 
   def nearest_events_stream(room_id, user_id, timestamp, direction) do
     with {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
-      Timeline.stream_event_ids_closest_to_ts(timeline, user_id, timestamp, direction)
+      {:ok, Timeline.stream_event_ids_closest_to_ts(timeline, user_id, timestamp, direction)}
     end
   end
 

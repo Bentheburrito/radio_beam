@@ -5,6 +5,7 @@ defmodule RadioBeamWeb.RoomController do
 
   require Logger
 
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.{Errors, Room, Transaction, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
@@ -29,6 +30,7 @@ defmodule RadioBeamWeb.RoomController do
         {"creation_content", content}, acc -> Keyword.put(acc, :content, content)
         {"room_version", version}, acc -> Keyword.put(acc, :version, version)
         {"visibility", visibility}, acc -> Keyword.put(acc, :visibility, visibility)
+        {"invite_3pid", invites}, acc -> Keyword.put(acc, :invite_3pid, invites)
         {key, value}, acc -> [{String.to_existing_atom(key), value} | acc]
       end)
 
@@ -71,7 +73,7 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
-  def joined(conn, _params), do: json(conn, %{joined_rooms: Room.joined(conn.assigns.user.id)})
+  def joined(conn, _params), do: json(conn, %{joined_rooms: conn.assigns.user.id |> Room.joined() |> Enum.to_list()})
 
   def invite(conn, %{"room_id" => room_id}) do
     %User{} = inviter = conn.assigns.user
@@ -214,7 +216,7 @@ defmodule RadioBeamWeb.RoomController do
   # omg...
   @room_member_keys ["avatar_url", "displayname", "display_name"]
   def get_joined_members(conn, %{"room_id" => room_id}) do
-    case Room.get_members(room_id, conn.assigns.user.id, :current, &(&1 == "join")) do
+    case Room.get_members(room_id, conn.assigns.user.id, :latest_visible, &(&1 == "join")) do
       {:ok, members} ->
         json(conn, %{joined: Map.new(members, &{&1.state_key, Map.take(&1.content, @room_member_keys)})})
 
@@ -225,9 +227,12 @@ defmodule RadioBeamWeb.RoomController do
 
   def get_members(conn, %{"room_id" => room_id} = params) do
     at_event_id =
-      case params do
-        %{"at" => prev_batch} -> prev_batch |> String.split("|") |> hd()
-        _ -> :current
+      with %{"at" => pagination_token_str} <- params,
+           {:ok, %PaginationToken{} = token} <- PaginationToken.parse(pagination_token_str),
+           {:ok, at_event_id} <- PaginationToken.room_last_seen_event_id(token, room_id) do
+        at_event_id
+      else
+        _ -> :latest_visible
       end
 
     membership_filter_fn =
@@ -246,14 +251,14 @@ defmodule RadioBeamWeb.RoomController do
       end
 
     case Room.get_members(room_id, conn.assigns.user.id, at_event_id, membership_filter_fn) do
-      {:ok, members} -> json(conn, %{chunk: members})
+      {:ok, members} -> json(conn, %{chunk: Enum.to_list(members)})
       {:error, error} -> handle_common_error(conn, error)
     end
   end
 
   def get_state(conn, %{"room_id" => room_id}) do
     case Room.get_state(room_id, conn.assigns.user.id) do
-      {:ok, members} -> json(conn, Map.values(members))
+      {:ok, members} -> json(conn, Enum.to_list(members))
       {:error, error} -> handle_common_error(conn, error)
     end
   end
@@ -277,8 +282,7 @@ defmodule RadioBeamWeb.RoomController do
     %{"dir" => dir, "ts" => timestamp} = conn.assigns.request
 
     case Room.get_nearest_event(room_id, conn.assigns.user.id, dir, timestamp) do
-      {:ok, event} -> json(conn, %{"event_id" => event.id, "origin_server_ts" => event.origin_server_ts})
-      {:error, :not_found} -> handle_common_error(conn, :not_found)
+      {:ok, event_id, origin_server_ts} -> json(conn, %{"event_id" => event_id, "origin_server_ts" => origin_server_ts})
       {:error, error} -> handle_common_error(conn, error)
     end
   end

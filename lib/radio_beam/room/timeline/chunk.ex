@@ -14,12 +14,12 @@ defmodule RadioBeam.Room.Timeline.Chunk do
       state_events: get_state_events(room, timeline_events, get_known_memberships_fxn, get_events_for_user, filter),
       start: start_token,
       end: end_token,
-      to_event: &encode_event(&1, Room.State.room_version(room.state), filter)
+      to_event: &encode_event(&1, filter)
     }
   end
 
-  defp encode_event(%Event{} = event, room_version, _filter) do
-    Event.to_map(event, room_version)
+  defp encode_event(%Event{} = event, _filter) do
+    Event.to_map(event)
     # TOIMPL
     # |> EventFilter.take_fields(filter.fields)
   end

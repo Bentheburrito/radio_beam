@@ -13,7 +13,6 @@ defmodule RadioBeam.Room do
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Events
-  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User
 
   @attrs ~w|id dag state redactions relationships|a
@@ -233,12 +232,11 @@ defmodule RadioBeam.Room do
   end
 
   def get_nearest_event(room_id, user_id, dir, timestamp) when dir in ~w|forward backward|a do
-    room_id
-    |> Room.View.nearest_events_stream(user_id, timestamp, dir)
-    |> Enum.take(1)
-    |> case do
-      [] -> {:error, :not_found}
-      [%Event{} = event] -> {:ok, event}
+    with {:ok, event_stream} <- Room.View.nearest_events_stream(room_id, user_id, timestamp, dir) do
+      case Enum.take(event_stream, 1) do
+        [] -> {:error, :not_found}
+        [{"$" <> _ = event_id, origin_server_ts}] -> {:ok, event_id, origin_server_ts}
+      end
     end
   end
 

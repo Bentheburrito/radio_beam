@@ -265,15 +265,16 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     latest_known_join_topo_id = timeline.member_metadata[user_id][:latest_known_join_topo_id] || :never_joined
 
     event_visible? =
-      fn {_event_id, metadata} ->
+      fn {_event_id, metadata, _ts} ->
         visible_to_user?(timeline, user_id, latest_known_join_topo_id, metadata.topological_id)
       end
 
     timeline.timestamp_to_event_id_index
     |> TimestampToEventIDIndex.stream_nearest_event_ids(timestamp, direction)
-    |> Stream.map(&{&1, timeline.event_metadata[&1]})
-    |> Stream.reject(fn {_event_id, maybe_metadata} -> is_nil(maybe_metadata) end)
+    |> Stream.map(fn {ts, event_id} -> {event_id, timeline.event_metadata[event_id], ts} end)
+    |> Stream.reject(fn {_event_id, maybe_metadata, _ts} -> is_nil(maybe_metadata) end)
     |> Stream.filter(event_visible?)
+    |> Stream.map(fn {event_id, _metadata, origin_server_ts} -> {event_id, origin_server_ts} end)
   end
 
   defp pubsub_messages(room_id, topological_id, pdu) do
@@ -313,17 +314,24 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     @default_cutoff :timer.hours(24)
 
     # index: %{rounded_origin_server_ts => [{origin_server_ts, event_id}]}
-    defstruct index: %{}
+    defstruct index: %{}, min: :infinity, max: 0
 
     def new!, do: %__MODULE__{index: %{}}
 
     def put(%__MODULE__{} = ts_index, origin_server_ts, event_id) do
       rounded_timestamp = round_timestamp(origin_server_ts)
 
+      ts_index =
+        cond do
+          rounded_timestamp < ts_index.min -> put_in(ts_index.min, rounded_timestamp)
+          rounded_timestamp > ts_index.max -> put_in(ts_index.max, rounded_timestamp)
+          :else -> ts_index
+        end
+
       update_in(ts_index.index[rounded_timestamp], fn
         nil -> [{origin_server_ts, event_id}]
         # TODO: maybe optimize if necessary
-        ordered_pairs -> Enum.sort_by([{origin_server_ts, event_id} | ordered_pairs], &elem(&1, 0))
+        ordered_pairs -> Enum.sort_by([{origin_server_ts, event_id} | ordered_pairs], &elem(&1, 0), &</2)
       end)
     end
 
@@ -331,21 +339,32 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     Returns event IDs whose `origin_server_ts` is closest to the given unix
     `timestamp` in the direction of `dir`.
     """
-    def stream_nearest_event_ids(%__MODULE__{index: index}, timestamp, dir)
+    def stream_nearest_event_ids(%__MODULE__{index: index} = ts_index, timestamp, dir)
         when is_integer(timestamp) and dir in ~w|forward backward|a do
       rounded_timestamp = round_timestamp(timestamp)
       to_add = if dir == :forward, do: @round_to_multiples_of, else: -@round_to_multiples_of
 
+      reached_end? = if dir == :forward, do: fn ts -> ts > ts_index.max end, else: fn ts -> ts < ts_index.min end
+
       keep_taking? =
         if dir == :forward do
-          fn {origin_server_ts, _event_id} -> origin_server_ts > timestamp + @default_cutoff end
+          fn {origin_server_ts, _event_id} -> origin_server_ts <= timestamp + @default_cutoff end
         else
-          fn {origin_server_ts, _event_id} -> origin_server_ts < timestamp - @default_cutoff end
+          fn {origin_server_ts, _event_id} -> origin_server_ts >= timestamp - @default_cutoff end
+        end
+
+      seeked_to_first_ts? =
+        if dir == :forward do
+          fn {origin_server_ts, _event_id} -> origin_server_ts <= timestamp end
+        else
+          fn {origin_server_ts, _event_id} -> origin_server_ts >= timestamp end
         end
 
       rounded_timestamp
       |> Stream.iterate(&(&1 + to_add))
-      |> Stream.flat_map(&Map.get(index, &1, []))
+      |> Stream.take_while(&(not reached_end?.(&1)))
+      |> Stream.flat_map(&get_entries_from_index(index, &1, dir))
+      |> Stream.drop_while(seeked_to_first_ts?)
       |> Stream.take_while(keep_taking?)
 
       # !! This needs to be done in the calling code that has user visibility info
@@ -354,5 +373,8 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     end
 
     defp round_timestamp(timestamp), do: timestamp - rem(timestamp, @round_to_multiples_of)
+
+    defp get_entries_from_index(index, rounded_ts, :forward), do: Map.get(index, rounded_ts, [])
+    defp get_entries_from_index(index, rounded_ts, :backward), do: index |> Map.get(rounded_ts, []) |> Enum.reverse()
   end
 end

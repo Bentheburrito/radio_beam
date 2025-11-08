@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.RoomControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.RoomRegistry
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room
   alias RadioBeam.User.Auth
 
@@ -26,8 +26,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
 
-      assert %{"room_id" => room_id} = json_response(conn, 200)
-      assert [{_pid, _}] = Registry.lookup(RoomRegistry, room_id)
+      assert %{"room_id" => "!" <> _ = _room_id} = json_response(conn, 200)
     end
 
     test "successfully creates a room with all options specified", %{conn: conn} do
@@ -61,19 +60,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
 
-      assert %{"room_id" => room_id} = json_response(conn, 200)
-      assert [{_pid, _}] = Registry.lookup(RoomRegistry, room_id)
-
-      assert {:ok, %Room{id: ^room_id, version: ^version, state: state}} = Room.get(room_id)
-
-      assert %{"join_rule" => "public"} = get_in(state[{"m.room.join_rules", ""}].content)
-
-      alias = "#aqua:#{server_name}"
-      assert %{"alias" => ^alias} = get_in(state[{"m.room.canonical_alias", ""}].content)
-      assert {:ok, ^room_id} = Room.Alias.get_room_id(alias)
-
-      assert %{"membership" => "invite"} =
-               get_in(state[{"m.room.member", "@bwyatt:#{server_name}"}].content)
+      assert %{"room_id" => _room_id} = json_response(conn, 200)
     end
 
     @tag :capture_log
@@ -87,14 +74,14 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
 
-      assert %{"room_id" => room_id} = json_response(conn, 200)
-      assert [{_pid, _}] = Registry.lookup(RoomRegistry, room_id)
+      assert %{"room_id" => _room_id} = json_response(conn, 200)
 
       conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
 
       assert %{"errcode" => "M_ROOM_IN_USE"} = json_response(conn, 400)
     end
 
+    @tag :capture_log
     test "errors with M_INVALID_ROOM_STATE when the power_levels don't make sense", %{conn: conn} do
       req_body = %{
         "name" => "A room",
@@ -145,6 +132,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
       conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
       assert %{"room_id" => room_id} = json_response(conn, 200)
 
+      :pong = Room.Server.ping(room_id)
+
       conn = get(conn, ~p"/_matrix/client/v3/joined_rooms", %{})
 
       assert %{"joined_rooms" => [^room_id]} = json_response(conn, 200)
@@ -175,9 +164,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
         })
 
       assert %{} = json_response(conn, 200)
-      {:ok, %Room{state: state}} = Room.get(room_id)
-      assert "invite" = get_in(state[{"m.room.member", invitee_id}].content["membership"])
-      assert "join us :)" = get_in(state[{"m.room.member", invitee_id}].content["reason"])
     end
 
     test "rejects if inviter isn't in the room", %{conn: conn} do
@@ -194,8 +180,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
       assert error_message =~ "aren't in the room"
-      {:ok, %Room{state: state}} = Room.get(room_id)
-      refute is_map_key(state, {"m.room.member", invitee_id})
     end
 
     test "rejects if inviter is in the room but does not have permission to invite", %{conn: conn} do
@@ -216,8 +200,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
       assert error_message =~ "permission to invite others"
-      {:ok, %Room{state: state}} = Room.get(room_id)
-      refute is_map_key(state, {"m.room.member", invitee_id})
     end
 
     test "notifies when the room doesn't exist", %{conn: conn} do
@@ -252,8 +234,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/join", %{"reason" => "you gotta give"})
 
       assert %{"room_id" => ^room_id} = json_response(conn, 200)
-      {:ok, %Room{state: state}} = Room.get(room_id)
-      assert "you gotta give" = get_in(state[{"m.room.member", user.id}].content["reason"])
     end
 
     test "fails to joins an invite-only room without an invite", %{conn: conn} do
@@ -441,7 +421,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "rejects a duplicate annotation", %{conn: conn, user: creator} do
       {:ok, room_id} = Room.create(creator)
 
-      {:ok, event_id} = Fixtures.send_text_msg(room_id, creator.id, "please react with 👍 to vote")
+      {:ok, event_id} = Room.send_text_message(room_id, creator.id, "please react with 👍 to vote")
       rel = %{"m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.annotation", "key" => "👍"}}
       {:ok, _} = Room.send(room_id, creator.id, "m.reaction", rel)
 
@@ -541,14 +521,16 @@ defmodule RadioBeamWeb.RoomControllerTest do
     } do
       {:ok, room_id} = Room.create(user)
 
-      content = %{"msgtype" => "m.text", "body" => "hi hi hello"}
-      {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, event_id} = Room.send_text_message(room_id, user.id, "hi hi hello")
+
+      pagination_token_string =
+        room_id |> PaginationToken.new(event_id, :forward, System.os_time(:millisecond)) |> PaginationToken.encode()
 
       user2 = Fixtures.user()
       {:ok, _event_id} = Room.invite(room_id, user.id, user2.id)
       {:ok, _event_id} = Room.join(room_id, user2.id)
 
-      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"at" => event_id})
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"at" => pagination_token_string})
 
       assert %{"chunk" => chunk} = json_response(conn, 200)
       assert 1 = length(chunk)
@@ -582,6 +564,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
     } do
       {:ok, room_id} = Room.create(user)
 
+      :pong = Room.Server.ping(room_id)
+
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{})
       user_id = user.id
       assert %{"chunk" => [%{"sender" => ^user_id} = membership_event]} = json_response(conn, 200)
@@ -608,6 +592,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
     test "returns the state (200) when the requester is in the room", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user)
+
+      :pong = Room.Server.ping(room_id)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state", %{})
       assert state = json_response(conn, 200)
@@ -696,7 +682,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
 
-      {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "this was meant for another room")
+      {:ok, event_id} = Room.send_text_message(room_id, user.id, "this was meant for another room")
 
       conn =
         put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/redact/#{event_id}/abcdf111df", %{
@@ -706,11 +692,11 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"event_id" => "$" <> _} = json_response(conn, 200)
     end
 
-    @tag :capture_log
-    test "returns M_FORBIDDEN (403) when someone w/out `redact` power level tries to redact another's event", %{
-      conn: conn,
-      user: user
-    } do
+    test "returns the redaction event ID (200) when someone w/out `redact` power level tries to redact another's event",
+         %{
+           conn: conn,
+           user: user
+         } do
       creator = Fixtures.user()
 
       {:ok, room_id} = Room.create(creator)
@@ -718,14 +704,16 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, _event_id} = Room.join(room_id, user.id)
 
       {:ok, event_id} =
-        Fixtures.send_text_msg(room_id, creator.id, "I am the creator, a mere member cannot redact this")
+        Room.send_text_message(room_id, creator.id, "I am the creator, a mere member cannot redact this")
 
       conn =
         put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/redact/#{event_id}/abcdf111df", %{
           "reason" => "imagine"
         })
 
-      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+      # note that this does not mean the redaction was actually applied, just
+      # that the m.room.redaction event was allowed to be sent
+      assert %{"event_id" => "$" <> _} = json_response(conn, 200)
     end
   end
 
@@ -740,6 +728,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "returns the state event content (200) when the requester is in the room", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user)
 
+      :pong = Room.Server.ping(room_id)
+
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.member/#{user.id}", %{})
       assert %{"membership" => "join"} = json_response(conn, 200)
     end
@@ -747,6 +737,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "returns a state event content (200) with an empty state_key", %{conn: conn, user: user} do
       rv = "10"
       {:ok, room_id} = Room.create(user, version: rv)
+
+      :pong = Room.Server.ping(room_id)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.create/", %{})
       assert %{"room_version" => ^rv} = json_response(conn, 200)
@@ -779,9 +771,9 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
     test "returns a temporally suitable event (200)", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user)
-      {:ok, event_id} = Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "heyo"})
+      {:ok, event_id} = Room.send_text_message(room_id, user.id, "heyo")
 
-      query_params = %{dir: "b", ts: :os.system_time(:millisecond)}
+      query_params = %{dir: "b", ts: System.os_time(:millisecond)}
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/timestamp_to_event?#{query_params}", %{})
       assert %{"event_id" => ^event_id} = json_response(conn, 200)

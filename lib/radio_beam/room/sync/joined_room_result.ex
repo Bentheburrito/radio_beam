@@ -162,7 +162,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
       to_event = fn event ->
         event
-        |> Event.to_map(room_result.room_version)
+        |> Event.to_map()
         |> EventFilter.take_fields(room_result.filter.fields)
       end
 
