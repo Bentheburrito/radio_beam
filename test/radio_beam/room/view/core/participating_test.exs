@@ -18,7 +18,7 @@ defmodule RadioBeam.Room.View.Core.ParticipatingTest do
       view = Participating.new!()
       updated_view = Participating.handle_pdu(view, room, pdu)
 
-      assert view.joined == updated_view.joined
+      assert view.latest_known_join_pdus == updated_view.latest_known_join_pdus
       assert MapSet.new([room.id]) == updated_view.all
 
       {:sent, other_room, pdu} =
@@ -26,21 +26,21 @@ defmodule RadioBeam.Room.View.Core.ParticipatingTest do
 
       updated_view = Participating.handle_pdu(updated_view, other_room, pdu)
 
-      assert view.joined == updated_view.joined
+      assert view.latest_known_join_pdus == updated_view.latest_known_join_pdus
       assert MapSet.new([room.id, other_room.id]) == updated_view.all
     end
 
-    test "adds the room ID to `:all` and `:joined` when the PDU is a join membership event", %{
+    test "adds the room ID to `:all` and `:latest_known_join_pdus` when the PDU is a join membership event", %{
       room: room,
       creator_id: creator_id,
       user_id: user_id
     } do
       {:sent, room, _pdu} = Fixtures.send_room_membership(room, creator_id, user_id, :invite)
-      {:sent, room, pdu} = Fixtures.send_room_membership(room, user_id, user_id, :join)
+      {:sent, room, join_pdu} = Fixtures.send_room_membership(room, user_id, user_id, :join)
       view = Participating.new!()
-      updated_view = Participating.handle_pdu(view, room, pdu)
+      updated_view = Participating.handle_pdu(view, room, join_pdu)
 
-      assert MapSet.new([room.id]) == updated_view.joined
+      assert %{room.id => join_pdu} == updated_view.latest_known_join_pdus
       assert MapSet.new([room.id]) == updated_view.all
 
       {:sent, other_room, pdu} =
@@ -48,7 +48,7 @@ defmodule RadioBeam.Room.View.Core.ParticipatingTest do
 
       updated_view = Participating.handle_pdu(updated_view, other_room, pdu)
 
-      assert MapSet.new([room.id]) == updated_view.joined
+      assert %{room.id => join_pdu} == updated_view.latest_known_join_pdus
       assert MapSet.new([room.id, other_room.id]) == updated_view.all
     end
   end
