@@ -14,22 +14,20 @@ defmodule RadioBeam.Sync do
   def perform_v2(user_id, device_id, opts) do
     since_or_nil = Keyword.get(opts, :since)
 
-    Repo.transaction!(fn ->
-      with {:ok, user} <- Repo.fetch(User, user_id) do
-        room_sync_result =
-          user
-          |> Room.Sync.init(device_id, opts)
-          |> Room.Sync.perform()
+    with {:ok, user} <- Repo.fetch(User, user_id) do
+      room_sync_result =
+        user
+        |> Room.Sync.init(device_id, opts)
+        |> Room.Sync.perform()
 
-        next_batch = PaginationToken.new(room_sync_result.next_batch_map, :forward, System.os_time(:millisecond))
+      next_batch = PaginationToken.new(room_sync_result.next_batch_map, :forward, System.os_time(:millisecond))
 
-        %__MODULE__{rooms: room_sync_result, next_batch: next_batch, to_device: %{}}
-        |> put_account_data(user)
-        |> put_to_device_messages(user.id, device_id, since_or_nil)
-        |> put_device_key_changes(user, since_or_nil)
-        |> put_device_otk_usages(user, device_id)
-      end
-    end)
+      %__MODULE__{rooms: room_sync_result, next_batch: next_batch, to_device: %{}}
+      |> put_account_data(user)
+      |> put_to_device_messages(user.id, device_id, since_or_nil)
+      |> put_device_key_changes(user, since_or_nil)
+      |> put_device_otk_usages(user, device_id)
+    end
   end
 
   defp put_account_data(sync, user), do: put_in(sync.account_data, Map.get(user.account_data, :global, %{}))
@@ -48,7 +46,7 @@ defmodule RadioBeam.Sync do
     end
   end
 
-  defp put_device_key_changes(sync, _user, nil), do: sync
+  defp put_device_key_changes(sync, _user, nil), do: put_in(sync.device_lists, %{changed: [], left: []})
 
   defp put_device_key_changes(sync, user, since) do
     changed_map =

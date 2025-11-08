@@ -10,7 +10,6 @@ defmodule RadioBeam.Room.Timeline do
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room
@@ -51,8 +50,6 @@ defmodule RadioBeam.Room.Timeline do
             _ -> :none
           end
 
-        [%Event{} = first_event] = Enum.take(event_stream, 1)
-
         not_passed_to =
           cond do
             maybe_to_event == :none -> fn _ -> true end
@@ -78,7 +75,7 @@ defmodule RadioBeam.Room.Timeline do
           |> Stream.filter(&allow_event_for_user?(&1, filter, ignored_user_ids, maybe_to_event))
           |> Stream.take(filter.timeline.limit)
           |> Stream.take_while(not_passed_to)
-          |> Enum.flat_map_reduce(first_event.id, fn event, _last_event_id ->
+          |> Enum.flat_map_reduce(:no_more_events, fn event, _last_event_id ->
             cond do
               maybe_to_event != :none and event.id == maybe_to_event.id -> {[], :no_more_events}
               event.type == "m.room.create" and direction == :backward -> {[event], :no_more_events}
@@ -98,7 +95,14 @@ defmodule RadioBeam.Room.Timeline do
             _else -> if direction == :forward, do: :backward, else: :forward
           end
 
-        start_token = PaginationToken.new(room_id, first_event.id, start_direction, System.os_time(:millisecond))
+        start_token =
+          case timeline_events do
+            [first_event | _] ->
+              PaginationToken.new(room_id, first_event.id, start_direction, System.os_time(:millisecond))
+
+            [] ->
+              PaginationToken.new(%{}, start_direction, System.os_time(:millisecond))
+          end
 
         end_token =
           if maybe_next_event_id == :no_more_events,

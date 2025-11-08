@@ -28,7 +28,10 @@ config :radio_beam,
   max_event_recurse: 5,
   max_events: [timeline: 200, state: 100],
   registration_enabled: true,
-  versions: %{unstable_features: %{}, versions: ["v1.8", "v1.9", "v1.10", "v1.11"]}
+  versions: %{
+    unstable_features: %{},
+    versions: ["v1.8", "v1.9", "v1.10", "v1.11", "v1.11", "v1.12", "v1.13", "v1.14", "v1.15", "v1.16"]
+  }
 
 config :radio_beam, RadioBeam.ContentRepo,
   allowed_mimes:
