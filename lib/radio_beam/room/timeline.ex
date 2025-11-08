@@ -34,7 +34,7 @@ defmodule RadioBeam.Room.Timeline do
            {:ok, user} = Repo.fetch(User, user_id),
            {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
            {:ok, from, direction} <- map_from_pagination_token(from_token, room_id),
-           {:ok, event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
+           {:ok, user_event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
         ignored_user_ids =
           MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
 
@@ -61,13 +61,13 @@ defmodule RadioBeam.Room.Timeline do
           case from_token do
             {%PaginationToken{} = from, _dir} ->
               if PaginationToken.direction(from) != direction do
-                event_stream
+                user_event_stream
               else
-                Stream.drop(event_stream, 1)
+                Stream.drop(user_event_stream, 1)
               end
 
             _else ->
-              event_stream
+              user_event_stream
           end
 
         {timeline_events, maybe_next_event_id} =
@@ -96,7 +96,7 @@ defmodule RadioBeam.Room.Timeline do
           end
 
         start_token =
-          case timeline_events do
+          case Enum.take(user_event_stream, 1) do
             [first_event | _] ->
               PaginationToken.new(room_id, first_event.id, start_direction, System.os_time(:millisecond))
 

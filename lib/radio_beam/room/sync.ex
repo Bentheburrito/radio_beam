@@ -90,48 +90,9 @@ defmodule RadioBeam.Room.Sync do
         Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_event_id)
       end)
 
-    # no new visible events since last sync? read room events as they arrive in
-    # the mailbox, up until the timeout or we get one that we can show
-    # TODO: sync_result |> wait_if_empty |> side_effects
-    sync_result =
-      if Enum.empty?(sync_result.data) do
-        sync.timeout
-        |> new_room_events_stream()
-        |> Stream.filter(fn
-          {:room_event, room_id, %Event{}} -> room_id in sync.room_ids
-          # invited to a new room? it won't be in sync.room_ids, let it through
-          {:room_invite, room_id} -> room_id
-        end)
-        |> Enum.reduce_while(sync_result, fn
-          {:room_event, room_id, %Event{} = _event}, sync_result ->
-            {room_sync_result, room_id, maybe_next_batch_event_id} = perform(sync, room_id)
-
-            case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_event_id) do
-              %Sync.Result{data: []} = sync_result -> {:cont, sync_result}
-              %Sync.Result{data: [_ | _]} = sync_result -> {:halt, sync_result}
-            end
-
-          {:room_invite, room_id}, sync_result ->
-            sync = put_in(sync.functions.event_stream, fn _room_id -> [] end)
-            sync = update_in(sync.room_ids, &MapSet.put(&1, room_id))
-
-            {room_sync_result, room_id, maybe_next_batch_event_id} = perform(sync, room_id)
-
-            case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_event_id) do
-              %Sync.Result{data: []} = sync_result -> {:cont, sync_result}
-              %Sync.Result{data: [_ | _]} = sync_result -> {:halt, sync_result}
-            end
-        end)
-      else
-        sync_result
-      end
-
-    sync_result.data
-    |> Stream.filter(&match?(%JoinedRoomResult{}, &1))
-    |> Stream.map(&{&1.room_id, &1.sender_ids |> MapSet.delete(sync.user.id) |> MapSet.to_list()})
-    |> Enum.each(fn {room_id, sender_ids} -> LazyLoadMembersCache.put(sync.device_id, room_id, sender_ids) end)
-
     sync_result
+    |> wait_if_empty(sync)
+    |> perform_side_effects(sync)
   end
 
   @spec perform(t(), Room.id()) :: :no_update | JoinedRoomResult.t() | InvitedRoomResult.t()
@@ -158,6 +119,51 @@ defmodule RadioBeam.Room.Sync do
       {:ok, event_id} -> event_id
       {:error, :not_found} -> nil
     end
+  end
+
+  # no new visible events since last sync? read room events as they arrive in
+  # the mailbox, up until the timeout or we get one that we can show
+  defp wait_if_empty(sync_result, sync) do
+    if Enum.empty?(sync_result.data) do
+      sync.timeout
+      |> new_room_events_stream()
+      |> Stream.filter(fn
+        {:room_event, room_id, %Event{}} -> room_id in sync.room_ids
+        # invited to a new room? it won't be in sync.room_ids, let it through
+        {:room_invite, room_id} -> room_id
+      end)
+      |> Enum.reduce_while(sync_result, fn
+        {:room_event, room_id, %Event{} = _event}, sync_result ->
+          {room_sync_result, room_id, maybe_next_batch_event_id} = perform(sync, room_id)
+
+          case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_event_id) do
+            %Sync.Result{data: []} = sync_result -> {:cont, sync_result}
+            %Sync.Result{data: [_ | _]} = sync_result -> {:halt, sync_result}
+          end
+
+        {:room_invite, room_id}, sync_result ->
+          sync = put_in(sync.functions.event_stream, fn _room_id -> [] end)
+          sync = update_in(sync.room_ids, &MapSet.put(&1, room_id))
+
+          {room_sync_result, room_id, maybe_next_batch_event_id} = perform(sync, room_id)
+
+          case Sync.Result.put_result(sync_result, room_sync_result, room_id, maybe_next_batch_event_id) do
+            %Sync.Result{data: []} = sync_result -> {:cont, sync_result}
+            %Sync.Result{data: [_ | _]} = sync_result -> {:halt, sync_result}
+          end
+      end)
+    else
+      sync_result
+    end
+  end
+
+  defp perform_side_effects(sync_result, sync) do
+    sync_result.data
+    |> Stream.filter(&match?(%JoinedRoomResult{}, &1))
+    |> Stream.map(&{&1.room_id, &1.sender_ids |> MapSet.delete(sync.user.id) |> MapSet.to_list()})
+    |> Enum.each(fn {room_id, sender_ids} -> LazyLoadMembersCache.put(sync.device_id, room_id, sender_ids) end)
+
+    sync_result
   end
 
   defp new_room_events_stream(timeout) do

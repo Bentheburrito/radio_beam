@@ -47,7 +47,6 @@ defmodule RadioBeam.RoomTest do
           direct?: true,
           visibility: :public,
           invite: [invitee.id],
-          # TODO
           invite_3pid: []
         ]
 

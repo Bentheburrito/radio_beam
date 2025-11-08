@@ -34,8 +34,6 @@ defmodule RadioBeam.Room.Sync.Core do
         event_stream = sync.functions.event_stream.(room.id)
         joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus)
 
-      # TODO: should the invite reflect changes to stripped state events that
-      # happened after the invite?
       "invite" when maybe_last_sync_room_state_pdus == :initial ->
         if user_membership_pdu.event.sender in ignored_user_ids do
           :no_update
