@@ -1,6 +1,7 @@
 defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User.Account
   alias RadioBeam.User
   alias RadioBeam.User.Auth
@@ -112,7 +113,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       {:ok, user} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
 
-      {:ok, filter} = Jason.encode(%{"room" => %{"timeline" => %{"limit" => 2}}})
+      {:ok, filter} = Jason.encode(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
       creator_id = creator.id
 
@@ -190,8 +191,12 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/messages?#{query_params}", %{})
 
-      assert %{"chunk" => chunk, "end" => _next2, "start" => ^next, "state" => state} =
+      assert %{"chunk" => chunk, "end" => _next2, "start" => next2, "state" => state} =
                json_response(conn, 200)
+
+      {:ok, next} = PaginationToken.parse(next)
+      {:ok, next2} = PaginationToken.parse(next2)
+      assert PaginationToken.topologically_equal?(next, next2)
 
       assert 1 = length(state)
       assert [%{"type" => "m.room.history_visibility"}, %{"type" => "m.room.join_rules"}, _] = chunk

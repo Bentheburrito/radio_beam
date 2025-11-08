@@ -7,7 +7,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
-  defstruct ~w|room_id room_version timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data|a
+  defstruct ~w|room_id timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data|a
 
   @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [Event.t()], state_events: [Room.event_id()]}
 
@@ -68,7 +68,6 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
       %__MODULE__{
         room_id: room.id,
-        room_version: Room.State.room_version(room.state),
         timeline_events: timeline_events,
         maybe_next_event_id: Keyword.get(opts, :next_event_id, :no_more_events),
         latest_event_id: latest_event_id,

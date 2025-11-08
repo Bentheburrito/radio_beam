@@ -34,6 +34,10 @@ defmodule RadioBeam.Room.Events.PaginationToken do
 
   def created_at(%__MODULE__{created_at_ms: created_at}), do: created_at
 
+  def encode(%__MODULE__{direction: dir, room_id_event_id_pairs: pairs, created_at_ms: created_at})
+      when map_size(pairs) == 0,
+      do: "batch:#{dir}:#{created_at}:"
+
   # NOTE: the length of this token grows linearly with the number of rooms.
   # This may begin to become an issue for users in 100s of rooms (or more).
   # Consider `:zlib` when the length of `event_ids` exceeds a certain size.
@@ -68,6 +72,7 @@ defmodule RadioBeam.Room.Events.PaginationToken do
   defp parse_pairs(pairs_string), do: parse_pairs(pairs_string, %{})
 
   defp parse_pairs(:done, pairs), do: {:ok, pairs}
+  defp parse_pairs("", pairs), do: {:ok, pairs}
 
   defp parse_pairs(pairs_string, pairs) do
     with {:ok, maybe_room_id, maybe_event_id, rest} <- parse_pairs_string(pairs_string),

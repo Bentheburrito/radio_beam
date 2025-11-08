@@ -56,6 +56,7 @@ defmodule RadioBeamWeb.SyncController do
 
     case Timeline.get_messages(room_id, user.id, device.id, from_and_dir, opts) do
       {:ok, response} -> json(conn, response)
+      {:error, :not_found} -> handle_common_error(conn, :unauthorized)
       {:error, error} -> handle_common_error(conn, error)
     end
   end

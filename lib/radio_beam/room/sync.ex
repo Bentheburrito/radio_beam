@@ -1,6 +1,6 @@
 defmodule RadioBeam.Room.Sync do
-  alias RadioBeam.Repo
   alias RadioBeam.PubSub
+  alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Sync.Core

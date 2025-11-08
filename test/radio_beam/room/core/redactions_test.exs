@@ -9,7 +9,8 @@ defmodule RadioBeam.Room.Core.RedactionsTest do
   describe "Core.send/3 (Core.Redactions.apply_or_queue/2)" do
     setup do
       user_id = Fixtures.user_id()
-      %{room: Room.Core.new("11", user_id, default_deps()), creator_id: user_id}
+      {room, _pdus} = Room.Core.new("11", user_id, default_deps())
+      %{room: room, creator_id: user_id}
     end
 
     test "applies a redaction to an event when we have it on the room DAG", %{room: room, creator_id: creator_id} do
@@ -40,7 +41,8 @@ defmodule RadioBeam.Room.Core.RedactionsTest do
   describe "Core.send/3 (Core.Redactions.apply_any_pending/2)" do
     setup do
       user_id = Fixtures.user_id()
-      %{room: Room.Core.new("11", user_id, default_deps()), creator_id: user_id}
+      {room, _pdus} = Room.Core.new("11", user_id, default_deps())
+      %{room: room, creator_id: user_id}
     end
 
     test "returns the room if no redaction is pending for the given event_id", %{room: room} do

@@ -7,7 +7,8 @@ defmodule RadioBeam.Room.Core.RelationshipsTest do
   describe "Core.send/3 (Core.Relationships.apply_event/2)" do
     setup do
       user_id = Fixtures.user_id()
-      %{room: Room.Core.new("11", user_id, default_deps()), creator_id: user_id}
+      {room, _pdus} = Room.Core.new("11", user_id, default_deps())
+      %{room: room, creator_id: user_id}
     end
 
     test "noops relationships if the event is not related to others", %{room: room, creator_id: creator_id} do

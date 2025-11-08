@@ -273,6 +273,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
       assert %{"access_token" => ^at, "refresh_token" => ^rt} = json_response(conn, 200)
     end
 
+    @tag :capture_log
     test "errors with M_UNKNOWN_TOKEN (401) if the refresh token is invalid", %{conn: conn} do
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => "asdfasdf123354"})
 
