@@ -4,8 +4,10 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
   alias RadioBeam.Room
   alias RadioBeam.User.Auth
 
-  defp relates_to(parent_id) do
+  defp relates_to(parent_id, msg) do
     %{
+      "msgtype" => "m.text",
+      "body" => msg,
       "m.relates_to" => %{
         "rel_type" => "m.thread",
         "event_id" => parent_id
@@ -19,7 +21,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       %{access_token: token} = Auth.session_info(user, device)
 
       {:ok, room_id} = Room.create(user)
-      {:ok, event_id} = Fixtures.send_text_msg(room_id, user.id, "this is the parent event")
+      {:ok, event_id} = Room.send_text_message(room_id, user.id, "this is the parent event")
 
       %{
         conn: put_req_header(conn, "authorization", "Bearer #{token}"),
@@ -44,9 +46,10 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       user: user,
       parent_event_id: parent_event_id
     } do
-      rel = relates_to(parent_event_id)
-      {:ok, child_id1} = Fixtures.send_text_msg(room_id, user.id, "hello starting a thread here", rel)
-      {:ok, child_id2} = Fixtures.send_text_msg(room_id, user.id, "details coming soon", rel)
+      content = relates_to(parent_event_id, "hello starting a thread here")
+      {:ok, child_id1} = Room.send(room_id, user.id, "m.room.message", content)
+      content = relates_to(parent_event_id, "details coming soon")
+      {:ok, child_id2} = Room.send(room_id, user.id, "m.room.message", content)
 
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
       assert %{"chunk" => [%{"event_id" => ^child_id2}, %{"event_id" => ^child_id1}]} = json_response(conn, 200)
@@ -58,9 +61,10 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       user: user,
       parent_event_id: parent_event_id
     } do
-      rel = relates_to(parent_event_id)
-      {:ok, child_id1} = Fixtures.send_text_msg(room_id, user.id, "hello starting a thread here", rel)
-      {:ok, child_id2} = Fixtures.send_text_msg(room_id, user.id, "details coming soon", rel)
+      content = relates_to(parent_event_id, "hello starting a thread here")
+      {:ok, child_id1} = Room.send(room_id, user.id, "m.room.message", content)
+      content = relates_to(parent_event_id, "details coming soon")
+      {:ok, child_id2} = Room.send(room_id, user.id, "m.room.message", content)
 
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.thread", %{})
       assert %{"chunk" => [%{"event_id" => ^child_id2}, %{"event_id" => ^child_id1}]} = json_response(conn, 200)
@@ -74,9 +78,10 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       user: user,
       parent_event_id: parent_event_id
     } do
-      rel = relates_to(parent_event_id)
-      {:ok, child_id1} = Fixtures.send_text_msg(room_id, user.id, "hello starting a thread here", rel)
-      {:ok, child_id2} = Fixtures.send_text_msg(room_id, user.id, "details coming soon", rel)
+      content = relates_to(parent_event_id, "hello starting a thread here")
+      {:ok, child_id1} = Room.send(room_id, user.id, "m.room.message", content)
+      content = relates_to(parent_event_id, "details coming soon")
+      {:ok, child_id2} = Room.send(room_id, user.id, "m.room.message", content)
 
       conn =
         get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.thread/m.room.message", %{})
@@ -127,13 +132,15 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       {:ok, _} = Room.invite(room_id, user.id, user2.id)
       {:ok, _} = Room.join(room_id, user2.id)
 
-      rel = relates_to(parent_event_id)
-      {:ok, _child_id1} = Fixtures.send_text_msg(room_id, user2.id, "hello starting a thread here", rel)
-      {:ok, _child_id2} = Fixtures.send_text_msg(room_id, user.id, "details coming soon", rel)
+      content = relates_to(parent_event_id, "hello starting a thread here")
+      {:ok, _child_id1} = Room.send(room_id, user2.id, "m.room.message", content)
+      content = relates_to(parent_event_id, "details coming soon")
+      {:ok, _child_id2} = Room.send(room_id, user.id, "m.room.message", content)
 
       {:ok, _} = Room.leave(room_id, user2.id, "details never came :/")
 
-      {:ok, child_id3} = Fixtures.send_text_msg(room_id, user.id, "so impatient :/", rel)
+      content = relates_to(parent_event_id, "so impatient :/")
+      {:ok, child_id3} = Room.send(room_id, user.id, "m.room.message", content)
 
       conn =
         conn

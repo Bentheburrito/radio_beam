@@ -263,8 +263,10 @@ defmodule RadioBeam.Room do
   defp filter_event_type(%{type: event_type}, event_type), do: true
   defp filter_event_type(_pdu, _event_type), do: false
 
-  defp apply_order(event_stream, :chronological), do: Enum.sort(event_stream, {:asc, TopologicalID})
-  defp apply_order(event_stream, :reverse_chronological), do: Enum.sort(event_stream, {:desc, TopologicalID})
+  defp apply_order(event_stream, :chronological), do: Enum.sort_by(event_stream, & &1.order_id, {:asc, TopologicalID})
+
+  defp apply_order(event_stream, :reverse_chronological),
+    do: Enum.sort_by(event_stream, & &1.order_id, {:desc, TopologicalID})
 
   defp get(id) do
     with {:error, :not_found} <- Repo.fetch(Repo.Tables.Room, id), do: {:error, :unauthorized}
