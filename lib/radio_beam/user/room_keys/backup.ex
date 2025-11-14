@@ -30,24 +30,54 @@ defmodule RadioBeam.User.RoomKeys.Backup do
     do: backup.room_session_backups[room_id][session_id] || {:error, :not_found}
 
   def put_keys(%__MODULE__{} = backup, new_room_session_backups) do
-    update_in(backup.room_session_backups, &merge_room_session_backups(&1, new_room_session_backups))
+    new_room_session_backups =
+      Map.new(new_room_session_backups, fn {room_id, session_map} ->
+        {room_id,
+         Map.new(session_map, fn {session_id, key_data_attrs} -> {session_id, KeyData.new!(key_data_attrs)} end)}
+      end)
+
+    backup.room_session_backups
+    |> update_in(&merge_room_session_backups(&1, new_room_session_backups))
+    |> inc_modified_count()
   end
 
   defp merge_room_session_backups(current_backups, new_backups) do
     Map.merge(current_backups, new_backups, fn _room_id, current_session_map, new_session_map ->
-      Map.merge(current_session_map, new_session_map, &choose_backup/2)
+      Map.merge(current_session_map, new_session_map, &choose_backup/3)
     end)
   end
 
-  defp choose_backup(%KeyData{} = kd1, %KeyData{} = kd2), do: if(KeyData.compare(kd1, kd2) == :lt, do: kd1, else: kd2)
-  defp choose_backup(%KeyData{} = kd1, %{} = kd2_attrs), do: choose_backup(kd1, KeyData.new!(kd2_attrs))
-  defp choose_backup(%{} = kd1_attrs, %KeyData{} = kd2), do: choose_backup(KeyData.new!(kd1_attrs), kd2)
+  defp choose_backup(_k, %KeyData{} = kd1, %KeyData{} = kd2) do
+    if KeyData.compare(kd1, kd2) == :lt, do: kd1, else: kd2
+  end
 
-  def delete_keys_under(%__MODULE__{} = backup, :all), do: put_in(backup.room_session_backups, %{})
+  def delete_keys_under(%__MODULE__{} = backup, :all),
+    do: backup.room_session_backups |> put_in(%{}) |> inc_modified_count()
 
   def delete_keys_under(%__MODULE__{} = backup, ["!" <> _ = room_id]),
-    do: update_in(backup.room_session_backups, &Map.delete(&1, room_id))
+    do: backup.room_session_backups |> update_in(&Map.delete(&1, room_id)) |> inc_modified_count()
 
   def delete_keys_under(%__MODULE__{} = backup, ["!" <> _ = room_id, session_id]),
-    do: update_in(backup.room_session_backups[room_id], &Map.delete(&1, session_id))
+    do: backup.room_session_backups[room_id] |> update_in(&Map.delete(&1, session_id)) |> inc_modified_count()
+
+  defp inc_modified_count(%__MODULE__{} = backup), do: update_in(backup.modified_count, &(&1 + 1))
+
+  def info_map(%__MODULE__{} = backup) do
+    %{
+      algorithm: backup.algorithm,
+      auth_data: backup.auth_data,
+      count: count(backup),
+      etag: Integer.to_string(backup.modified_count),
+      version: Integer.to_string(backup.version)
+    }
+  end
+
+  defimpl Jason.Encoder do
+    def encode(backup, opts) do
+      rooms =
+        Map.new(backup.room_session_backups, fn {room_id, session_map} -> {room_id, %{"sessions" => session_map}} end)
+
+      Jason.Encode.map(%{"rooms" => rooms}, opts)
+    end
+  end
 end

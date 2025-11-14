@@ -23,4 +23,18 @@ defmodule RadioBeam.User.RoomKeys.Backup.KeyData do
       :else -> :gt
     end
   end
+
+  defimpl Jason.Encoder do
+    def encode(key_data, opts) do
+      Jason.Encode.map(
+        %{
+          "first_message_index" => key_data.first_message_index,
+          "forwarded_count" => key_data.forwarded_count,
+          "session_data" => key_data.session_data,
+          "is_verified" => key_data.verified?
+        },
+        opts
+      )
+    end
+  end
 end

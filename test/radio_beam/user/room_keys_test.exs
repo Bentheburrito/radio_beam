@@ -129,6 +129,8 @@ defmodule RadioBeam.User.RoomKeysTest do
     @room_id1 => %{
       "abcde" => %{
         "first_message_index" => 1,
+        "forwarded_count" => 0,
+        "is_verified" => true,
         "session_data" => %{
           "ciphertext" => "base64+ciphertext+of+JSON+data",
           "ephemeral" => "base64+ephemeral+key",
@@ -139,6 +141,8 @@ defmodule RadioBeam.User.RoomKeysTest do
     @room_id2 => %{
       "edcba" => %{
         "first_message_index" => 1,
+        "forwarded_count" => 0,
+        "is_verified" => true,
         "session_data" => %{
           "ciphertext" => "base64+ciphertext+of+JSON+data",
           "ephemeral" => "base64+ephemeral+key",
@@ -147,6 +151,8 @@ defmodule RadioBeam.User.RoomKeysTest do
       },
       "xyzyz" => %{
         "first_message_index" => 1,
+        "forwarded_count" => 0,
+        "is_verified" => true,
         "session_data" => %{
           "ciphertext" => "base64+ciphertext+of+JSON+data",
           "ephemeral" => "base64+ephemeral+key",
@@ -173,7 +179,7 @@ defmodule RadioBeam.User.RoomKeysTest do
         |> RoomKeys.new_backup("m.megolm_backup.v1.curve25519-aes-sha2", @auth_data)
         |> RoomKeys.new_backup("m.megolm_backup.v1.curve25519-aes-sha2", @auth_data)
 
-      assert {:error, :wrong_room_keys_version} = RoomKeys.put_backup_keys(room_keys, 1, @room_session_backup_attrs)
+      assert {:error, :wrong_room_keys_version, 2} = RoomKeys.put_backup_keys(room_keys, 1, @room_session_backup_attrs)
     end
   end
 

@@ -9,6 +9,7 @@ defmodule RadioBeam.User do
     registered_at: :utc_datetime,
     cross_signing_key_ring: :map,
     last_cross_signing_change_at: :integer,
+    room_keys: :map,
     device_map: :map,
     filter_map: :map
   ]
@@ -22,6 +23,7 @@ defmodule RadioBeam.User do
 
   import Ecto.Changeset
 
+  alias RadioBeam.User.RoomKeys
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
@@ -41,6 +43,7 @@ defmodule RadioBeam.User do
       account_data: %{},
       cross_signing_key_ring: CrossSigningKeyRing.new(),
       last_cross_signing_change_at: 0,
+      room_keys: RoomKeys.new!(),
       device_map: %{},
       filter_map: %{}
     }
@@ -157,6 +160,8 @@ defmodule RadioBeam.User do
       end)
     end)
   end
+
+  def put_room_keys(%__MODULE__{} = user, %RoomKeys{} = room_keys), do: put_in(user.room_keys, room_keys)
 
   ### FILTER ###
 

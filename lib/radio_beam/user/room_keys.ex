@@ -4,9 +4,11 @@ defmodule RadioBeam.User.RoomKeys do
   their devices, as described in [the
   spec](https://spec.matrix.org/latest/client-server-api/#server-side-key-backups).
   """
+  alias RadioBeam.User
   alias RadioBeam.User.RoomKeys.Backup
 
   @allowed_algos ["m.megolm_backup.v1.curve25519-aes-sha2"]
+  def allowed_algorithms, do: @allowed_algos
 
   # backups: %{version => %Backup{}}
   defstruct backups: %{}, latest_version: 0
@@ -47,17 +49,26 @@ defmodule RadioBeam.User.RoomKeys do
 
   def delete_backup(%__MODULE__{}, _version), do: {:error, :not_found}
 
+  def put_backup_keys(%__MODULE__{}, 0, _new_room_session_backups), do: {:error, :not_found}
+
   def put_backup_keys(%__MODULE__{latest_version: version} = room_keys, version, new_room_session_backups) do
     %Backup{} = backup = Map.fetch!(room_keys.backups, version)
     put_in(room_keys.backups[version], Backup.put_keys(backup, new_room_session_backups))
   end
 
-  def put_backup_keys(%__MODULE__{}, _version, _new_room_session_backups), do: {:error, :wrong_room_keys_version}
+  def put_backup_keys(%__MODULE__{latest_version: current_version}, _version, _new_room_session_backups),
+    do: {:error, :wrong_room_keys_version, current_version}
 
   def delete_backup_keys(%__MODULE__{} = room_keys, version, path_or_all \\ :all) do
     case Map.fetch(room_keys.backups, version) do
       {:ok, %Backup{} = backup} -> put_in(room_keys.backups[version], Backup.delete_keys_under(backup, path_or_all))
       :error -> {:error, :not_found}
     end
+  end
+
+  def insert_user_room_keys(%User{} = user, %__MODULE__{} = room_keys) do
+    user
+    |> User.put_room_keys(room_keys)
+    |> RadioBeam.Repo.insert()
   end
 end

@@ -11,6 +11,7 @@ defmodule RadioBeamWeb.Router do
     KeysController,
     RelationsController,
     RoomController,
+    RoomKeysController,
     SyncController
   }
 
@@ -78,6 +79,24 @@ defmodule RadioBeamWeb.Router do
           post "/query", KeysController, :query
           post "/signatures/upload", KeysController, :upload_signatures
           post "/upload", KeysController, :upload
+        end
+
+        scope "/room_keys" do
+          get "/keys", RoomKeysController, :get_keys
+          get "/keys/:room_id", RoomKeysController, :get_keys
+          get "/keys/:room_id/:session_id", RoomKeysController, :get_keys
+          put "/keys", RoomKeysController, :put_keys
+          put "/keys/:room_id", RoomKeysController, :put_keys
+          put "/keys/:room_id/:session_id", RoomKeysController, :put_keys
+          delete "/keys", RoomKeysController, :delete_keys
+          delete "/keys/:room_id", RoomKeysController, :delete_keys
+          delete "/keys/:room_id/:session_id", RoomKeysController, :delete_keys
+
+          post "/version", RoomKeysController, :create_backup
+          get "/version", RoomKeysController, :get_backup_info
+          get "/version/:version", RoomKeysController, :get_backup_info
+          put "/version/:version", RoomKeysController, :put_backup_auth_data
+          delete "/version/:version", RoomKeysController, :delete_backup
         end
 
         scope "/rooms" do
