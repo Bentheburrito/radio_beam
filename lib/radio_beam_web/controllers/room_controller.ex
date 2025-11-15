@@ -31,6 +31,7 @@ defmodule RadioBeamWeb.RoomController do
         {"room_version", version}, acc -> Keyword.put(acc, :version, version)
         {"visibility", visibility}, acc -> Keyword.put(acc, :visibility, visibility)
         {"invite_3pid", invites}, acc -> Keyword.put(acc, :invite_3pid, invites)
+        {"preset", preset}, acc -> Keyword.put(acc, :preset, preset)
         {key, value}, acc -> [{String.to_existing_atom(key), value} | acc]
       end)
 

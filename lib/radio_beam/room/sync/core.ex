@@ -32,7 +32,14 @@ defmodule RadioBeam.Room.Sync.Core do
 
       membership when membership in ~w|ban join leave| ->
         event_stream = sync.functions.event_stream.(room.id)
-        joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus)
+
+        case Enum.take(event_stream, 1) do
+          [%Event{}] ->
+            joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus)
+
+          [] ->
+            :no_update
+        end
 
       "invite" when maybe_last_sync_room_state_pdus == :initial ->
         if user_membership_pdu.event.sender in ignored_user_ids do
