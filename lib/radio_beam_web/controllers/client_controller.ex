@@ -4,14 +4,57 @@ defmodule RadioBeamWeb.ClientController do
   """
   use RadioBeamWeb, :controller
 
-  require Logger
+  import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4]
+
   alias RadioBeam.Transaction
   alias RadioBeam.Errors
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
+  require Logger
+
   plug RadioBeamWeb.Plugs.Authenticate
-  plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Client
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Client] when action in ~w|send_to_device|a
+
+  def get_device(%{assigns: %{user: user}} = conn, params) do
+    case Map.fetch(params, "device_id") do
+      {:ok, device_id} ->
+        case User.get_device(user, device_id) do
+          {:ok, %Device{} = device} -> json(conn, get_device_response(device))
+          {:error, :not_found} -> json_error(conn, 404, :not_found, "no device by that ID")
+        end
+
+      :error ->
+        devices = User.get_all_devices(user)
+        json(conn, %{devices: Enum.map(devices, &get_device_response/1)})
+    end
+  end
+
+  defp get_device_response(%Device{} = device) do
+    %{
+      device_id: device.id,
+      display_name: device.display_name,
+      last_seen_ip: ip_tuple_to_string(device.last_seen_from_ip),
+      last_seen_ts: device.last_seen_at
+    }
+  end
+
+  def put_device_display_name(conn, %{"device_id" => device_id, "display_name" => display_name}) do
+    case User.Account.put_device_display_name(conn.assigns.user.id, device_id, display_name) do
+      {:ok, %User{}} -> json(conn, %{})
+      {:error, :not_found} -> json_error(conn, 404, :not_found, "device not found")
+      {:error, error} -> log_error(conn, error)
+    end
+  end
+
+  def put_device_display_name(conn, _params), do: json(conn, %{})
+
+  defp log_error(conn, error) do
+    Logger.error("#{__MODULE__}: #{inspect(error)}")
+    json_error(conn, 500, :unknown)
+  end
+
+  defp ip_tuple_to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
 
   def send_to_device(conn, %{"type" => type, "transaction_id" => txn_id}) do
     %User{} = user = conn.assigns.user

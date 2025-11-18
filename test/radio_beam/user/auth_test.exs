@@ -44,7 +44,7 @@ defmodule RadioBeam.User.AuthTest do
       %{refresh_token: refresh_token} = Auth.session_info(user, device)
       assert {:ok, %Device{} = device} = Auth.refresh(refresh_token)
       %{access_token: at, refresh_token: rt} = Auth.session_info(user, device)
-      assert {:ok, user, device} = Auth.verify_access_token(at)
+      assert {:ok, user, device} = Auth.verify_access_token(at, {127, 0, 0, 1})
       assert %{refresh_token: ^rt} = Auth.session_info(user, device)
     end
 

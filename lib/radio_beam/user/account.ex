@@ -7,7 +7,18 @@ defmodule RadioBeam.User.Account do
   alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.User
+  alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
+
+  def put_device_display_name(user_id, device_id, display_name) do
+    Repo.transaction(fn ->
+      with {:ok, %User{} = user} <- Repo.fetch(User, user_id, lock: :write),
+           {:ok, %Device{} = device} <- User.get_device(user, device_id) do
+        device = Device.put_display_name!(device, display_name)
+        user |> User.put_device(device) |> Repo.insert()
+      end
+    end)
+  end
 
   @doc """
   Create and save a new event filter for the given user.

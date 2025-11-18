@@ -23,7 +23,8 @@ defmodule RadioBeamWeb.Plugs.AuthenticateTest do
         |> conn("/_matrix/v3/some_endpoint?access_token=#{access_token}")
         |> Authenticate.call([])
 
-      assert %{user: ^user} = conn.assigns
+      assert {:ok, %{access_token: new_access_token}} = User.get_device(conn.assigns.user, device.id)
+      assert access_token =~ new_access_token
     end
 
     test "returns a missing token (401) error when a token isn't given" do

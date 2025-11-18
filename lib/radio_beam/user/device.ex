@@ -13,7 +13,9 @@ defmodule RadioBeam.User.Device do
     :expires_at,
     :messages,
     :identity_keys,
-    :one_time_key_ring
+    :one_time_key_ring,
+    :last_seen_at,
+    :last_seen_from_ip
   ]
 
   alias RadioBeam.User
@@ -60,9 +62,16 @@ defmodule RadioBeam.User.Device do
       expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
       messages: %{},
       identity_keys: nil,
-      one_time_key_ring: OneTimeKeyRing.new()
+      one_time_key_ring: OneTimeKeyRing.new(),
+      last_seen_at: Keyword.get(opts, :last_seen_at, System.os_time(:millisecond)),
+      last_seen_from_ip: nil
     }
   end
+
+  def put_last_seen_at(%__MODULE__{} = device, device_ip_tuple, last_seen_at \\ System.os_time(:millisecond)),
+    do: struct!(device, last_seen_from_ip: device_ip_tuple, last_seen_at: last_seen_at)
+
+  def put_display_name!(%__MODULE__{} = device, "" <> _ = display_name), do: put_in(device.display_name, display_name)
 
   @doc "Expires the given device's tokens, setting `expires_at` to `DateTime.utc_now()`"
   @spec expire(t()) :: t()

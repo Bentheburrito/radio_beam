@@ -65,6 +65,10 @@ defmodule RadioBeamWeb.Router do
 
         # OPTIMPL: /login/get_token
 
+        get "/devices", ClientController, :get_device
+        get "/devices/:device_id", ClientController, :get_device
+        put "/devices/:device_id", ClientController, :put_device_display_name
+
         get "/sync", SyncController, :sync
 
         post "/createRoom", RoomController, :create

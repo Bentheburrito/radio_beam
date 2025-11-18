@@ -14,6 +14,46 @@ defmodule RadioBeamWeb.ClientControllerTest do
     }
   end
 
+  describe "get_device/2" do
+    test "returns a list of devices", %{conn: conn, device: device} do
+      conn = get(conn, ~p"/_matrix/client/v3/devices", %{})
+
+      expected_device = %{"device_id" => device.id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"}
+      assert %{"devices" => [actual_device]} = json_response(conn, 200)
+      assert ^expected_device = Map.delete(actual_device, "last_seen_ts")
+    end
+
+    test "returns a device under the given device ID", %{conn: conn, device: device} do
+      conn = get(conn, ~p"/_matrix/client/v3/devices/#{device.id}", %{})
+
+      expected_device = %{"device_id" => device.id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"}
+      assert actual_device = json_response(conn, 200)
+      assert ^expected_device = Map.delete(actual_device, "last_seen_ts")
+    end
+
+    test "returns M_NOT_FOUND (404) when the device ID is not known", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v3/devices/asdfasdfasdf", %{})
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => "no device by that ID"} = json_response(conn, 404)
+    end
+  end
+
+  describe "put_device_display_name/2" do
+    test "returns empty object (200) when given a new display name", %{conn: conn, device: device} do
+      conn = put(conn, ~p"/_matrix/client/v3/devices/#{device.id}", %{"display_name" => "da steam machine"})
+
+      assert response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns empty object (200) even when no new display name is given", %{conn: conn, device: device} do
+      conn = put(conn, ~p"/_matrix/client/v3/devices/#{device.id}", %{})
+
+      assert response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+  end
+
   describe "send_to_device/2" do
     test "returns an empty object on success (200)", %{conn: conn, user: user, device: device} do
       messages = %{user.id => %{device.id => %{"hello" => "world"}}}

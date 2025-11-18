@@ -17,6 +17,8 @@ defmodule RadioBeam.User.Auth do
           required(:user_id) => User.id()
         }
 
+  @type ip_tuple() :: {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
+
   @spec register(user_localpart :: String.t(), server_name :: String.t(), password :: String.t()) ::
           {:ok, User.t()} | {:error, :registration_disabled | :already_exists | Ecto.Changeset.t()}
   def register(localpart, server_name \\ RadioBeam.server_name(), password) do
@@ -59,13 +61,13 @@ defmodule RadioBeam.User.Auth do
   successful, and an error tuple describing the problem with the token
   (invaild, expired) otherwise.
   """
-  @spec verify_access_token(Device.auth_token()) ::
+  @spec verify_access_token(Device.auth_token(), ip_tuple()) ::
           {:ok, User.t(), Device.t()} | {:error, :expired | :unknown_token | any()}
-  def verify_access_token(token) do
+  def verify_access_token(token, device_ip_tuple) do
     Repo.transaction(fn ->
       with {:ok, user_id, device_id, token} <- parse_auth_token(token),
            {:ok, %User{} = user} <- Repo.fetch(User, user_id),
-           {:ok, %User{} = user, %Device{} = device} <- verify_access_token(user, device_id, token),
+           {:ok, %User{} = user, %Device{} = device} <- verify_access_token(user, device_id, token, device_ip_tuple),
            {:ok, user} <- Repo.insert(user) do
         {:ok, user, device}
       else
@@ -75,7 +77,7 @@ defmodule RadioBeam.User.Auth do
     end)
   end
 
-  defp verify_access_token(user, device_id, token) do
+  defp verify_access_token(user, device_id, token, device_ip_tuple) do
     with {:ok, %Device{} = device} <- User.get_device(user, device_id) do
       token_matches? = Plug.Crypto.secure_compare(token, device.access_token)
       expired? = DateTime.compare(DateTime.utc_now(), device.expires_at) in [:gt, :eq]
@@ -85,7 +87,7 @@ defmodule RadioBeam.User.Auth do
           {:error, :expired}
 
         token_matches? ->
-          device = put_in(device.prev_refresh_token, nil)
+          device = device.prev_refresh_token |> put_in(nil) |> Device.put_last_seen_at(device_ip_tuple)
           {:ok, User.put_device(user, device), device}
 
         :else ->
