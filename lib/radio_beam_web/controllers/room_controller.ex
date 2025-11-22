@@ -304,7 +304,7 @@ defmodule RadioBeamWeb.RoomController do
       end
 
     case typing_update_result do
-      :ok -> json(conn, %{})
+      %EphemeralState{} -> json(conn, %{})
       _ -> json_error(conn, 404, :not_found, "Room not found")
     end
   end

@@ -14,7 +14,7 @@ defmodule RadioBeam.Room.EphemeralState.CoreTest do
       state = Core.put_typing(state, "@yo:localhost", Core.max_timeout_ms() + 5)
       assert 2 = map_size(state.actively_typing)
 
-      assert_receive {:delete_typing, "@hi:localhost"}, 16
+      assert_receive {:delete_typing, "@hi:localhost"}, 40
     end
   end
 

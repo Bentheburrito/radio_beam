@@ -2,7 +2,6 @@ defmodule RadioBeam.Room.EphemeralState.Server do
   use GenServer
 
   alias RadioBeam.PubSub
-  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.EphemeralState.Core
   alias RadioBeam.Room.EphemeralState.Server.Supervisor
@@ -39,10 +38,7 @@ defmodule RadioBeam.Room.EphemeralState.Server do
   ### IMPL ###
 
   @impl GenServer
-  def init(room_id) do
-    PubSub.subscribe(PubSub.all_room_events(room_id))
-    {:ok, {room_id, Core.new!()}}
-  end
+  def init(room_id), do: {:ok, {room_id, Core.new!()}}
 
   @impl GenServer
   def handle_call(:all_typing, _from, {room_id, %EphemeralState{} = state}),
@@ -68,16 +64,6 @@ defmodule RadioBeam.Room.EphemeralState.Server do
     broadcast(room_id, state)
     {:noreply, {room_id, state}}
   end
-
-  @impl GenServer
-  def handle_info({:room_event, room_id, %Event{} = event}, {room_id, %EphemeralState{} = state}) do
-    state = Core.delete_typing(state, event.sender)
-    broadcast(room_id, state)
-    {:noreply, {room_id, state}}
-  end
-
-  @impl GenServer
-  def handle_info({:room_ephemeral_state_update, room_id, _}, {room_id, state}), do: {:noreply, {room_id, state}}
 
   defp broadcast(room_id, state),
     do: PubSub.broadcast(PubSub.all_room_events(room_id), {:room_ephemeral_state_update, room_id, state})
