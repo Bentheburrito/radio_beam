@@ -1,15 +1,16 @@
 defmodule RadioBeamWeb.RoomController do
   use RadioBeamWeb, :controller
 
-  import RadioBeamWeb.Utils, only: [handle_common_error: 2, handle_common_error: 3]
+  import RadioBeamWeb.Utils, only: [handle_common_error: 2, handle_common_error: 3, json_error: 4]
 
   require Logger
 
+  alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.{Errors, Room, Transaction, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
-  @schema_actions [:create, :invite, :join, :leave, :get_nearest_event]
+  @schema_actions [:create, :invite, :join, :leave, :get_nearest_event, :put_typing]
 
   plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in @schema_actions
@@ -293,4 +294,20 @@ defmodule RadioBeamWeb.RoomController do
     |> put_status(400)
     |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
+
+  def put_typing(conn, %{"room_id" => room_id}) do
+    typing_update_result =
+      case conn.assigns.request do
+        %{"typing" => true, "timeout" => timeout} -> EphemeralState.put_typing(room_id, conn.assigns.user.id, timeout)
+        %{"typing" => true} -> EphemeralState.put_typing(room_id, conn.assigns.user.id)
+        %{"typing" => false} -> EphemeralState.delete_typing(room_id, conn.assigns.user.id)
+      end
+
+    case typing_update_result do
+      :ok -> json(conn, %{})
+      _ -> json_error(conn, 404, :not_found, "Room not found")
+    end
+  end
+
+  def put_typing(conn, _params), do: json_error(conn, 404, :not_found, "Missing room ID")
 end

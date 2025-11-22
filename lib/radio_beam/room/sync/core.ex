@@ -32,13 +32,20 @@ defmodule RadioBeam.Room.Sync.Core do
 
       membership when membership in ~w|ban join leave| ->
         event_stream = sync.functions.event_stream.(room.id)
+        typing_user_ids = sync.functions.typing_user_ids.(room.id)
 
-        case Enum.take(event_stream, 1) do
-          [%Event{}] ->
-            joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus)
-
-          [] ->
-            :no_update
+        if not Enum.empty?(event_stream) do
+          joined_room_result(
+            sync,
+            room,
+            membership,
+            event_stream,
+            ignored_user_ids,
+            maybe_last_sync_room_state_pdus,
+            typing_user_ids
+          )
+        else
+          :no_update
         end
 
       "invite" when maybe_last_sync_room_state_pdus == :initial ->
@@ -57,7 +64,15 @@ defmodule RadioBeam.Room.Sync.Core do
     end
   end
 
-  defp joined_room_result(sync, room, membership, event_stream, ignored_user_ids, maybe_last_sync_room_state_pdus) do
+  defp joined_room_result(
+         sync,
+         room,
+         membership,
+         event_stream,
+         ignored_user_ids,
+         maybe_last_sync_room_state_pdus,
+         typing_user_ids
+       ) do
     maybe_to_event =
       with %PaginationToken{} = since <- sync.start,
            {:ok, to_event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
@@ -93,7 +108,8 @@ defmodule RadioBeam.Room.Sync.Core do
       maybe_last_sync_room_state_pdus: maybe_last_sync_room_state_pdus,
       full_state?: sync.full_state?,
       known_memberships: sync.known_memberships,
-      filter: sync.filter
+      filter: sync.filter,
+      typing: typing_user_ids
     ]
 
     JoinedRoomResult.new(room, sync.user, timeline_events, sync.functions.get_events_for_user, membership, opts)

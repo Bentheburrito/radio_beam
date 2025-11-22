@@ -7,7 +7,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
-  defstruct ~w|room_id timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data|a
+  defstruct ~w|room_id timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data typing|a
 
   @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [Event.t()], state_events: [Room.event_id()]}
 
@@ -75,9 +75,25 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         sender_ids: sender_ids,
         filter: filter,
         current_membership: membership,
-        account_data: Map.get(user.account_data, room.id, %{})
+        account_data: Map.get(user.account_data, room.id, %{}),
+        typing: Keyword.get(opts, :typing, [])
       }
     end
+  end
+
+  def new_ephemeral(room_id, user, membership, typing_user_ids) do
+    %__MODULE__{
+      room_id: room_id,
+      timeline_events: [],
+      maybe_next_event_id: :no_more_events,
+      latest_event_id: :use_latest,
+      state_events: [],
+      sender_ids: MapSet.new(),
+      filter: EventFilter.new(%{}),
+      current_membership: membership,
+      account_data: Map.get(user.account_data, room_id, %{}),
+      typing: typing_user_ids
+    }
   end
 
   defp determine_state_events(
@@ -179,10 +195,21 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         %{
           timeline: timeline,
           state: %{events: Enum.map(room_result.state_events, to_event)},
+          ephemeral: %{events: encode_ephemeral(room_result.typing)},
           account_data: room_result.account_data
         },
         opts
       )
+    end
+
+    defp encode_ephemeral([]), do: []
+    defp encode_ephemeral(user_ids), do: [encode_typing(user_ids)]
+
+    defp encode_typing(user_ids) do
+      %{
+        type: "m.typing",
+        content: %{user_ids: user_ids}
+      }
     end
   end
 

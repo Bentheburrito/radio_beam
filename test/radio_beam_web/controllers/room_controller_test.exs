@@ -9,7 +9,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
     %{access_token: token} = Auth.session_info(user1, device)
 
-    %{conn: put_req_header(conn, "authorization", "Bearer #{token}")}
+    %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user1}
   end
 
   describe "create/2" do
@@ -804,6 +804,30 @@ defmodule RadioBeamWeb.RoomControllerTest do
       query_params = %{dir: "b", ts: :os.system_time(:millisecond)}
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/!lmao:localhost/timestamp_to_event?#{query_params}", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+  end
+
+  describe "put_typing/2" do
+    test "returns an empty JSON object (200) when the typing status was accepted", %{
+      conn: conn,
+      user: %{id: user_id} = user
+    } do
+      {:ok, room_id} = Room.create(user)
+
+      for typing <- ~w|true false|a do
+        req_body = %{typing: typing, timeout: 5_000}
+        conn = put(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/typing/#{user_id}", req_body)
+
+        assert response = json_response(conn, 200)
+        assert 0 = map_size(response)
+      end
+    end
+
+    test "returns an M_NOT_FOUND (404) error when the room doesn't exist", %{conn: conn, user: %{id: user_id}} do
+      req_body = %{typing: true, timeout: 5_000}
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/!lmaoooo12312:localhost/typing/#{user_id}", req_body)
+
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end

@@ -24,10 +24,14 @@ defmodule RadioBeam.Application do
       {Finch, name: RadioBeam.Finch},
       # Start the RoomRegistry
       {Registry, keys: :unique, name: RadioBeam.RoomRegistry},
+      # Start the RoomEphemeralStateRegistry
+      {Registry, keys: :unique, name: RadioBeam.RoomEphemeralStateRegistry},
       # Start the GenServer that handles transaction IDs
       RadioBeam.Transaction,
       # Start the Room.Server.Supervisor
       RadioBeam.Room.Server.Supervisor,
+      # Start the Room.EphemeralState.Server Supervisor
+      RadioBeam.Room.EphemeralState.Server.Supervisor,
       # Cache to reduce redundant membership events in /sync
       LazyLoadMembersCache,
       # Start to serve requests, typically the last entry

@@ -53,6 +53,8 @@ defmodule RadioBeamWeb.Schemas.Room do
     }
   end
 
+  def put_typing, do: %{"typing" => :boolean, "timeout" => optional(:integer)}
+
   defp stringed_int(integer) when is_integer(integer), do: {:ok, integer}
 
   defp stringed_int(str_int) when is_binary(str_int) do
