@@ -16,7 +16,7 @@ defmodule RadioBeamWeb.Schemas.Filter do
   end
 
   def json_filter("{" <> _rest = json_encoded_filter) do
-    with {:ok, filter} <- Jason.decode(json_encoded_filter) do
+    with {:ok, filter} <- JSON.decode(json_encoded_filter) do
       Schema.match(filter, filter())
     end
   end

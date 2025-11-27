@@ -39,9 +39,9 @@ defmodule RadioBeam.Room.View.Core.Timeline.Event do
 
   defp adjust_redacts_key(event), do: event
 
-  defimpl Jason.Encoder do
+  defimpl JSON.Encoder do
     alias RadioBeam.Room.View.Core.Timeline.Event
 
-    def encode(event, opts), do: event |> Event.to_map() |> Jason.Encode.map(opts)
+    def encode(event, encoder), do: event |> Event.to_map() |> JSON.Encoder.Map.encode(encoder)
   end
 end

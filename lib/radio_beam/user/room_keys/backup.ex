@@ -72,12 +72,12 @@ defmodule RadioBeam.User.RoomKeys.Backup do
     }
   end
 
-  defimpl Jason.Encoder do
-    def encode(backup, opts) do
+  defimpl JSON.Encoder do
+    def encode(backup, encoder) do
       rooms =
         Map.new(backup.room_session_backups, fn {room_id, session_map} -> {room_id, %{"sessions" => session_map}} end)
 
-      Jason.Encode.map(%{"rooms" => rooms}, opts)
+      JSON.Encoder.Map.encode(%{"rooms" => rooms}, encoder)
     end
   end
 end

@@ -33,7 +33,7 @@ defmodule RadioBeam.Room.Sync.Result do
   defp put_next_batch_pdu(next_batch_map, room_id, last_event_id),
     do: Map.put(next_batch_map, room_id, last_event_id)
 
-  defimpl Jason.Encoder do
+  defimpl JSON.Encoder do
     alias RadioBeam.Room.Sync
 
     @room_sync_init_acc %{"join" => %{}, "invite" => %{}, "knock" => %{}, "leave" => %{}}
@@ -50,7 +50,7 @@ defmodule RadioBeam.Room.Sync.Result do
             to_encode_map
         end)
 
-      Jason.Encode.map(rooms_to_encode, opts)
+      JSON.Encoder.Map.encode(rooms_to_encode, opts)
     end
   end
 end

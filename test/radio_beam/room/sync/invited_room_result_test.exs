@@ -23,7 +23,7 @@ defmodule RadioBeam.Room.Sync.InvitedRoomResultTest do
     end
   end
 
-  describe "Jason.Encoder implementation" do
+  describe "JSON.Encoder implementation" do
     test "encodes an InvitedRoomResult as expected by the C-S spec" do
       user = Fixtures.user()
       %{id: invitee_id} = Fixtures.user()
@@ -38,7 +38,7 @@ defmodule RadioBeam.Room.Sync.InvitedRoomResultTest do
 
       %InvitedRoomResult{} = invited_room_result = InvitedRoomResult.new!(room, user.id, invitee_event_id)
 
-      assert {:ok, json} = Jason.encode(invited_room_result)
+      assert json = JSON.encode!(invited_room_result)
       assert json =~ ~s|{"invite_state":{"events":[|
       assert json =~ ~s|{"type":"m.room.create"|
       assert json =~ ~s|{"type":"m.room.join_rules"|

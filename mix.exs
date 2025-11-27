@@ -5,7 +5,7 @@ defmodule RadioBeam.MixProject do
     [
       app: :radio_beam,
       version: "0.1.0",
-      elixir: "~> 1.14",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -51,7 +51,6 @@ defmodule RadioBeam.MixProject do
       {:finch, "~> 0.13"},
       {:telemetry_metrics, "~> 0.6"},
       {:telemetry_poller, "~> 1.0"},
-      {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.2"},
       # {:memento, "~> 0.3.2"},

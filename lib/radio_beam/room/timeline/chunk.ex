@@ -45,17 +45,17 @@ defmodule RadioBeam.Room.Timeline.Chunk do
     get_events_for_user.(state_event_ids)
   end
 
-  defimpl Jason.Encoder do
+  defimpl JSON.Encoder do
     alias RadioBeam.Room.Timeline.Chunk
 
-    def encode(%Chunk{} = chunk, opts) do
+    def encode(%Chunk{} = chunk, encoder) do
       %{
         chunk: Enum.map(chunk.timeline_events, chunk.to_event),
         state: Enum.map(chunk.state_events, chunk.to_event),
         start: chunk.start
       }
       |> maybe_put_end(chunk.end)
-      |> Jason.Encode.map(opts)
+      |> JSON.Encoder.Map.encode(encoder)
     end
 
     defp maybe_put_end(to_encode, :no_more_events), do: to_encode

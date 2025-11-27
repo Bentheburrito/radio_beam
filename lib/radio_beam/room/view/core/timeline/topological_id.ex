@@ -45,8 +45,8 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalID do
     def to_string(topological_id), do: "tid(#{topological_id.depth},#{topological_id.stream_number})"
   end
 
-  defimpl Jason.Encoder do
-    def encode(topological_id, opts), do: Jason.Encode.string(to_string(topological_id), opts)
+  defimpl JSON.Encoder do
+    def encode(topological_id, encoder), do: JSON.Encoder.BitString.encode(to_string(topological_id), encoder)
   end
 
   defmodule Range do

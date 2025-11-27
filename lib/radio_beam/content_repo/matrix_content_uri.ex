@@ -45,7 +45,7 @@ defmodule RadioBeam.ContentRepo.MatrixContentURI do
     def to_string(mxc), do: "mxc://#{mxc.server_name}/#{mxc.id}"
   end
 
-  defimpl Jason.Encoder do
-    def encode(mxc, opts), do: mxc |> to_string() |> Jason.Encoder.encode(opts)
+  defimpl JSON.Encoder do
+    def encode(mxc, encoder), do: mxc |> to_string() |> JSON.Encoder.BitString.encode(encoder)
   end
 end

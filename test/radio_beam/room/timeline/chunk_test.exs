@@ -62,7 +62,7 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
     end
   end
 
-  describe "Jason.Encoder implementation encodes a suitable response for the C-S spec /messages API" do
+  describe "JSON.Encoder implementation encodes a suitable response for the C-S spec /messages API" do
     test "for a complete %Chunk{}", %{room: room, user: %{id: user_id}} do
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
@@ -90,13 +90,13 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
           filter
         )
 
-      assert {:ok, json} = Jason.encode(chunk)
+      assert json = JSON.encode!(chunk)
       assert json =~ ~s|"chunk":[|
       assert json =~ ~s|"state":[|
       assert json =~ ~s|"start":"batch:|
       refute json =~ ~s|"end":|
 
-      decoded_response = Jason.decode!(json)
+      decoded_response = JSON.decode!(json)
       assert 3 = map_size(decoded_response)
       assert 1 = length(decoded_response["state"])
       assert 7 = length(decoded_response["chunk"])
@@ -131,13 +131,13 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
           filter
         )
 
-      assert {:ok, json} = Jason.encode(chunk)
+      assert json = JSON.encode!(chunk)
       assert json =~ ~s|"chunk":[|
       assert json =~ ~s|"state":[|
       assert json =~ ~s|"start":"batch:|
       assert json =~ ~s|"end":"batch:|
 
-      decoded_response = Jason.decode!(json)
+      decoded_response = JSON.decode!(json)
       assert 4 = map_size(decoded_response)
       assert 1 = length(decoded_response["state"])
       assert 6 = length(decoded_response["chunk"])

@@ -169,10 +169,10 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     |> MapSet.difference(MapSet.new(last_sync_state_ids))
   end
 
-  defimpl Jason.Encoder do
+  defimpl JSON.Encoder do
     alias RadioBeam.Room.Sync.JoinedRoomResult
 
-    def encode(%JoinedRoomResult{} = room_result, opts) do
+    def encode(%JoinedRoomResult{} = room_result, encoder) do
       # format = String.to_existing_atom(room_result.filter.format)
 
       to_event = fn event ->
@@ -191,14 +191,14 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
           next_event_id -> Map.put(timeline, :prev_batch, next_event_id)
         end
 
-      Jason.Encode.map(
+      JSON.Encoder.Map.encode(
         %{
           timeline: timeline,
           state: %{events: Enum.map(room_result.state_events, to_event)},
           ephemeral: %{events: encode_ephemeral(room_result.typing)},
           account_data: room_result.account_data
         },
-        opts
+        encoder
       )
     end
 

@@ -100,7 +100,11 @@ defmodule RadioBeam.Room.Events.PaginationToken do
   defp validate_event_id("$" <> _ = event_id), do: {:ok, event_id}
   defp validate_event_id(_), do: {:error, :invalid}
 
-  defimpl Jason.Encoder do
-    def encode(token, opts), do: Jason.Encode.string(RadioBeam.Room.Events.PaginationToken.encode(token), opts)
+  defimpl JSON.Encoder do
+    def encode(token, encoder) do
+      token
+      |> RadioBeam.Room.Events.PaginationToken.encode()
+      |> JSON.Encoder.BitString.encode(encoder)
+    end
   end
 end

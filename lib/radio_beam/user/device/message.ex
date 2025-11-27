@@ -7,7 +7,7 @@ defmodule RadioBeam.User.Device.Message do
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
-  @derive Jason.Encoder
+  @derive JSON.Encoder
   @enforce_keys [:content, :sender, :type]
   defstruct content: nil, sender: nil, type: nil
   @type t() :: %__MODULE__{}

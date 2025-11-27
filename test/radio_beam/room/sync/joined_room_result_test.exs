@@ -52,7 +52,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
     end
   end
 
-  describe "Jason.Encoder implementation" do
+  describe "JSON.Encoder implementation" do
     test "encodes an JoinedRoomResult as expected by the C-S spec" do
       user = Fixtures.user()
       {:sent, room, _pdu} = "11" |> Fixtures.room(user.id) |> Fixtures.send_room_msg(user.id, "helloooooooo")
@@ -69,7 +69,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
       %JoinedRoomResult{} =
         joined_room_result = JoinedRoomResult.new(room, user, timeline_events, get_events_for_user, "join")
 
-      assert {:ok, json} = Jason.encode(joined_room_result)
+      assert json = JSON.encode!(joined_room_result)
       assert json =~ ~s|"state":{"events":[]|
       assert json =~ ~s|"type":"m.room.create"|
       assert json =~ ~s|"type":"m.room.join_rules"|

@@ -113,7 +113,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       {:ok, user} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
 
-      {:ok, filter} = Jason.encode(%{"room" => %{"timeline" => %{"limit" => 3}}})
+      filter = JSON.encode!(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
       creator_id = creator.id
 
