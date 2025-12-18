@@ -31,6 +31,7 @@ defmodule RadioBeam.User do
   @type t() :: %__MODULE__{}
 
   @hash_pwd_opts [t_cost: 3, m_cost: 12, parallelism: 1]
+  def hash_pwd_opts, do: @hash_pwd_opts
 
   def dump!(user), do: user
   def load!(user), do: user

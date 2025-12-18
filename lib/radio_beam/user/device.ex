@@ -1,19 +1,15 @@
 defmodule RadioBeam.User.Device do
   @moduledoc """
-  A user's device. A device has an entry in this table for every pair of 
-  access/refresh tokens.
+  A user's device.
   """
 
   defstruct [
     :id,
     :display_name,
-    :access_token,
-    :refresh_token,
-    :prev_refresh_token,
-    :expires_at,
     :messages,
     :identity_keys,
     :one_time_key_ring,
+    :revoked_unexpired_token_ids,
     :last_seen_at,
     :last_seen_from_ip
   ]
@@ -21,48 +17,18 @@ defmodule RadioBeam.User.Device do
   alias RadioBeam.User
   alias RadioBeam.User.Device.OneTimeKeyRing
 
-  @typedoc """
-  A user's device.
-
-  `prev_refresh_token` will be `nil` most of the time. It will only have
-  the previos refresh token for a limited window of time: from the time a 
-  client refreshes its device's tokens, to the new token's first use.
-
-  "The old refresh token remains valid until the new access token or refresh 
-  token is used, at which point the old refresh token is revoked. This ensures 
-  that if a client fails to receive or persist the new tokens, it will be able 
-  to repeat the refresh operation."
-  """
   @type t() :: %__MODULE__{}
   @type id() :: term()
 
-  @typedoc """
-  A string representing an access or refresh token. The token is divided into
-  three parts: user ID, device ID, token, all delimited by a colon (`:`). For
-  example: `"@someone:somewhere:abcdEFG:XYZxyz"`
-  """
-  @opaque auth_token() :: String.t()
-
-  @spec new(Keyword.t()) :: t()
-  def new(opts) do
-    id = Keyword.get_lazy(opts, :id, &generate_id/0)
-    refreshable? = Keyword.get(opts, :refreshable?, true)
-
-    expires_in_ms =
-      Keyword.get_lazy(opts, :expires_in_ms, fn ->
-        Application.fetch_env!(:radio_beam, :access_token_lifetime)
-      end)
-
+  @spec new(String.t(), Keyword.t()) :: t()
+  def new(device_id, opts) do
     %__MODULE__{
-      id: id,
+      id: device_id,
       display_name: Keyword.get(opts, :display_name, default_device_name()),
-      access_token: generate_token(),
-      refresh_token: if(refreshable?, do: generate_token(), else: nil),
-      prev_refresh_token: nil,
-      expires_at: DateTime.add(DateTime.utc_now(), expires_in_ms, :millisecond),
       messages: %{},
       identity_keys: nil,
       one_time_key_ring: OneTimeKeyRing.new(),
+      revoked_unexpired_token_ids: MapSet.new(),
       last_seen_at: Keyword.get(opts, :last_seen_at, System.os_time(:millisecond)),
       last_seen_from_ip: nil
     }
@@ -72,24 +38,6 @@ defmodule RadioBeam.User.Device do
     do: struct!(device, last_seen_from_ip: device_ip_tuple, last_seen_at: last_seen_at)
 
   def put_display_name!(%__MODULE__{} = device, "" <> _ = display_name), do: put_in(device.display_name, display_name)
-
-  @doc "Expires the given device's tokens, setting `expires_at` to `DateTime.utc_now()`"
-  @spec expire(t()) :: t()
-  def expire(%__MODULE__{} = device), do: put_in(device.expires_at, DateTime.utc_now())
-
-  @doc """
-  Generates a new access/refresh token pair for the given user's existing 
-  device, moving the current refresh token (if any) to `prev_refresh_token`. 
-  """
-  @spec refresh(t()) :: t()
-  def refresh(%__MODULE__{} = device) do
-    %__MODULE__{
-      device
-      | access_token: generate_token(),
-        refresh_token: generate_token(),
-        prev_refresh_token: device.refresh_token
-    }
-  end
 
   @doc "Puts cross-signing keys for a device"
   @spec put_keys(t(), User.id(), Keyword.t()) :: {:ok, t()} | {:error, :invalid_identity_keys}
@@ -149,7 +97,9 @@ defmodule RadioBeam.User.Device do
     end
   end
 
-  def generate_id, do: Ecto.UUID.generate()
-  def generate_token(), do: 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
+  def put_revoked(%__MODULE__{} = device, revoked_token_id) do
+    update_in(device.revoked_unexpired_token_ids, &MapSet.put(&1, revoked_token_id))
+  end
+
   def default_device_name, do: "New Device (added #{Date.to_string(Date.utc_today())})"
 end

@@ -12,14 +12,13 @@ defmodule RadioBeamWeb.RoomController do
 
   @schema_actions [:create, :invite, :join, :leave, :get_nearest_event, :put_typing]
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in @schema_actions
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema, with_params?: true] when action == :send
 
   @missing_req_param_msg "Your request is missing one or more required parameters"
 
   def create(conn, _params) do
-    %User{} = creator = conn.assigns.user
+    %User{} = creator = conn.assigns.session.user
     request = conn.assigns.request
 
     opts =
@@ -75,10 +74,11 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
-  def joined(conn, _params), do: json(conn, %{joined_rooms: conn.assigns.user.id |> Room.joined() |> Enum.to_list()})
+  def joined(conn, _params),
+    do: json(conn, %{joined_rooms: conn.assigns.session.user.id |> Room.joined() |> Enum.to_list()})
 
   def invite(conn, %{"room_id" => room_id}) do
-    %User{} = inviter = conn.assigns.user
+    %User{} = inviter = conn.assigns.session.user
     request = conn.assigns.request
     invitee_id = to_string(Map.fetch!(request, "user_id"))
 
@@ -113,7 +113,7 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def join(conn, %{"room_id" => room_id}) do
-    %User{} = joiner = conn.assigns.user
+    %User{} = joiner = conn.assigns.session.user
     request = conn.assigns.request
 
     case Room.join(room_id, joiner.id, request["reason"]) do
@@ -123,7 +123,7 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def leave(conn, %{"room_id" => room_id}) do
-    %User{} = joiner = conn.assigns.user
+    %User{} = joiner = conn.assigns.session.user
     request = conn.assigns.request
 
     case Room.leave(room_id, joiner.id, request["reason"]) do
@@ -134,9 +134,9 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def send(conn, %{"room_id" => room_id, "event_type" => event_type, "transaction_id" => txn_id}) do
-    %User{} = sender = conn.assigns.user
+    %User{} = sender = conn.assigns.session.user
     content = conn.assigns.request
-    device_id = conn.assigns.device.id
+    device_id = conn.assigns.session.device.id
 
     with {:ok, handle} <- Transaction.begin(txn_id, device_id, conn.request_path),
          {:ok, event_id} <- Room.send(room_id, sender.id, event_type, content) do
@@ -160,7 +160,7 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def put_state(conn, %{"room_id" => room_id, "event_type" => event_type} = params) do
-    %User{} = sender = conn.assigns.user
+    %User{} = sender = conn.assigns.session.user
     content = conn.body_params
     state_key = Map.get(params, "state_key", "")
 
@@ -177,9 +177,9 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def redact(conn, %{"room_id" => room_id, "event_id" => event_id, "transaction_id" => txn_id} = params) do
-    %User{} = sender = conn.assigns.user
+    %User{} = sender = conn.assigns.session.user
     reason = Map.get(params, "reason")
-    device_id = conn.assigns.device.id
+    device_id = conn.assigns.session.device.id
 
     with {:ok, handle} <- Transaction.begin(txn_id, device_id, conn.request_path),
          {:ok, event_id} <- Room.redact_event(room_id, sender.id, event_id, reason) do
@@ -203,7 +203,7 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def get_event(conn, %{"room_id" => room_id, "event_id" => event_id}) do
-    case Room.get_event(room_id, conn.assigns.user.id, event_id) do
+    case Room.get_event(room_id, conn.assigns.session.user.id, event_id) do
       {:ok, event} -> json(conn, event)
       {:error, error} -> handle_common_error(conn, error)
     end
@@ -218,7 +218,7 @@ defmodule RadioBeamWeb.RoomController do
   # omg...
   @room_member_keys ["avatar_url", "displayname", "display_name"]
   def get_joined_members(conn, %{"room_id" => room_id}) do
-    case Room.get_members(room_id, conn.assigns.user.id, :latest_visible, &(&1 == "join")) do
+    case Room.get_members(room_id, conn.assigns.session.user.id, :latest_visible, &(&1 == "join")) do
       {:ok, members} ->
         json(conn, %{joined: Map.new(members, &{&1.state_key, Map.take(&1.content, @room_member_keys)})})
 
@@ -252,14 +252,14 @@ defmodule RadioBeamWeb.RoomController do
           fn _ -> true end
       end
 
-    case Room.get_members(room_id, conn.assigns.user.id, at_event_id, membership_filter_fn) do
+    case Room.get_members(room_id, conn.assigns.session.user.id, at_event_id, membership_filter_fn) do
       {:ok, members} -> json(conn, %{chunk: Enum.to_list(members)})
       {:error, error} -> handle_common_error(conn, error)
     end
   end
 
   def get_state(conn, %{"room_id" => room_id}) do
-    case Room.get_state(room_id, conn.assigns.user.id) do
+    case Room.get_state(room_id, conn.assigns.session.user.id) do
       {:ok, members} -> json(conn, Enum.to_list(members))
       {:error, error} -> handle_common_error(conn, error)
     end
@@ -268,7 +268,7 @@ defmodule RadioBeamWeb.RoomController do
   def get_state_event(conn, %{"room_id" => room_id, "event_type" => type} = params) do
     state_key = Map.get(params, "state_key", "")
 
-    case Room.get_state(room_id, conn.assigns.user.id, type, state_key) do
+    case Room.get_state(room_id, conn.assigns.session.user.id, type, state_key) do
       {:ok, event} -> json(conn, event.content)
       {:error, error} -> handle_common_error(conn, error)
     end
@@ -283,7 +283,7 @@ defmodule RadioBeamWeb.RoomController do
   def get_nearest_event(conn, %{"room_id" => room_id}) do
     %{"dir" => dir, "ts" => timestamp} = conn.assigns.request
 
-    case Room.get_nearest_event(room_id, conn.assigns.user.id, dir, timestamp) do
+    case Room.get_nearest_event(room_id, conn.assigns.session.user.id, dir, timestamp) do
       {:ok, event_id, origin_server_ts} -> json(conn, %{"event_id" => event_id, "origin_server_ts" => origin_server_ts})
       {:error, error} -> handle_common_error(conn, error)
     end
@@ -298,9 +298,14 @@ defmodule RadioBeamWeb.RoomController do
   def put_typing(conn, %{"room_id" => room_id}) do
     typing_update_result =
       case conn.assigns.request do
-        %{"typing" => true, "timeout" => timeout} -> EphemeralState.put_typing(room_id, conn.assigns.user.id, timeout)
-        %{"typing" => true} -> EphemeralState.put_typing(room_id, conn.assigns.user.id)
-        %{"typing" => false} -> EphemeralState.delete_typing(room_id, conn.assigns.user.id)
+        %{"typing" => true, "timeout" => timeout} ->
+          EphemeralState.put_typing(room_id, conn.assigns.session.user.id, timeout)
+
+        %{"typing" => true} ->
+          EphemeralState.put_typing(room_id, conn.assigns.session.user.id)
+
+        %{"typing" => false} ->
+          EphemeralState.delete_typing(room_id, conn.assigns.session.user.id)
       end
 
     case typing_update_result do

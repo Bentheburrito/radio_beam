@@ -16,7 +16,6 @@ defmodule RadioBeamWeb.ContentRepoController do
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: ContentRepoSchema] when action in [:thumbnail, :download]
   plug :parse_mxc_and_fetch_upload when action in [:thumbnail, :download]
 
@@ -66,7 +65,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   def upload(conn, _params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
     %Upload{} = upload = conn.assigns.upload
     %FileInfo{} = file_info = conn.assigns.file_info
     tmp_path = conn.assigns.tmp_upload_path
@@ -89,7 +88,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   def create(conn, _params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
 
     case ContentRepo.create(user) do
       {:ok, upload} ->
@@ -135,7 +134,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   defp get_or_reserve_upload(%{params: %{"server_name" => server_name, "media_id" => media_id}} = conn, _) do
-    %User{id: uploader_id} = conn.assigns.user
+    %User{id: uploader_id} = conn.assigns.session.user
 
     with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
          {:ok, %Upload{id: ^mxc, file: :reserved, uploaded_by_id: ^uploader_id} = upload} <-
@@ -160,7 +159,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   defp get_or_reserve_upload(conn, _opts) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
 
     case ContentRepo.create(user) do
       {:ok, upload} -> assign(conn, :upload, upload)

@@ -13,10 +13,9 @@ defmodule RadioBeamWeb.ClientController do
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Client] when action in ~w|send_to_device|a
 
-  def get_device(%{assigns: %{user: user}} = conn, params) do
+  def get_device(%{assigns: %{session: %{user: user}}} = conn, params) do
     case Map.fetch(params, "device_id") do
       {:ok, device_id} ->
         case User.get_device(user, device_id) do
@@ -40,7 +39,7 @@ defmodule RadioBeamWeb.ClientController do
   end
 
   def put_device_display_name(conn, %{"device_id" => device_id, "display_name" => display_name}) do
-    case User.Account.put_device_display_name(conn.assigns.user.id, device_id, display_name) do
+    case User.Account.put_device_display_name(conn.assigns.session.user.id, device_id, display_name) do
       {:ok, %User{}} -> json(conn, %{})
       {:error, :not_found} -> json_error(conn, 404, :not_found, "device not found")
       {:error, error} -> log_error(conn, error)
@@ -57,8 +56,8 @@ defmodule RadioBeamWeb.ClientController do
   defp ip_tuple_to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
 
   def send_to_device(conn, %{"type" => type, "transaction_id" => txn_id}) do
-    %User{} = user = conn.assigns.user
-    %Device{} = device = conn.assigns.device
+    %User{} = user = conn.assigns.session.user
+    %Device{} = device = conn.assigns.session.device
     request = conn.assigns.request
 
     with parsed_args when is_list(parsed_args) <- parse_args(request["messages"], user.id, type),

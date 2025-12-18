@@ -8,7 +8,7 @@ defmodule RadioBeamWeb.Schemas.Auth do
 
   def register do
     %{
-      "device_id" => [:string, default: RadioBeam.User.Device.generate_id()],
+      "device_id" => [:string, :optional],
       "inhibit_login" => [:boolean, default: false],
       "initial_device_display_name" => [:string, default: RadioBeam.User.Device.default_device_name()],
       "password" => :string,
@@ -19,7 +19,7 @@ defmodule RadioBeamWeb.Schemas.Auth do
   def login do
     # TOIMPL: token login, 3rd party login
     %{
-      "device_id" => [:string, default: RadioBeam.User.Device.generate_id()],
+      "device_id" => [:string, :optional],
       "identifier" => %{
         "type" => Schema.enum(["m.id.user"]),
         "user" => Schema.any_of([&Schema.user_localpart/1, &Schemas.user_id/1])

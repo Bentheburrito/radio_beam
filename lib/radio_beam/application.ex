@@ -34,6 +34,8 @@ defmodule RadioBeam.Application do
       RadioBeam.Room.EphemeralState.Server.Supervisor,
       # Cache to reduce redundant membership events in /sync
       LazyLoadMembersCache,
+      # Cache for authorization code grant flow state
+      RadioBeam.OAuth2.Builtin.AuthzCodeCache,
       # Start to serve requests, typically the last entry
       RadioBeamWeb.Endpoint
     ]

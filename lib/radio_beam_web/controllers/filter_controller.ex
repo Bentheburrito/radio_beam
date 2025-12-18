@@ -8,10 +8,9 @@ defmodule RadioBeamWeb.FilterController do
   alias RadioBeam.User.EventFilter
   alias RadioBeamWeb.Schemas.Filter, as: FilterSchema
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: FilterSchema, fun: :filter] when action == :put
 
-  def put(%{assigns: %{user: %{id: user_id}}} = conn, %{"user_id" => user_id}) do
+  def put(%{assigns: %{session: %{user: %{id: user_id}}}} = conn, %{"user_id" => user_id}) do
     case User.Account.upload_filter(user_id, conn.assigns.request) do
       {:ok, filter_id} ->
         json(conn, %{filter_id: filter_id})
@@ -27,8 +26,8 @@ defmodule RadioBeamWeb.FilterController do
     conn |> put_status(403) |> json(Errors.forbidden("You are not that user"))
   end
 
-  def get(%{assigns: %{user: %{id: user_id}}} = conn, %{"user_id" => user_id, "filter_id" => filter_id}) do
-    case User.get_event_filter(conn.assigns.user, filter_id) do
+  def get(%{assigns: %{session: %{user: %{id: user_id}}}} = conn, %{"user_id" => user_id, "filter_id" => filter_id}) do
+    case User.get_event_filter(conn.assigns.session.user, filter_id) do
       {:ok, %EventFilter{} = filter} ->
         json(conn, filter.raw_definition)
 

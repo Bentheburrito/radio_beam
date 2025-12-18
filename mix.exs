@@ -10,6 +10,7 @@ defmodule RadioBeam.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
+      listeners: [Phoenix.CodeReloader],
       test_coverage: [
         ignore_modules: [
           RadioBeam.Application,
@@ -42,7 +43,10 @@ defmodule RadioBeam.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.7.11"},
+      {:phoenix, "~> 1.8.3"},
+      {:phoenix_html, "~> 4.1"},
+      {:phoenix_live_reload, "~> 1.2", only: :dev},
+
       # {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.10"},
       # {:postgrex, ">= 0.0.0"},
@@ -59,6 +63,8 @@ defmodule RadioBeam.MixProject do
       {:dotenv_parser, "~> 1.2", only: [:dev, :test]},
       polyjuice_util(),
       {:vix, "~> 0.30.0"},
+      {:guardian, "~> 2.4"},
+      {:gettext, "~> 1.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}

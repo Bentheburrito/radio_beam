@@ -84,11 +84,16 @@ defmodule Fixtures do
     user
   end
 
-  def device(user_or_user_id, display_name \\ Device.default_device_name(), pwd \\ strong_password())
-  def device(%User{id: user_id}, display_name, pwd), do: device(user_id, display_name, pwd)
+  def device(user_or_user_id, display_name \\ Device.default_device_name())
 
-  def device(user_id, display_name, pwd) do
-    {:ok, user, device} = User.Auth.password_login(user_id, pwd, Device.generate_id(), display_name)
+  def device("@" <> _ = user_id, display_name) do
+    {:ok, user} = RadioBeam.Repo.fetch(User, user_id)
+    device(user, display_name)
+  end
+
+  def device(user, display_name) do
+    device_id = 24 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
+    %{device: device} = RadioBeam.OAuth2.UserDeviceSession.new_from_user!(user, device_id, display_name: display_name)
     {user, device}
   end
 

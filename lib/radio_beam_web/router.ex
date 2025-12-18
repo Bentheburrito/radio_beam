@@ -1,36 +1,77 @@
 defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
-  alias RadioBeamWeb.{
-    AccountController,
-    AuthController,
-    ClientController,
-    ContentRepoController,
-    FilterController,
-    HomeserverInfoController,
-    KeysController,
-    RelationsController,
-    RoomController,
-    RoomKeysController,
-    SyncController
-  }
+  alias RadioBeamWeb.AccountController
+  alias RadioBeamWeb.AuthController
+  alias RadioBeamWeb.ClientController
+  alias RadioBeamWeb.ContentRepoController
+  alias RadioBeamWeb.FilterController
+  alias RadioBeamWeb.HomeserverInfoController
+  alias RadioBeamWeb.KeysController
+  alias RadioBeamWeb.OAuth2Controller
+  alias RadioBeamWeb.RelationsController
+  alias RadioBeamWeb.RoomController
+  alias RadioBeamWeb.RoomKeysController
+  alias RadioBeamWeb.SyncController
 
-  @cors %{
+  @cs_api_cors %{
     "access-control-allow-origin" => "*",
     "access-control-allow-methods" => "GET, POST, PUT, DELETE, OPTIONS",
     "access-control-allow-headers" => "X-Requested-With, Content-Type, Authorization"
   }
 
-  pipeline :spec do
+  pipeline :cs_api do
     plug :accepts, ["json"]
-    plug :put_secure_browser_headers, @cors
+    plug :put_secure_browser_headers, @cs_api_cors
+  end
+
+  pipeline :auth_cs_api do
+    plug :cs_api
+    plug RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken
+  end
+
+  pipeline :oauth2_authz_code_grant do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :put_root_layout, html: {RadioBeamWeb.Layouts, :root}
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
   end
 
   get "/", HomeserverInfoController, :home
   get "/.well-known/matrix/client", HomeserverInfoController, :well_known_client
 
+  scope "/oauth2" do
+    pipe_through :cs_api
+
+    post "/clients/register", OAuth2Controller, :register_client
+    post "/token", OAuth2Controller, :get_token
+  end
+
+  scope "/oauth2" do
+    pipe_through :oauth2_authz_code_grant
+
+    get "/auth", OAuth2Controller, :authenticate
+    post "/auth", OAuth2Controller, :authenticate
+  end
+
+  ### LEGACY AUTH API - DEPRECATED ###
   scope "/_matrix" do
-    pipe_through :spec
+    pipe_through :cs_api
+
+    scope "/client" do
+      scope "/v3" do
+        get "/login", HomeserverInfoController, :login_types
+        post "/login", AuthController, :login
+        post "/register", AuthController, :register
+        post "/refresh", AuthController, :refresh
+      end
+    end
+  end
+
+  ### AUTHENTICATED CS-API ENDPOINTS ###
+  scope "/_matrix" do
+    pipe_through :auth_cs_api
 
     # these will be deprecated in the future
     scope "/media" do
@@ -40,8 +81,6 @@ defmodule RadioBeamWeb.Router do
     end
 
     scope "/client" do
-      get "/versions", HomeserverInfoController, :versions
-
       scope "/v1" do
         get "/media/config", ContentRepoController, :config
         get "/media/download/:server_name/:media_id/:filename", ContentRepoController, :download
@@ -55,15 +94,6 @@ defmodule RadioBeamWeb.Router do
 
       scope "/v3" do
         get "/capabilities", HomeserverInfoController, :capabilities
-        get "/login", HomeserverInfoController, :login_types
-        post "/login", AuthController, :login
-        post "/register", AuthController, :register
-        post "/refresh", AuthController, :refresh
-        ### TOIMPL:
-        # post "/logout/all", AuthController, :logout_all
-        # post "/logout", AuthController, :logout
-
-        # OPTIMPL: /login/get_token
 
         get "/devices", ClientController, :get_device
         get "/devices/:device_id", ClientController, :get_device
@@ -133,7 +163,7 @@ defmodule RadioBeamWeb.Router do
         end
 
         scope "/account" do
-          get "/whoami", AuthController, :whoami
+          get "/whoami", OAuth2Controller, :whoami
         end
 
         scope "/user/:user_id" do
@@ -149,6 +179,19 @@ defmodule RadioBeamWeb.Router do
         post "/join/:room_id_or_alias", RoomController, :join
         # TOIMPL:
         # post "/knock/:room_id_or_alias", RoomController, :knock
+      end
+    end
+  end
+
+  ### UNAUTHENTICATED CS-API ENDPOINTS ###
+  scope "/_matrix" do
+    pipe_through :cs_api
+
+    scope "/client" do
+      get "/versions", HomeserverInfoController, :versions
+
+      scope "/v1" do
+        get "/auth_metadata", OAuth2Controller, :get_auth_metadata
       end
     end
   end

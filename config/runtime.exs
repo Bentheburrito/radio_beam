@@ -14,11 +14,21 @@ end
 # The block below contains prod specific runtime configuration.
 
 server_name = System.fetch_env!("SERVER_NAME")
+oauth2_module = RadioBeam.OAuth2.Builtin
 
 config :radio_beam,
   registration_enabled: System.get_env("ENABLE_REGISTRATION", "false") == "true",
   server_name: server_name,
-  admins: "ADMIN_LOCALPARTS" |> System.fetch_env!() |> String.split(",") |> Enum.map(&"@#{&1}:#{server_name}")
+  admins: "ADMIN_LOCALPARTS" |> System.fetch_env!() |> String.split(",") |> Enum.map(&"@#{&1}:#{server_name}"),
+  oauth2_module: oauth2_module
+
+case System.get_env("AUTHORIZATION_MODULE", "builtin") do
+  "builtin" ->
+    # TODO: do we need to do this, or can we pass via opts?
+    config :radio_beam, RadioBeam.OAuth2.Builtin.Guardian,
+      # issuer: oauth2_module.metadata().issuer,
+      secret_key: System.fetch_env!("GUARDIAN_TOKEN_SECRET_KEY")
+end
 
 # ## Using releases
 #

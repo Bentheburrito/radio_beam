@@ -15,13 +15,12 @@ defmodule RadioBeamWeb.KeysController do
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: KeysSchema
 
   @creds_dont_match_msg "The user/device ID specified in 'device_keys' do not match your session."
 
   def changes(conn, _params) do
-    %{user: user, request: request} = conn.assigns
+    %{session: %{user: user}, request: request} = conn.assigns
 
     changed_map =
       user
@@ -33,8 +32,8 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def upload(conn, _params) do
-    user = conn.assigns.user
-    device_id = conn.assigns.device.id
+    user = conn.assigns.session.user
+    device_id = conn.assigns.session.device.id
 
     opts =
       Keyword.new(conn.assigns.request, fn
@@ -62,8 +61,8 @@ defmodule RadioBeamWeb.KeysController do
   @user_id_mismatch_msg "The user_id specified on one or more of the supplied keys do not match the owner of the device."
   @bad_signature_msg "When uploading self-/user-cross-signing keys, they must be signed by an accompanying (or previously uploaded) master key."
   def upload_cross_signing(conn, _params) do
-    user_id = conn.assigns.user.id
-    device_id = conn.assigns.device.id
+    user_id = conn.assigns.session.user.id
+    device_id = conn.assigns.session.device.id
 
     opts =
       conn.assigns.request
@@ -98,7 +97,7 @@ defmodule RadioBeamWeb.KeysController do
 
   @set_up_csk_msg "You must upload Cross-Signing Keys before you can upload signatures of other user's keys"
   def upload_signatures(conn, _params) do
-    case Keys.put_signatures(conn.assigns.user.id, conn.assigns.request) do
+    case Keys.put_signatures(conn.assigns.session.user.id, conn.assigns.request) do
       :ok -> json(conn, %{})
       {:error, :signer_has_no_user_csk} -> json_error(conn, 400, :bad_json, [@set_up_csk_msg])
       {:error, %{} = failures} -> json(conn, %{"failures" => map_nested_errors(failures)})
@@ -145,7 +144,7 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def query(conn, _params) do
-    with %{} = user_key_map <- Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.user.id) do
+    with %{} = user_key_map <- Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.session.user.id) do
       json(conn, user_key_map)
     else
       error ->

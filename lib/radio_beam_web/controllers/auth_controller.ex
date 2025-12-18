@@ -1,21 +1,21 @@
 defmodule RadioBeamWeb.AuthController do
   use RadioBeamWeb, :controller
 
+  import RadioBeamWeb.Utils, only: [json_error: 4]
+
   alias RadioBeam.Errors
   alias RadioBeam.User
   alias RadioBeam.User.Auth
-  alias RadioBeam.User.Device
 
   require Logger
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Auth] when action in [:register, :login, :refresh]
-  plug RadioBeamWeb.Plugs.Authenticate when action == :whoami
 
   def register(%{params: %{"kind" => "guest"}} = conn, _params),
-    do: conn |> put_status(403) |> json(Errors.unrecognized("This homeserver does not support guest users."))
+    do: json_error(conn, 403, :unrecognized, "This homeserver does not support guest users.")
 
   def register(%{params: %{"kind" => kind}} = conn, _params) when kind != "user",
-    do: conn |> put_status(403) |> json(Errors.bad_json("Expected 'user' or 'guest' as the kind, got '#{kind}'"))
+    do: json_error(conn, 403, :bad_json, "Expected 'user' or 'guest' as the kind, got '#{kind}'")
 
   def register(conn, _params) do
     %{"username" => {_version, localpart}, "password" => pwd, "inhibit_login" => inhibit_login?} = conn.assigns.request
@@ -25,10 +25,19 @@ defmodule RadioBeamWeb.AuthController do
         if inhibit_login? do
           json(conn, %{user_id: user.id})
         else
-          %{"device_id" => device_id, "initial_device_display_name" => display_name} = conn.assigns.request
+          device_id = Map.get_lazy(conn.assigns.request, "device_id", &Auth.generate_device_id/0)
+          display_name = Map.fetch!(conn.assigns.request, "initial_device_display_name")
 
-          {:ok, user, device} = Auth.password_login(user.id, pwd, device_id, display_name)
-          json(conn, Auth.session_info(user, device))
+          {:ok, access_token, refresh_token, _scope, expires_in} =
+            Auth.password_login(user.id, pwd, device_id, display_name)
+
+          json(conn, %{
+            device_id: device_id,
+            user_id: user.id,
+            access_token: access_token,
+            refresh_token: refresh_token,
+            expires_in_ms: expires_in
+          })
         end
 
       {:error, :already_exists} ->
@@ -68,11 +77,18 @@ defmodule RadioBeamWeb.AuthController do
         "@" <> _ = user_id -> user_id
       end
 
-    %{"device_id" => device_id, "initial_device_display_name" => display_name, "password" => pwd} = conn.assigns.request
+    %{"initial_device_display_name" => display_name, "password" => pwd} = conn.assigns.request
+    device_id = Map.get_lazy(conn.assigns.request, "device_id", &Auth.generate_device_id/0)
 
     case Auth.password_login(user_id, pwd, device_id, display_name) do
-      {:ok, user, device} ->
-        json(conn, Auth.session_info(user, device))
+      {:ok, access_token, refresh_token, _scope, expires_in} ->
+        json(conn, %{
+          device_id: device_id,
+          user_id: user_id,
+          access_token: access_token,
+          refresh_token: refresh_token,
+          expires_in_ms: expires_in
+        })
 
       {:error, :unknown_user_or_pwd} ->
         conn |> put_status(403) |> json(Errors.forbidden("Unknown username or password"))
@@ -83,11 +99,11 @@ defmodule RadioBeamWeb.AuthController do
     %{"refresh_token" => refresh_token} = conn.assigns.request
 
     case Auth.refresh(refresh_token) do
-      {:ok, %Device{} = device} ->
+      {:ok, access_token, refresh_token, expires_in} ->
         json(conn, %{
-          access_token: device.access_token,
-          refresh_token: device.refresh_token,
-          expires_in_ms: DateTime.diff(device.expires_at, DateTime.utc_now(), :millisecond)
+          access_token: access_token,
+          refresh_token: refresh_token,
+          expires_in_ms: expires_in
         })
 
       {:error, :not_found} ->
@@ -108,14 +124,5 @@ defmodule RadioBeamWeb.AuthController do
         Logger.error("Got error trying to use a refresh token: #{inspect(error)}")
         conn |> put_status(401) |> json(Errors.unknown())
     end
-  end
-
-  # TOIMPL: application service users
-  def whoami(conn, _params) do
-    json(conn, %{
-      device_id: conn.assigns.device.id,
-      is_guest: false,
-      user_id: conn.assigns.user.id
-    })
   end
 end

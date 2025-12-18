@@ -9,11 +9,10 @@ defmodule RadioBeamWeb.RelationsController do
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: RelationsSchema
 
   def get_children(conn, %{"event_id" => event_id, "room_id" => room_id} = params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
     %{"dir" => order, "recurse" => recurse?} = _request = conn.assigns.request
 
     opts = [

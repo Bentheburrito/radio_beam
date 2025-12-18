@@ -5,6 +5,7 @@ defmodule RadioBeam.Repo do
 
   require Logger
 
+  alias RadioBeam.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Room
   alias RadioBeam.Repo.Tables
@@ -28,7 +29,7 @@ defmodule RadioBeam.Repo do
     create_tables(nodes)
   end
 
-  @tables [User, Tables.Room, Room.Alias, Upload, Tables.ViewState]
+  @tables [User, Tables.Room, Room.Alias, Upload, Tables.ViewState, Tables.DynamicOAuth2Client]
   defp create_tables(nodes) do
     # don't persist DB ops to disk for tests - clean DB every run of `mix test`
     opts =
@@ -104,7 +105,16 @@ defmodule RadioBeam.Repo do
   end
 
   def insert(%table{} = data) when table in @tables do
-    transaction(fn -> {:ok, data |> table.dump!() |> Memento.Query.write()} end)
+    transaction(fn -> {:ok, data |> table.dump!() |> Memento.Query.write() |> table.load!()} end)
+  end
+
+  def insert(%struct{} = data) do
+    table = table_for(struct)
+    transaction(fn -> {:ok, data |> table.dump!() |> Memento.Query.write() |> table.load!()} end)
+  end
+
+  def insert!(%table{} = data) when table in @tables do
+    transaction!(fn -> data |> table.dump!() |> Memento.Query.write() |> table.load!() end)
   end
 
   def insert!(%struct{} = data) do
@@ -136,5 +146,6 @@ defmodule RadioBeam.Repo do
   end
 
   defp table_for(Room), do: Tables.Room
+  defp table_for(DynamicOAuth2Client), do: Tables.DynamicOAuth2Client
   defp table_for(module), do: module
 end

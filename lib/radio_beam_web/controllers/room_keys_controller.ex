@@ -16,7 +16,6 @@ defmodule RadioBeamWeb.RoomKeysController do
 
   @no_schemas ~w|get_backup_info delete_backup get_keys delete_keys|a
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomKeysSchema] when action not in @no_schemas
 
   @unknown_backup "Unknown backup version"
@@ -29,7 +28,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def get_keys(conn, %{"version" => version} = params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
 
     case RoomKeys.fetch_backup(user.room_keys, version) do
       {:ok, %Backup{} = backup} -> get_keys_response(conn, params, backup)
@@ -66,7 +65,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def put_keys(conn, %{"version" => version} = params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
 
     new_room_session_backups =
       case params do
@@ -114,7 +113,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def delete_keys(conn, %{"version" => version} = params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
 
     path_or_all =
       case params do
@@ -134,7 +133,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   def delete_keys(conn, _params), do: json_error(conn, 400, :bad_json, "'version' is required")
 
   def create_backup(conn, _params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
     %{"algorithm" => algorithm, "auth_data" => auth_data} = conn.assigns.request
 
     with %RoomKeys{} = room_keys <- RoomKeys.new_backup(user.room_keys, algorithm, auth_data),
@@ -152,7 +151,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def get_backup_info(conn, params) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
 
     backup_result =
       case Map.fetch(params, "version") do
@@ -184,7 +183,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def put_backup_auth_data(conn, version) when is_integer(version) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
     %{"algorithm" => algorithm, "auth_data" => auth_data} = conn.assigns.request
 
     with {:ok, %RoomKeys{} = room_keys} <- RoomKeys.update_backup(user.room_keys, version, algorithm, auth_data),
@@ -213,7 +212,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def delete_backup(conn, %{"version" => version}) do
-    %User{} = user = conn.assigns.user
+    %User{} = user = conn.assigns.session.user
 
     with %RoomKeys{} = room_keys <- RoomKeys.delete_backup(user.room_keys, version),
          {:ok, %User{}} <- RoomKeys.insert_user_room_keys(user, room_keys) do

@@ -11,12 +11,11 @@ defmodule RadioBeamWeb.SyncController do
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
-  plug RadioBeamWeb.Plugs.Authenticate
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Sync
 
   def sync(conn, _params) do
-    %User{id: user_id} = conn.assigns.user
-    %Device{id: device_id} = conn.assigns.device
+    %User{id: user_id} = conn.assigns.session.user
+    %Device{id: device_id} = conn.assigns.session.device
     request = conn.assigns.request
 
     opts =
@@ -34,8 +33,8 @@ defmodule RadioBeamWeb.SyncController do
   end
 
   def get_messages(conn, %{"room_id" => room_id}) do
-    %User{} = user = conn.assigns.user
-    %Device{} = device = conn.assigns.device
+    %User{} = user = conn.assigns.session.user
+    %Device{} = device = conn.assigns.session.device
     request = conn.assigns.request
 
     dir = Map.fetch!(request, "dir")

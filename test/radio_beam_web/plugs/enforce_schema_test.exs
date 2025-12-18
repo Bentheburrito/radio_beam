@@ -1,6 +1,6 @@
 defmodule RadioBeamWeb.Plugs.EnforceSchemaTest do
   use ExUnit.Case, async: true
-  use Plug.Test
+  import Plug.Test
 
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Plugs.EnforceSchema
