@@ -76,13 +76,13 @@ defmodule RadioBeam.OAuth2 do
               validated_authz_code_grant_values()
             ) ::
               {:ok, authz_code()} | {:error, :unknown_username_or_password}
-  @callback exchange_authz_code_for_tokens(authz_code(), String.t(), client_id(), URI.t(), URI.t()) ::
+  @callback exchange_authz_code_for_tokens(authz_code(), String.t(), client_id(), URI.t(), URI.t(), Keyword.t()) ::
               {:ok, Guardian.Token.token(), Guardian.Token.token(), Guardian.Token.claims(), non_neg_integer()}
               | {:error, :invalid_grant | :not_found}
   @callback authenticate_user_by_access_token(Guardian.Token.token(), ip_tuple()) ::
               {:ok, UserDeviceSession.t()} | {:error, :expired_token | :invalid_token | :not_found}
   @callback refresh_token(Guardian.Token.token()) ::
-              {:ok, Guardian.Token.token(), Guardian.Token.token(), non_neg_integer()}
+              {:ok, Guardian.Token.token(), Guardian.Token.token(), scope_urns :: String.t(), non_neg_integer()}
               | {:error, :expired_token | :invalid_token | :not_found}
 
   def metadata(scheme \\ :https, host \\ RadioBeam.server_name(), oauth2_module \\ oauth2_module())
@@ -125,12 +125,13 @@ defmodule RadioBeam.OAuth2 do
         code_verifier,
         client_id,
         %URI{} = redirect_uri,
+        device_opts \\ [],
         scheme \\ :https,
         host \\ RadioBeam.server_name(),
         oauth2_module \\ oauth2_module()
       ) do
     issuer = URI.new!(metadata(scheme, host).issuer)
-    oauth2_module.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, issuer)
+    oauth2_module.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, issuer, device_opts)
   end
 
   def authenticate_user_by_access_token(token, ip, oauth2_module \\ oauth2_module()) do
@@ -142,4 +143,16 @@ defmodule RadioBeam.OAuth2 do
   end
 
   defp oauth2_module, do: Application.fetch_env!(:radio_beam, :oauth2_module)
+
+  def weak_password_message do
+    """
+    Please include a password with at least:
+
+    - 1 uppercase letter
+    - 1 lowercase letter
+    - 1 special character of the following: !@#$%^&*()_-+={[}]|\:;"'<,>.?/
+    - 1 number
+    - 8 characters total
+    """
+  end
 end

@@ -1,18 +1,7 @@
 defmodule RadioBeamWeb.ClientControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.User.Auth
-
-  setup %{conn: conn} do
-    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
-    %{access_token: token} = Auth.session_info(user1, device)
-
-    %{
-      conn: put_req_header(conn, "authorization", "Bearer #{token}"),
-      user: user1,
-      device: device
-    }
-  end
+  @moduletag [device_display_name: "da steam deck"]
 
   describe "get_device/2" do
     test "returns a list of devices", %{conn: conn, device: device} do

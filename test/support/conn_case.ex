@@ -31,8 +31,51 @@ defmodule RadioBeamWeb.ConnCase do
     end
   end
 
-  setup _tags do
+  setup tags do
     # RadioBeam.DataCase.setup_sandbox(tags)
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+
+    {:ok, setup_authenticated_user(Phoenix.ConnTest.build_conn(), tags)}
+  end
+
+  defp setup_authenticated_user(conn, tags) do
+    user = Fixtures.user()
+
+    code_verifier = 24 |> :crypto.strong_rand_bytes() |> Base.encode64()
+    code_challenge = Base.url_encode64(:crypto.hash(:sha256, code_verifier), padding: false)
+    client_id = "test_client"
+    redirect_uri = URI.new!("")
+    device_id = Fixtures.device_id()
+    scopes = %{:cs_api => [:read, :write], device_id: device_id}
+
+    grant_params = %{
+      code_challenge: code_challenge,
+      client_id: client_id,
+      redirect_uri: redirect_uri,
+      scopes: scopes,
+      prompt: :login
+    }
+
+    device_opts =
+      case tags do
+        %{device_display_name: display_name} -> [display_name: display_name]
+        %{} -> []
+      end
+
+    {:ok, code} =
+      RadioBeam.OAuth2.authenticate_user_by_password(user.id, Fixtures.strong_password(), grant_params)
+
+    {:ok, access_token, refresh_token, _claims, _expires_in} =
+      RadioBeam.OAuth2.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, device_opts)
+
+    {:ok, %{user: user, device: device}} =
+      RadioBeam.OAuth2.authenticate_user_by_access_token(access_token, {127, 0, 0, 1})
+
+    %{
+      conn: Plug.Conn.put_req_header(conn, "authorization", "Bearer #{access_token}"),
+      user: user,
+      device: device,
+      access_token: access_token,
+      refresh_token: refresh_token
+    }
   end
 end

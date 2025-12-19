@@ -74,6 +74,9 @@ defmodule RadioBeam.OAuth2.Builtin do
 
   defp validate_grant_types(client_metadata_attrs) do
     case Map.fetch(client_metadata_attrs, "grant_types") do
+      {:ok, grant_types} when not is_list(grant_types) ->
+        {:error, :grant_types_not_a_list}
+
       {:ok, grant_types} ->
         case Enum.find(@required_grant_types, &(&1 not in grant_types)) do
           nil -> {:ok, @required_grant_types}
@@ -151,13 +154,18 @@ defmodule RadioBeam.OAuth2.Builtin do
     # default port based on the scheme (if present), even if no port is
     # actually specified. Rare Elixir stdlib L
     port_specified? =
-      redirect_uri_str
-      |> :uri_string.parse()
-      |> is_map_key(:port)
+      case :uri_string.parse(redirect_uri_str) do
+        %{port: _} -> true
+        _else -> false
+      end
 
     case URI.new(redirect_uri_str) do
       {:ok,
        %URI{scheme: ^reverse_dns_client_uri_host <> "." <> _, userinfo: nil, host: nil, fragment: nil} = redirect_uri}
+      when not port_specified? ->
+        {:ok, redirect_uri}
+
+      {:ok, %URI{scheme: ^reverse_dns_client_uri_host, userinfo: nil, host: nil, fragment: nil} = redirect_uri}
       when not port_specified? ->
         {:ok, redirect_uri}
 
@@ -208,10 +216,11 @@ defmodule RadioBeam.OAuth2.Builtin do
   def validate_authz_code_grant_params(params) do
     server_metadata = metadata()
 
-    with {:ok, client_metadata} <- lookup_client(params["client_id"]),
+    with client_id when is_binary(client_id) <- Map.get(params, "client_id", {:error, :missing_client_id}),
+         {:ok, client_metadata} <- lookup_client(client_id),
          {:ok, scopes} <- validate_scopes(params) do
       redirect_uri =
-        case URI.new!(params["redirect_uri"]) do
+        case URI.new!(params["redirect_uri"] || "") do
           # For "http [redirect] URI on the loopback interface" during client
           # registration, the spec says "There MUST NOT be a port. The
           # homeserver MUST then accept any port number during the
@@ -262,15 +271,21 @@ defmodule RadioBeam.OAuth2.Builtin do
   end
 
   defp validate_scopes(%{"scope" => scope_str}) do
-    scope_str
-    |> String.split(" ")
-    |> Enum.reduce({:ok, %{}}, fn scope, {:ok, scopes} ->
-      case parse_scope(scope) do
-        {:ok, {:cs_api, perms}} -> {:ok, Map.put(scopes, :cs_api, perms)}
-        {:ok, {:device_id, device_id}} -> {:ok, Map.put(scopes, :device_id, device_id)}
-        {:error, :unrecognized_scope} -> {:ok, scopes}
-      end
-    end)
+    scopes =
+      scope_str
+      |> String.split(" ")
+      |> Enum.reduce({:ok, %{}}, fn scope, {:ok, scopes} ->
+        case parse_scope(scope) do
+          {:ok, {:cs_api, perms}} -> {:ok, Map.put(scopes, :cs_api, perms)}
+          {:ok, {:device_id, device_id}} -> {:ok, Map.put(scopes, :device_id, device_id)}
+          {:error, :unrecognized_scope} -> {:ok, scopes}
+        end
+      end)
+
+    case scopes do
+      {:ok, %{device_id: "" <> _, cs_api: [:read, :write]}} -> scopes
+      _else -> {:error, :missing_scopes}
+    end
   end
 
   defp validate_scopes(_params), do: {:error, :missing_scopes}
@@ -340,13 +355,21 @@ defmodule RadioBeam.OAuth2.Builtin do
   end
 
   @impl RadioBeam.OAuth2
-  def exchange_authz_code_for_tokens(code, code_verifier, client_id, %URI{} = redirect_uri, %URI{} = issuer) do
+  def exchange_authz_code_for_tokens(
+        code,
+        code_verifier,
+        client_id,
+        %URI{} = redirect_uri,
+        %URI{} = issuer,
+        device_opts
+      ) do
     Repo.transaction(fn ->
       with {:ok, user_id, scopes} <- AuthzCodeCache.pop(code, code_verifier, client_id, redirect_uri),
            {:ok, %User{} = user} <- Repo.fetch(User, user_id),
-           session = UserDeviceSession.new_from_user!(user, scopes.device_id),
+           session = UserDeviceSession.new_from_user!(user, scopes.device_id, device_opts),
            {:ok, access_token, access_claims} <- new_access_token(session, scopes, issuer),
-           {:ok, refresh_token, _refresH_claims} <- new_refresh_token(session, access_claims, issuer) do
+           {:ok, refresh_token, refresh_claims} <- new_refresh_token(session, access_claims, issuer),
+           {:ok, _user} <- rotate_device_ids(session, access_claims["jti"], refresh_claims["jti"]) do
         {:ok, access_token, refresh_token, access_claims["scope"], access_claims["exp"] - System.os_time(:second)}
       end
     end)
@@ -372,25 +395,34 @@ defmodule RadioBeam.OAuth2.Builtin do
     end
   end
 
-  @impl RadioBeam.OAuth2
-  def authenticate_user_by_access_token(token, device_ip) do
-    Repo.transaction(fn ->
-      with {:ok, %UserDeviceSession{} = session} <- verify_token(token),
-           user = User.put_device(session.user, Device.put_last_seen_at(session.device, device_ip)),
-           {:ok, user} <- Repo.insert(user) do
-        UserDeviceSession.existing_from_user(user, session.device.id)
-      end
-    end)
+  defp rotate_device_ids(session, access_token_id, refresh_token_id) do
+    device = Device.rotate_token_ids(session.device, access_token_id, refresh_token_id)
+    user = User.put_device(session.user, device)
+    Repo.insert(user)
   end
 
-  defp verify_token(token) do
+  @impl RadioBeam.OAuth2
+  def authenticate_user_by_access_token(token, device_ip) do
+    Repo.transaction(fn -> verify_token(token, device_ip) end)
+  end
+
+  defp verify_token(token, device_ip) do
     with {:ok, claims} <- Guardian.decode_and_verify(token),
          {:ok, session} <- Guardian.resource_from_claims(claims) do
-      if claims["jti"] in session.device.revoked_unexpired_token_ids do
+      if claims["typ"] != "access" or claims["jti"] in session.device.revoked_unexpired_token_ids do
         {:error, :invalid_token}
       else
-        {:ok, session}
+        perform_device_upkeep(session, device_ip)
       end
+    end
+  end
+
+  defp perform_device_upkeep(%UserDeviceSession{} = session, device_ip) do
+    device = session.device |> Device.put_last_seen_at(device_ip) |> Device.put_retryable_refresh_token_id(nil)
+    user = User.put_device(session.user, device)
+
+    with {:ok, user} <- Repo.insert(user) do
+      UserDeviceSession.existing_from_user(user, device.id)
     end
   end
 
@@ -409,15 +441,37 @@ defmodule RadioBeam.OAuth2.Builtin do
 
     with {:ok, {^refresh_token, old_claims}, {new_access_token, new_claims}} <-
            Guardian.exchange(refresh_token, "refresh", "access", access_opts),
-         {:ok, {^refresh_token, _}, {new_refresh_token, _}} <-
+         :ok <- validate_unrevoked_or_retryable(old_claims),
+         {:ok, {^refresh_token, _}, {new_refresh_token, %{"jti" => new_refresh_token_id}}} <-
            Guardian.exchange(refresh_token, "refresh", "refresh", refresh_opts),
          {:ok, session} <- Guardian.resource_from_claims(new_claims) do
-      %{"access_token_id" => old_access_token_id, "jti" => old_refresh_token_id} = old_claims
+      device =
+        session.device
+        |> Device.rotate_token_ids(new_claims["jti"], new_refresh_token_id)
+        |> Device.put_retryable_refresh_token_id(old_claims["jti"])
 
-      device = session.device |> Device.put_revoked(old_access_token_id) |> Device.put_revoked(old_refresh_token_id)
       session.user |> User.put_device(device) |> Repo.insert!()
 
       {:ok, new_access_token, new_refresh_token, new_claims["scope"], new_claims["exp"]}
+    end
+  end
+
+  defp validate_unrevoked_or_retryable(claims) do
+    case Guardian.resource_from_claims(claims) do
+      {:ok, %{device: %Device{} = device}} ->
+        cond do
+          claims["typ"] != "refresh" ->
+            {:error, :invalid_token}
+
+          claims["jti"] in device.revoked_unexpired_token_ids and claims["jti"] != device.retryable_refresh_token_id ->
+            {:error, :invalid_token}
+
+          :else ->
+            :ok
+        end
+
+      _else ->
+        {:error, :invalid_token}
     end
   end
 end

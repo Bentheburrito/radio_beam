@@ -3,14 +3,6 @@ defmodule RadioBeamWeb.FilterControllerTest do
 
   alias RadioBeam.Repo
   alias RadioBeam.User
-  alias RadioBeam.User.Auth
-
-  setup %{conn: conn} do
-    {user, device} = Fixtures.device(Fixtures.user())
-    %{access_token: token} = Auth.session_info(user, device)
-
-    %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-  end
 
   describe "put/2" do
     test "successfully puts a filter", %{conn: conn, user: %{id: user_id}} do

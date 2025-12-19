@@ -2,7 +2,6 @@ defmodule RadioBeamWeb.AuthControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Repo
-  alias RadioBeam.User.Auth
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
@@ -107,7 +106,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
     setup do
       {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
 
-      %{user: user, password: Fixtures.strong_password(), access_token: device.access_token, device_id: device.id}
+      %{user: user, password: Fixtures.strong_password(), device_id: device.id}
     end
 
     test "with a valid user_id/password pair", %{conn: conn, user: %{id: user_id}, password: password} do
@@ -185,7 +184,7 @@ defmodule RadioBeamWeb.AuthControllerTest do
     setup do
       {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
 
-      %{user: user, password: Fixtures.strong_password(), access_token: device.access_token, device_id: device.id}
+      %{user: user, password: Fixtures.strong_password(), device_id: device.id}
     end
 
     test "with M_BAD_JSON when an unknown login type is provided", %{
@@ -241,13 +240,11 @@ defmodule RadioBeamWeb.AuthControllerTest do
   end
 
   describe "refresh/2" do
-    setup do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{user: user, device: device}
-    end
-
-    test "successfully refreshes a user's session/access token", %{conn: conn, user: user, device: device} do
-      %{access_token: access_token, refresh_token: refresh_token} = Auth.session_info(user, device)
+    test "successfully refreshes a user's session/access token", %{
+      conn: conn,
+      access_token: access_token,
+      refresh_token: refresh_token
+    } do
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
       assert %{"access_token" => at, "refresh_token" => rt, "expires_in_ms" => expires_in} = json_response(conn, 200)
@@ -258,10 +255,9 @@ defmodule RadioBeamWeb.AuthControllerTest do
 
     test "successfully repeats a refresh if the client did not apparently record the first attempt", %{
       conn: conn,
-      user: user,
-      device: device
+      access_token: access_token,
+      refresh_token: refresh_token
     } do
-      %{access_token: access_token, refresh_token: refresh_token} = Auth.session_info(user, device)
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
       assert %{"access_token" => at, "refresh_token" => rt} = json_response(conn, 200)
@@ -270,7 +266,10 @@ defmodule RadioBeamWeb.AuthControllerTest do
 
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
-      assert %{"access_token" => ^at, "refresh_token" => ^rt} = json_response(conn, 200)
+      assert %{"access_token" => at2, "refresh_token" => rt2} = json_response(conn, 200)
+
+      assert at2 != at
+      assert rt2 != rt
     end
 
     @tag :capture_log
@@ -282,40 +281,14 @@ defmodule RadioBeamWeb.AuthControllerTest do
 
     test "successfully refreshes a user's session/access token if the access token has expired", %{
       conn: conn,
-      user: user,
-      device: device
+      refresh_token: refresh_token
     } do
-      device = Device.expire(device)
-      {:ok, user} = user |> User.put_device(device) |> Repo.insert()
-      %{refresh_token: refresh_token} = Auth.session_info(user, device)
+      {lifetime_seconds, :second} = Application.fetch_env!(:radio_beam, :access_token_lifetime)
+      Process.sleep(:timer.seconds(lifetime_seconds) + 1)
 
       conn = post(conn, ~p"/_matrix/client/v3/refresh", %{"refresh_token" => refresh_token})
 
       assert %{"access_token" => _, "refresh_token" => _} = json_response(conn, 200)
-    end
-  end
-
-  describe "whoami/2" do
-    setup do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{user: user, device: device}
-    end
-
-    test "successfully gets a known users's info", %{
-      conn: conn,
-      device: %{id: device_id} = device,
-      user: %{id: user_id} = user
-    } do
-      %{access_token: token} = Auth.session_info(user, device)
-
-      conn = get(conn, ~p"/_matrix/client/v3/account/whoami?access_token=#{token}", %{})
-
-      assert %{"device_id" => ^device_id, "user_id" => ^user_id} = json_response(conn, 200)
-    end
-
-    test "returns 401 for an unknown access token", %{conn: conn} do
-      conn = get(conn, ~p"/_matrix/client/v3/account/whoami?access_token=asdgUYGFuywsg", %{})
-      assert %{"errcode" => "M_UNKNOWN_TOKEN"} = json_response(conn, 401)
     end
   end
 

@@ -4,22 +4,12 @@ defmodule RadioBeamWeb.SyncControllerTest do
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User.Account
   alias RadioBeam.User
-  alias RadioBeam.User.Auth
   alias RadioBeam.User.Device
   alias RadioBeam.User.Keys
   alias RadioBeam.Room
 
-  setup %{conn: conn} do
-    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
-    user2 = Fixtures.user()
-    %{access_token: token} = Auth.session_info(user1, device)
-
-    %{
-      conn: put_req_header(conn, "authorization", "Bearer #{token}"),
-      user: user1,
-      creator: user2,
-      device: device
-    }
+  setup do
+    %{creator: Fixtures.user()}
   end
 
   @otk_keys %{

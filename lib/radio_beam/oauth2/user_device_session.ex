@@ -13,7 +13,13 @@ defmodule RadioBeam.OAuth2.UserDeviceSession do
   end
 
   def new_from_user!(%User{} = user, device_id, device_opts \\ []) do
-    %Device{} = device = Device.new(device_id, device_opts)
+    %Device{} =
+      device =
+      case User.get_device(user, device_id) do
+        {:ok, %Device{} = device} -> device
+        {:error, :not_found} -> Device.new(device_id, device_opts)
+      end
+
     %User{} = user = user |> User.put_device(device) |> Repo.insert!()
     %__MODULE__{user: user, device: device}
   end

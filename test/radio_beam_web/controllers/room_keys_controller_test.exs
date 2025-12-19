@@ -4,20 +4,12 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
   alias RadioBeamWeb.Schemas.RoomKeys
   alias RadioBeamWeb.Schemas.RoomKeys
   alias RadioBeam.User.RoomKeys
-  alias RadioBeam.User.Auth
 
   @algo "m.megolm_backup.v1.curve25519-aes-sha2"
   @auth_data %{
     "public_key" => "abcdefg",
     "signatures" => %{"@alice:example.org" => %{"ed25519:deviceid" => "signature"}}
   }
-
-  setup %{conn: conn} do
-    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
-    %{access_token: token} = Auth.session_info(user1, device)
-
-    %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user1}
-  end
 
   describe "create_backup/2" do
     test "returns the version of the newly created backup", %{conn: conn} do

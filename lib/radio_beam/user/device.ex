@@ -9,6 +9,8 @@ defmodule RadioBeam.User.Device do
     :messages,
     :identity_keys,
     :one_time_key_ring,
+    :last_issued_token_ids,
+    :retryable_refresh_token_id,
     :revoked_unexpired_token_ids,
     :last_seen_at,
     :last_seen_from_ip
@@ -28,6 +30,8 @@ defmodule RadioBeam.User.Device do
       messages: %{},
       identity_keys: nil,
       one_time_key_ring: OneTimeKeyRing.new(),
+      last_issued_token_ids: %{access: nil, refresh: nil},
+      retryable_refresh_token_id: nil,
       revoked_unexpired_token_ids: MapSet.new(),
       last_seen_at: Keyword.get(opts, :last_seen_at, System.os_time(:millisecond)),
       last_seen_from_ip: nil
@@ -97,8 +101,22 @@ defmodule RadioBeam.User.Device do
     end
   end
 
-  def put_revoked(%__MODULE__{} = device, revoked_token_id) do
-    update_in(device.revoked_unexpired_token_ids, &MapSet.put(&1, revoked_token_id))
+  def put_retryable_refresh_token_id(%__MODULE__{} = device, refresh_token_id_or_nil) do
+    put_in(device.retryable_refresh_token_id, refresh_token_id_or_nil)
+  end
+
+  def rotate_token_ids(%__MODULE__{} = device, new_access_id, new_refresh_id) do
+    revoked_unexpired_token_ids =
+      Enum.reduce(device.last_issued_token_ids, device.revoked_unexpired_token_ids, fn
+        {_, nil}, revoked_ids -> revoked_ids
+        {_, token_id}, revoked_ids -> MapSet.put(revoked_ids, token_id)
+      end)
+
+    struct!(device,
+      revoked_unexpired_token_ids: revoked_unexpired_token_ids,
+      retryable_refresh_token_id: device.last_issued_token_ids.refresh,
+      last_issued_token_ids: %{access: new_access_id, refresh: new_refresh_id}
+    )
   end
 
   def default_device_name, do: "New Device (added #{Date.to_string(Date.utc_today())})"

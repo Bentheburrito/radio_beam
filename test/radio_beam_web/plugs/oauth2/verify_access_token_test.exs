@@ -1,12 +1,10 @@
 defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
   use ExUnit.Case, async: true
   import Plug.Test
+  import Plug.Conn
 
-  alias RadioBeam.Repo
   alias RadioBeam.OAuth2
   alias RadioBeam.OAuth2.UserDeviceSession
-  alias RadioBeam.User
-  alias RadioBeam.User.Device
   alias RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken
 
   describe "call/2" do
@@ -27,7 +25,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
         :post
         |> conn("/_matrix/v3/some_endpoint")
         |> put_req_header("authorization", "Bearer #{access_token}")
-        |> Authenticate.call([])
+        |> VerifyAccessToken.call([])
 
       assert %UserDeviceSession{user: %{id: ^user_id}, device: %{id: ^device_id}} = conn.assigns.session
     end
@@ -36,7 +34,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
       conn =
         :post
         |> conn("/_matrix/v3/some_endpoint", %{})
-        |> Authenticate.call([])
+        |> VerifyAccessToken.call([])
 
       assert {401, _headers, body} = sent_resp(conn)
       assert body =~ "M_MISSING_TOKEN"
@@ -45,9 +43,9 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
     test "returns an unknown token (401) error when the provided token isn't known" do
       conn =
         :post
-        |> put_req_header("authorization", "Bearer 55burgers55fries")
         |> conn("/_matrix/v3/some_endpoint")
-        |> Authenticate.call([])
+        |> put_req_header("authorization", "Bearer 55burgers55fries")
+        |> VerifyAccessToken.call([])
 
       assert {401, _headers, body} = sent_resp(conn)
       assert body =~ "M_UNKNOWN_TOKEN"
@@ -57,13 +55,13 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
       {:ok, session} = UserDeviceSession.existing_from_user(user, device.id)
       {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(session, %{}, ttl: {1, :second})
 
-      Process.sleep(1001)
+      Process.sleep(2001)
 
       conn =
         :post
         |> conn("/_matrix/v3/some_endpoint")
         |> put_req_header("authorization", "Bearer #{access_token}")
-        |> Authenticate.call([])
+        |> VerifyAccessToken.call([])
 
       assert {401, _headers, body} = sent_resp(conn)
       %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => true} = JSON.decode!(body)

@@ -1,20 +1,10 @@
 defmodule RadioBeamWeb.KeysControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  @moduletag [device_display_name: "da steam deck"]
+
   alias RadioBeam.User
-  alias RadioBeam.User.Auth
   alias RadioBeam.User.Keys
-
-  setup %{conn: conn} do
-    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
-    %{access_token: token} = Auth.session_info(user1, device)
-
-    %{
-      conn: put_req_header(conn, "authorization", "Bearer #{token}"),
-      user: user1,
-      device: device
-    }
-  end
 
   describe "changes/2" do
     test "returns users who have made changes to their keys", %{conn: conn, user: user} do

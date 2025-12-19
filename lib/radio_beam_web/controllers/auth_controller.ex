@@ -99,7 +99,7 @@ defmodule RadioBeamWeb.AuthController do
     %{"refresh_token" => refresh_token} = conn.assigns.request
 
     case Auth.refresh(refresh_token) do
-      {:ok, access_token, refresh_token, expires_in} ->
+      {:ok, access_token, refresh_token, _scope, expires_in} ->
         json(conn, %{
           access_token: access_token,
           refresh_token: refresh_token,
@@ -109,10 +109,10 @@ defmodule RadioBeamWeb.AuthController do
       {:error, :not_found} ->
         conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false))
 
-      {:error, :expired} ->
+      {:error, :expired_token} ->
         conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", true)) |> halt()
 
-      {:error, :unknown_token} ->
+      {:error, :invalid_token} ->
         conn |> put_status(401) |> json(Errors.unknown_token("Unknown token", false)) |> halt()
 
       # TODO: should add config to expire refresh tokens after X time. 

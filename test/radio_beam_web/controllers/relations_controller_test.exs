@@ -2,7 +2,6 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.User.Auth
 
   defp relates_to(parent_id, msg) do
     %{
@@ -16,15 +15,11 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
   end
 
   describe "get_children/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
-      %{access_token: token} = Auth.session_info(user, device)
-
+    setup %{user: user} do
       {:ok, room_id} = Room.create(user)
       {:ok, event_id} = Room.send_text_message(room_id, user.id, "this is the parent event")
 
       %{
-        conn: put_req_header(conn, "authorization", "Bearer #{token}"),
         room_id: room_id,
         user: user,
         parent_event_id: event_id
@@ -98,15 +93,11 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       assert %{"chunk" => []} = json_response(conn, 200)
     end
 
-    test "returns M_NOT_FOUND when the user is not authz'd to see the parent", %{
-      conn: conn,
-      room_id: room_id,
-      parent_event_id: parent_event_id
-    } do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
+    test "returns M_NOT_FOUND when the user is not authz'd to see the parent", %{conn: conn} do
+      other_user = Fixtures.user()
+      {:ok, room_id} = Room.create(other_user)
+      {:ok, parent_event_id} = Room.send_text_message(room_id, other_user.id, "this is another parent event")
 
-      conn = put_req_header(conn, "authorization", "Bearer #{token}")
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
 
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
@@ -122,30 +113,27 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
 
     test "does not return children which the user is not authz'd to see (after they left the room)", %{
       conn: conn,
-      room_id: room_id,
-      user: user,
-      parent_event_id: parent_event_id
+      user: user
     } do
-      {user2, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user2, device)
+      user2 = Fixtures.user()
+      {:ok, room_id} = Room.create(user2)
+      {:ok, parent_event_id} = Room.send_text_message(room_id, user2.id, "this is another parent event")
 
-      {:ok, _} = Room.invite(room_id, user.id, user2.id)
-      {:ok, _} = Room.join(room_id, user2.id)
+      {:ok, _} = Room.invite(room_id, user2.id, user.id)
+      {:ok, _} = Room.join(room_id, user.id)
 
       content = relates_to(parent_event_id, "hello starting a thread here")
-      {:ok, _child_id1} = Room.send(room_id, user2.id, "m.room.message", content)
+      {:ok, _child_id1} = Room.send(room_id, user.id, "m.room.message", content)
       content = relates_to(parent_event_id, "details coming soon")
-      {:ok, _child_id2} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, _child_id2} = Room.send(room_id, user2.id, "m.room.message", content)
 
-      {:ok, _} = Room.leave(room_id, user2.id, "details never came :/")
+      {:ok, _} = Room.leave(room_id, user.id, "details never came :/")
 
       content = relates_to(parent_event_id, "so impatient :/")
-      {:ok, child_id3} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, child_id3} = Room.send(room_id, user2.id, "m.room.message", content)
 
       conn =
-        conn
-        |> put_req_header("authorization", "Bearer #{token}")
-        |> get(~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
+        get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
 
       assert %{"chunk" => chunk} = json_response(conn, 200)
       assert 2 = length(chunk)

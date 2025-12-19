@@ -16,6 +16,8 @@ defmodule Fixtures do
 
   def strong_password, do: "Asdf123$"
 
+  def device_id, do: 12 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+
   def room_id(server_name \\ "localhost"),
     do: server_name |> Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate() |> to_string()
 
@@ -92,8 +94,11 @@ defmodule Fixtures do
   end
 
   def device(user, display_name) do
-    device_id = 24 |> :crypto.strong_rand_bytes() |> Base.url_encode64()
-    %{device: device} = RadioBeam.OAuth2.UserDeviceSession.new_from_user!(user, device_id, display_name: display_name)
+    device_id = device_id()
+
+    %{user: user, device: device} =
+      RadioBeam.OAuth2.UserDeviceSession.new_from_user!(user, device_id, display_name: display_name)
+
     {user, device}
   end
 

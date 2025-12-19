@@ -3,14 +3,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room
-  alias RadioBeam.User.Auth
-
-  setup %{conn: conn} do
-    {user1, device} = Fixtures.device(Fixtures.user(), "da steam deck")
-    %{access_token: token} = Auth.session_info(user1, device)
-
-    %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user1}
-  end
 
   describe "create/2" do
     test "successfully creates a room with the spec's example req body", %{conn: conn} do
@@ -114,11 +106,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "joined/2" do
     test "returns a list of rooms the user is joined to", %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      conn = put_req_header(conn, "authorization", "Bearer #{token}")
-
       conn = get(conn, ~p"/_matrix/client/v3/joined_rooms", %{})
 
       assert %{"joined_rooms" => []} = json_response(conn, 200)
@@ -141,17 +128,10 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "invite/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-
+    setup %{user: user} do
       {:ok, room_id} = Room.create(user, power_levels: %{"invite" => 5})
-      %{access_token: token} = Auth.session_info(user, device)
 
-      %{
-        conn: put_req_header(conn, "authorization", "Bearer #{token}"),
-        user: user,
-        room_id: room_id
-      }
+      %{room_id: room_id}
     end
 
     test "successfully invites a user", %{conn: conn, room_id: room_id} do
@@ -182,21 +162,13 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert error_message =~ "aren't in the room"
     end
 
-    test "rejects if inviter is in the room but does not have permission to invite", %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-
+    test "rejects if inviter is in the room but does not have permission to invite", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user, power_levels: %{"invite" => 101})
 
       invitee_id = "@lmao:localhost"
-      %{access_token: token} = Auth.session_info(user, device)
 
       conn =
-        conn
-        |> put_req_header("authorization", "Bearer #{token}")
-        |> post(~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{
-          "user_id" => invitee_id,
-          "reason" => "join us :)"
-        })
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{"user_id" => invitee_id, "reason" => "join us :)"})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
       assert error_message =~ "permission to invite others"
@@ -217,13 +189,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "join/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "successfully joins the invited sender to a room", %{conn: conn, user: user} do
       creator = Fixtures.user("@calicocutpantsenjoyer:#{RadioBeam.server_name()}")
 
@@ -305,13 +270,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "leave/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "successfully leaves a room the sender has joined", %{conn: conn, user: user} do
       creator = Fixtures.user("@calicocutpantssupporter:#{RadioBeam.server_name()}")
 
@@ -355,13 +313,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "send/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "can send a message event to a room if authorized", %{conn: conn, user: creator} do
       {:ok, room_id} = Room.create(creator)
 
@@ -433,13 +384,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "get_event/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "returns the event (200) with the requester is auth'd to view it", %{
       conn: conn,
       user: user
@@ -469,13 +413,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "get_joined_members/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "returns an object of members IDs to profile info (200)", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user)
 
@@ -508,13 +445,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "get_members/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "returns the members (200) when the requester is in the room", %{
       conn: conn,
       user: user
@@ -583,13 +513,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "get_state/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "returns the state (200) when the requester is in the room", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user)
 
@@ -611,13 +534,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "put_state/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "puts the state event (200) when the requester is in the room and has permission to do so", %{
       conn: conn,
       user: user
@@ -665,13 +581,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "redact/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "returns the redaction event ID (200) when deleting own message w/ default power levels", %{
       conn: conn,
       user: user
@@ -718,13 +627,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "get_state_event/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "returns the state event content (200) when the requester is in the room", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user)
 
@@ -762,13 +664,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "get_nearest_event/2" do
-    setup %{conn: conn} do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{access_token: token} = Auth.session_info(user, device)
-
-      %{conn: put_req_header(conn, "authorization", "Bearer #{token}"), user: user}
-    end
-
     test "returns a temporally suitable event (200)", %{conn: conn, user: user} do
       {:ok, room_id} = Room.create(user)
       {:ok, event_id} = Room.send_text_message(room_id, user.id, "heyo")
