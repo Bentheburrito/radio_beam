@@ -67,9 +67,9 @@ defmodule RadioBeamWeb.ClientController do
           Transaction.done(handle, %{})
           json(conn, %{})
 
-        {:error, fxn_name, error} ->
+        {:error, error} ->
           Transaction.abort(handle)
-          Logger.error("Error putting batch of to-device messages for #{inspect(fxn_name)}: #{inspect(error)}")
+          Logger.error("Error putting batch of to-device messages for: #{inspect(error)}")
 
           conn
           |> put_status(500)

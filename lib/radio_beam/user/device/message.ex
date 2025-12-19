@@ -22,6 +22,9 @@ defmodule RadioBeam.User.Device.Message do
     %__MODULE__{content: content, sender: sender, type: type}
   end
 
+  def expand_device_id(user, "*"), do: user |> User.get_all_devices() |> Enum.map(& &1.id)
+  def expand_device_id(_user, device_id), do: [device_id]
+
   @doc """
   Queues a one-off message to be sent to a particular device when it next sync.
   Must be used in a transaction
@@ -31,15 +34,19 @@ defmodule RadioBeam.User.Device.Message do
   end
 
   def put_many(entries) do
-    txn =
-      for {user_id, device_id, message} <- entries, into: Repo.Transaction.new() do
-        {
-          {:put_device_message, user_id, device_id},
-          &with({:ok, %User{}} <- persist(user_id, device_id, message), do: {:ok, &1 + 1})
-        }
-      end
+    Repo.transaction(fn ->
+      Enum.find_value(entries, {:ok, length(entries)}, fn {user_id, device_id, message} ->
+        with {:ok, %User{}} <- persist(user_id, device_id, message), do: false
+      end)
+    end)
+  end
 
-    Repo.Transaction.execute(txn, 0)
+  defp persist(user_id, device_id, %__MODULE__{} = message) do
+    with {:ok, user} <- Repo.fetch(User, user_id, lock: :write),
+         {:ok, %Device{} = device} <- User.get_device(user, device_id) do
+      messages = Map.update(device.messages, :unsent, [message], &[message | &1])
+      Repo.insert(put_in(user.device_map[device.id].messages, messages))
+    end
   end
 
   @doc """
@@ -51,32 +58,35 @@ defmodule RadioBeam.User.Device.Message do
   def take_unsent(user_id, device_id, since_token, mark_as_read \\ nil) do
     Repo.transaction(fn ->
       {:ok, %User{} = user} = Repo.fetch(User, user_id, lock: :write)
-      {:ok, %Device{messages: messages}} = User.get_device(user, device_id)
+      {:ok, %Device{messages: message_map}} = User.get_device(user, device_id)
 
       # TOIMPL: only take first 100 msgs
-      case Map.pop(messages, :unsent, :none) do
-        {:none, ^messages} ->
+      ordered_keys =
+        message_map
+        |> Stream.map(fn {key, _} -> key end)
+        |> Stream.reject(&(&1 == mark_as_read))
+        |> Enum.sort_by(
+          fn
+            :unsent -> 0
+            %{created_at_ms: created_at_ms} -> created_at_ms
+          end,
+          :desc
+        )
+
+      desc_ordered_messages =
+        ordered_keys
+        |> Stream.flat_map(&Map.fetch!(message_map, &1))
+        |> Enum.to_list()
+
+      case desc_ordered_messages do
+        [] ->
+          Repo.insert!(put_in(user.device_map[device_id].messages, %{}))
           :none
 
-        {unsent, messages} ->
-          messages = messages |> Map.put(since_token, unsent) |> mark_as_read(mark_as_read)
-          Repo.insert!(put_in(user.device_map[device_id].messages, messages))
-          {:ok, Enum.reverse(unsent)}
+        [_ | _] ->
+          Repo.insert!(put_in(user.device_map[device_id].messages, %{since_token => desc_ordered_messages}))
+          {:ok, Enum.reverse(desc_ordered_messages)}
       end
     end)
   end
-
-  def expand_device_id(user, "*"), do: user |> User.get_all_devices() |> Enum.map(& &1.id)
-  def expand_device_id(_user, device_id), do: [device_id]
-
-  defp persist(user_id, device_id, %__MODULE__{} = message) do
-    with {:ok, user} <- Repo.fetch(User, user_id, lock: :write),
-         {:ok, %Device{} = device} <- User.get_device(user, device_id) do
-      messages = Map.update(device.messages, :unsent, [message], &[message | &1])
-      Repo.insert(put_in(user.device_map[device.id].messages, messages))
-    end
-  end
-
-  defp mark_as_read(messages, nil), do: messages
-  defp mark_as_read(messages, token), do: Map.delete(messages, token)
 end

@@ -98,6 +98,9 @@ defmodule RadioBeamWeb.OAuth2Controller do
         {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
           json_error(conn, 400, :endpoint_error, [:weak_password, OAuth2.weak_password_message()])
 
+        {:error, :already_exists} ->
+          json_error(conn, 400, :endpoint_error, [:invalid_username, "Localpart already taken"])
+
         {:error, :unknown_username_or_password} ->
           error_params = oauth_error("access_denied", "Unknown user or password", auth_params.state)
           redirect_with(conn, auth_params.redirect_uri, auth_params.response_mode, error_params)
@@ -182,8 +185,6 @@ defmodule RadioBeamWeb.OAuth2Controller do
         "scopes" => scopes,
         "prompt" => prompt
       } ->
-        dbg(scopes)
-
         {:ok,
          %{
            client_id: client_id,
