@@ -1,0 +1,40 @@
+name: Test & Lint
+on: [push, pull_request]
+jobs:
+  test_and_lint:
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: github
+      SERVER_NAME: localhost
+      ENABLE_REGISTRATION: true
+      ADMIN_LOCALPARTS: test
+      GUARDIAN_TOKEN_SECRET_KEY: ${{ secrets.GUARDIAN_TOKEN_SECRET_KEY }}
+    strategy:
+      matrix:
+        elixir-version: ['1.18.4']
+        otp-version: ['27']
+    steps:
+      - uses: actions/checkout@v2
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp-version }}
+          elixir-version: ${{ matrix.elixir-version }}
+      - uses: actions/cache@v2
+        with:
+          path: |
+            deps
+            _build
+          # Generate a hash of the OTP version and Elixir version
+          key: ${{ matrix.otp-version }}-${{ matrix.elixir-version }}-mix-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
+          restore-keys: ${{ matrix.otp-version }}-${{ matrix.elixir-version }}-mix
+      - run: mix deps.get
+        name: Fetch Dependencies
+      - run: mix test
+        name: Run Tests
+        env:
+          MIX_ENV: test
+      - run: mix credo
+        name: Credo Checks
+      - run: mix format --check-formatted
+        name: Check Formatting
+
