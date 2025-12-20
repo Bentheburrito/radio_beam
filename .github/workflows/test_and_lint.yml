@@ -4,7 +4,6 @@ jobs:
   test_and_lint:
     runs-on: ubuntu-latest
     env:
-      MIX_ENV: github
       SERVER_NAME: localhost
       ENABLE_REGISTRATION: true
       ADMIN_LOCALPARTS: test
