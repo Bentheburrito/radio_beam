@@ -42,7 +42,11 @@ defmodule RadioBeam.Room.State do
           {:ok, AuthorizedEvent.t()} | {:error, :unauthorized | :could_not_compute_reference_hash}
   def authorize_event(%__MODULE__{} = state, %{} = event_attrs) do
     auth_event_pdus = select_auth_events(state.mapping, event_attrs)
-    room_version = room_version(state)
+
+    room_version =
+      if event_attrs["type"] == "m.room.create",
+        do: event_attrs["content"]["room_version"],
+        else: room_version(state)
 
     # TODO: Polyjuice RoomState protocol
     state_mapping = Map.new(state.mapping, fn {key, [pdu | _]} -> {key, pdu} end)
@@ -201,7 +205,8 @@ defmodule RadioBeam.Room.State do
   def user_has_power?(%__MODULE__{} = state, power_level_content_path, user_id, state_event? \\ false) do
     # TODO: Polyjuice RoomState protocol
     state_mapping = Map.new(state.mapping, fn {key, [pdu | _]} -> {key, pdu} end)
-    RoomVersion.has_power?(user_id, power_level_content_path, state_event?, state_mapping)
+    room_version = room_version(state)
+    RoomVersion.has_power?(room_version, user_id, power_level_content_path, state_event?, state_mapping)
   end
 
   def handle_pdu(%__MODULE__{} = state, %PDU{event: %AuthorizedEvent{state_key: :none}}), do: state

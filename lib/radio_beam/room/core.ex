@@ -83,7 +83,9 @@ defmodule RadioBeam.Room.Core do
   def send(%Room{} = room, %AuthorizedEvent{} = event, _deps), do: send_common(room, event)
 
   def send(%Room{} = room, event_attrs, deps) do
-    event_attrs = Map.put(event_attrs, "prev_events", DAG.forward_extremities(room.dag))
+    event_attrs =
+      Map.put(event_attrs, "prev_events", DAG.forward_extremities(room.dag))
+
     with {:ok, event} <- State.authorize_event(room.state, event_attrs), do: send(room, event, deps)
   end
 

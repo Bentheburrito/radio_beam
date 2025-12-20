@@ -84,8 +84,7 @@ defmodule RadioBeam.MixProject do
   defp polyjuice_util do
     case System.get_env("POLYJUICE_PATH", "use_fork") do
       "use_fork" ->
-        {:polyjuice_util,
-         git: "https://gitlab.com/Bentheburrito/polyjuice_util.git", branch: "auth-checks-for-rooms-v6-thru-v11"}
+        {:polyjuice_util, git: "https://gitlab.com/Bentheburrito/polyjuice_util.git", branch: "room-event-protocol"}
 
       path ->
         {:polyjuice_util, path: path}
@@ -101,8 +100,8 @@ defmodule RadioBeam.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "ecto.setup"],
-      "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
-      "ecto.reset": ["ecto.drop", "ecto.setup"],
+      # "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
+      # "ecto.reset": ["ecto.drop", "ecto.setup"],
       # test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
       test: ["test"]
     ]

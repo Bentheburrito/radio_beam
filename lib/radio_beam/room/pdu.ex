@@ -26,6 +26,9 @@ defmodule RadioBeam.Room.PDU do
     def get_redacts(%PDU{event: %{type: "m.room.redaction"}} = pdu), do: pdu.event.content["redacts"]
     def get_redacts(%PDU{}), do: nil
 
+    # TODO
+    def get_signatures(%PDU{}), do: %{}
+
     def to_map(%PDU{} = pdu, room_version) do
       %{
         "auth_events" => pdu.event.auth_events,
@@ -78,69 +81,21 @@ defmodule RadioBeam.Room.PDU do
       end
     end
 
-    def compute_reference_hash(pdu, room_version) when is_supported(room_version) do
-      with {:ok, redacted} <- redact(pdu, room_version),
-           {:ok, event_json_bytes} <-
-             redacted
-             |> to_map(room_version)
-             |> Map.drop(~w(signatures age_ts unsigned))
-             |> Polyjuice.Util.JSON.canonical_json() do
-        {:ok, :crypto.hash(:sha256, event_json_bytes)}
-      else
-        _ -> :error
-      end
-    end
-
-    @default_power_levels_keys ~w|ban events events_default kick redact state_default users users_default|
-
     # credo:disable-for-lines:58 Credo.Check.Refactor.CyclomaticComplexity
-    def redact(pdu, room_version) when is_supported(room_version) do
-      content_keys_to_keep =
-        case pdu.event.type do
-          "m.room.member" ->
-            cond do
-              room_version in ~w|1 2 3 4 5 6 7 8| ->
-                ~w|membership|
-
-              room_version in ~w|9 10| ->
-                ~w|membership join_authorised_via_users_server|
-
-              room_version == "11" ->
-                ~w|membership join_authorised_via_users_server third_party_invite.signed|
-            end
-
-          "m.room.create" ->
-            if room_version in ~w|1 2 3 4 5 6 7 8 9 10|, do: ~w|creator|, else: :all
-
-          "m.room.join_rules" ->
-            if room_version in ~w|1 2 3 4 5 6 7|, do: ~w|join_rule|, else: ~w|join_rule allow|
-
-          "m.room.power_levels" ->
-            if room_version in ~w|1 2 3 4 5 6 7 8 9 10|,
-              do: @default_power_levels_keys,
-              else: ["invite" | @default_power_levels_keys]
-
-          "m.room.aliases" ->
-            if room_version in ~w|1 2 3 4 5|, do: ~w|aliases|, else: []
-
-          "m.room.history_visibility" ->
-            ~w|history_visibility|
-
-          "m.room.redaction" ->
-            if room_version in ~w|1 2 3 4 5 6 7 8 9 10|, do: [], else: ~w|redacts|
-
-          _ ->
-            []
-        end
+    def redact(pdu, config) do
+      content_keys_to_keep = Map.get(config.content, pdu.event.type, [])
 
       if content_keys_to_keep == :all do
-        {:ok, put_in(pdu.event.unsigned, %{})}
+        put_in(pdu.event.unsigned, %{})
       else
         # since Map.take doesn't support nested keys, we parse them and
         # rebuild the content manually
         new_content =
           content_keys_to_keep
-          |> Stream.map(&String.split(&1, "."))
+          |> Stream.map(fn
+            key when is_binary(key) -> [key]
+            path when is_list(path) -> path
+          end)
           |> Enum.reduce(%{}, fn path, new_content ->
             put_in(
               new_content,
@@ -149,10 +104,8 @@ defmodule RadioBeam.Room.PDU do
             )
           end)
 
-        {:ok, struct!(pdu, event: struct!(pdu.event, unsigned: %{}, content: new_content))}
+        struct!(pdu, event: struct!(pdu.event, unsigned: %{}, content: new_content))
       end
     end
-
-    def redact(_unknown_version, _event), do: :error
   end
 end
