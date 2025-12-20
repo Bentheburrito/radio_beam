@@ -1,4 +1,5 @@
 defmodule RadioBeam.User.CrossSigningKey do
+  @moduledoc false
   @attrs ~w|algorithm id key signatures usages|a
   @enforce_keys @attrs
   defstruct @attrs

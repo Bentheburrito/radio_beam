@@ -1,4 +1,5 @@
 defmodule RadioBeam.OAuth2.Builtin.Guardian do
+  @moduledoc false
   use Guardian, otp_app: :radio_beam
 
   alias RadioBeam.OAuth2.UserDeviceSession

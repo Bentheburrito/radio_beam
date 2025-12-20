@@ -28,6 +28,7 @@ defmodule RadioBeam.Room.Timeline do
   - `limit`: If `filter` is not supplied, this will apply a maximum limit of
     events returned. Otherwise the `EventFilter`'s limits will be applied.
   """
+  # credo:disable-for-lines:93 Credo.Check.Refactor.CyclomaticComplexity
   def get_messages(room_id, user_id, device_id, from_token, opts \\ []) do
     Repo.transaction(fn ->
       with :ok <- check_membership(room_id, user_id),

@@ -1,4 +1,7 @@
 defmodule RadioBeam.OAuth2.Builtin do
+  @moduledoc """
+  A minimal, built-in OAuth 2.0 authorization server for Matrix clients.
+  """
   @behaviour RadioBeam.OAuth2
 
   alias RadioBeam.OAuth2.Builtin.AuthzCodeCache

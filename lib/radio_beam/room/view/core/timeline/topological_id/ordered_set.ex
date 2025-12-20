@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.View.Core.Timeline.TopologicalID.OrderedSet do
+  @moduledoc false
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   # index: %{topo_group_key => [TopologicalID.t()]}

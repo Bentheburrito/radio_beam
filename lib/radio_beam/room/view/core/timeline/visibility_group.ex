@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.View.Core.Timeline.VisibilityGroup do
+  @moduledoc false
   defstruct joined: MapSet.new(), invited: MapSet.new(), history_visibility: "shared"
 
   alias RadioBeam.Room

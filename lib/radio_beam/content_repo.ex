@@ -159,9 +159,8 @@ defmodule RadioBeam.ContentRepo do
   # copies the uploaded file from a temp path to the content repo's directory,
   # as long as the upload doesn't already exist
   defp copy_upload_if_no_exists(tmp_upload_path, upload_path) do
-    with :ok <- upload_path |> Path.dirname() |> File.mkdir_p(),
-         :ok <- File.cp(tmp_upload_path, upload_path, on_conflict: fn _, _ -> false end) do
-      :ok
+    with :ok <- upload_path |> Path.dirname() |> File.mkdir_p() do
+      File.cp(tmp_upload_path, upload_path, on_conflict: fn _, _ -> false end)
     end
   end
 

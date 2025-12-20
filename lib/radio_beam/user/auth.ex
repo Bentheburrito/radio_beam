@@ -48,10 +48,12 @@ defmodule RadioBeam.User.Auth do
       prompt: :login
     }
 
-    with {:ok, code} <- OAuth2.authenticate_user_by_password(user_id, pwd, grant_params) do
-      OAuth2.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, display_name: display_name)
-    else
-      _ -> {:error, :unknown_user_or_pwd}
+    case OAuth2.authenticate_user_by_password(user_id, pwd, grant_params) do
+      {:ok, code} ->
+        OAuth2.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, display_name: display_name)
+
+      _ ->
+        {:error, :unknown_user_or_pwd}
     end
   end
 

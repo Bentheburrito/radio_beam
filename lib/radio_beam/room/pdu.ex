@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.PDU do
+  @moduledoc false
   alias RadioBeam.Room.AuthorizedEvent
 
   @attrs ~w|prev_event_ids event stream_number|a
@@ -92,6 +93,7 @@ defmodule RadioBeam.Room.PDU do
 
     @default_power_levels_keys ~w|ban events events_default kick redact state_default users users_default|
 
+    # credo:disable-for-lines:58 Credo.Check.Refactor.CyclomaticComplexity
     def redact(pdu, room_version) when is_supported(room_version) do
       content_keys_to_keep =
         case pdu.event.type do

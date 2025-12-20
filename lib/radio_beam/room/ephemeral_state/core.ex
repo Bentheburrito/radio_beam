@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.EphemeralState.Core do
+  @moduledoc false
   alias RadioBeam.Room.EphemeralState
 
   @max_timeout_ms :timer.seconds(30)

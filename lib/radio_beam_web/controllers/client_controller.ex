@@ -66,35 +66,36 @@ defmodule RadioBeamWeb.ClientController do
     %Device{} = device = conn.assigns.session.device
     request = conn.assigns.request
 
-    with {:ok, handle} <- Transaction.begin(txn_id, device.id, conn.request_path) do
-      case Device.Message.put_many(request["messages"], user.id, type) do
-        :ok ->
-          Transaction.done(handle, %{})
-          json(conn, %{})
+    case Transaction.begin(txn_id, device.id, conn.request_path) do
+      {:ok, handle} ->
+        case Device.Message.put_many(request["messages"], user.id, type) do
+          :ok ->
+            Transaction.done(handle, %{})
+            json(conn, %{})
 
-        {:error, :no_message} ->
-          Transaction.abort(handle)
+          {:error, :no_message} ->
+            Transaction.abort(handle)
 
-          conn
-          |> put_status(400)
-          |> json(Errors.bad_json("Please provide send-to-device messages under the 'messages' key."))
+            conn
+            |> put_status(400)
+            |> json(Errors.bad_json("Please provide send-to-device messages under the 'messages' key."))
 
-        {:error, :not_found} ->
-          Transaction.abort(handle)
+          {:error, :not_found} ->
+            Transaction.abort(handle)
 
-          conn
-          |> put_status(400)
-          |> json(Errors.bad_json("Request includes unknown users or device IDs"))
+            conn
+            |> put_status(400)
+            |> json(Errors.bad_json("Request includes unknown users or device IDs"))
 
-        {:error, error} ->
-          Transaction.abort(handle)
-          Logger.error("Error putting batch of to-device messages for: #{inspect(error)}")
+          {:error, error} ->
+            Transaction.abort(handle)
+            Logger.error("Error putting batch of to-device messages for: #{inspect(error)}")
 
-          conn
-          |> put_status(500)
-          |> json(Errors.unknown())
-      end
-    else
+            conn
+            |> put_status(500)
+            |> json(Errors.unknown())
+        end
+
       {:already_done, response} ->
         json(conn, response)
 

@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.Sync.Core do
+  @moduledoc false
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Events.PaginationToken
@@ -34,7 +35,9 @@ defmodule RadioBeam.Room.Sync.Core do
         event_stream = sync.functions.event_stream.(room.id)
         typing_user_ids = sync.functions.typing_user_ids.(room.id)
 
-        if not Enum.empty?(event_stream) do
+        if Enum.empty?(event_stream) do
+          :no_update
+        else
           joined_room_result(
             sync,
             room,
@@ -44,8 +47,6 @@ defmodule RadioBeam.Room.Sync.Core do
             maybe_last_sync_room_state_pdus,
             typing_user_ids
           )
-        else
-          :no_update
         end
 
       "invite" when maybe_last_sync_room_state_pdus == :initial ->

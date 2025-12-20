@@ -1,4 +1,5 @@
 defmodule RadioBeam.Repo.Tables.Room do
+  @moduledoc false
   use Memento.Table,
     attributes: [:id, :room],
     type: :set

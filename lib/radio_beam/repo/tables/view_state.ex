@@ -1,4 +1,5 @@
 defmodule RadioBeam.Repo.Tables.ViewState do
+  @moduledoc false
   use Memento.Table,
     attributes: [:key, :value],
     type: :set

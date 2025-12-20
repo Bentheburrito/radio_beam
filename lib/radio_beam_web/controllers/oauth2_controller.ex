@@ -86,26 +86,27 @@ defmodule RadioBeamWeb.OAuth2Controller do
   def authenticate(%{method: "POST"} = conn, %{"user_id_localpart" => localpart, "password" => password}) do
     user_id = "@#{localpart}:#{RadioBeam.server_name()}"
 
-    with {:ok, auth_params} <- get_auth_params_from_session(conn) do
-      case OAuth2.authenticate_user_by_password(user_id, password, auth_params) do
-        {:ok, code} ->
-          response_params = %{code: code, state: auth_params.state}
-          redirect_with(conn, auth_params.redirect_uri, auth_params.response_mode, response_params)
+    case get_auth_params_from_session(conn) do
+      {:ok, auth_params} ->
+        case OAuth2.authenticate_user_by_password(user_id, password, auth_params) do
+          {:ok, code} ->
+            response_params = %{code: code, state: auth_params.state}
+            redirect_with(conn, auth_params.redirect_uri, auth_params.response_mode, response_params)
 
-        {:error, %{errors: [id: {error_message, _}]}} ->
-          json_error(conn, 400, :endpoint_error, [:invalid_username, error_message])
+          {:error, %{errors: [id: {error_message, _}]}} ->
+            json_error(conn, 400, :endpoint_error, [:invalid_username, error_message])
 
-        {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
-          json_error(conn, 400, :endpoint_error, [:weak_password, OAuth2.weak_password_message()])
+          {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
+            json_error(conn, 400, :endpoint_error, [:weak_password, OAuth2.weak_password_message()])
 
-        {:error, :already_exists} ->
-          json_error(conn, 400, :endpoint_error, [:user_in_use, "Localpart already taken"])
+          {:error, :already_exists} ->
+            json_error(conn, 400, :endpoint_error, [:user_in_use, "Localpart already taken"])
 
-        {:error, :unknown_username_or_password} ->
-          error_params = oauth_error("access_denied", "Unknown user or password", auth_params.state)
-          redirect_with(conn, auth_params.redirect_uri, auth_params.response_mode, error_params)
-      end
-    else
+          {:error, :unknown_username_or_password} ->
+            error_params = oauth_error("access_denied", "Unknown user or password", auth_params.state)
+            redirect_with(conn, auth_params.redirect_uri, auth_params.response_mode, error_params)
+        end
+
       {:error, :missing_values_in_session} ->
         json_error(conn, 500, :unknown, "Missing authorization grant values - something has gone very wrong")
     end

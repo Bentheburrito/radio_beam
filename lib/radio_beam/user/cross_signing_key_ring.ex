@@ -1,4 +1,5 @@
 defmodule RadioBeam.User.CrossSigningKeyRing do
+  @moduledoc false
   @attrs ~w|master self user|a
   @enforce_keys @attrs
   defstruct @attrs

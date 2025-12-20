@@ -88,6 +88,7 @@ defmodule RadioBeam.Room.ViewTest do
                child_event_stream |> Stream.map(& &1.id) |> Enum.sort()
     end
 
+    # TOFIX: need to reimpl recurse level to un-skip the remaining
     @tag :skip
     test "returns an event's child and grandchildren, up until max_recurse" do
       user = Fixtures.user()
@@ -119,6 +120,7 @@ defmodule RadioBeam.Room.ViewTest do
       assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
     end
 
+    # TOFIX: need to reimpl recurse level to un-skip the remaining
     @tag :skip
     test "Returns a whole tree of events (up until max_recurse)" do
       user = Fixtures.user()

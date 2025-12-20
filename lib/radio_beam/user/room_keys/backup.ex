@@ -1,4 +1,5 @@
 defmodule RadioBeam.User.RoomKeys.Backup do
+  @moduledoc false
   alias RadioBeam.User.RoomKeys.Backup.KeyData
 
   # room_session_backups: %{room_id => %{session_id => %KeyData{}}}

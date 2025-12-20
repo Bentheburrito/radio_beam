@@ -1,4 +1,5 @@
 defmodule RadioBeam.Repo.Tables.DynamicOAuth2Client do
+  @moduledoc false
   use Memento.Table,
     attributes: [:client_id, :client_metadata],
     type: :set

@@ -64,6 +64,7 @@ defmodule RadioBeamWeb.ClientControllerTest do
       assert 0 = map_size(response)
     end
 
+    # TOFIX: send to-device msgs over federation
     @tag :skip
     test "(tochange): returns M_UNRECOGNIZED (404) when a user is not on the same homserver", %{conn: conn} do
       messages = %{"@test:somewhere.else" => %{"idontexist" => %{"hello" => "world"}}}

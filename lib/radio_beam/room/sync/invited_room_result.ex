@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.Sync.InvitedRoomResult do
+  @moduledoc false
   alias RadioBeam.Room
   alias RadioBeam.Room.View.Core.Timeline.Event
 

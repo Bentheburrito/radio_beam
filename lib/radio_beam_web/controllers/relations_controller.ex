@@ -22,15 +22,17 @@ defmodule RadioBeamWeb.RelationsController do
       rel_type: Map.get(params, "rel_type")
     ]
 
-    with {:ok, child_events, recurse_depth} <- Room.get_children(room_id, user.id, event_id, opts) do
-      # TOIMPL: this endpoint can take a from/to token returned from /messages
-      # and /sync (so a PaginationToken). Room.get_children does not currently
-      # support this (nor a `limit`), so just returning all children for now -
-      # need to come back to do this properly
+    case Room.get_children(room_id, user.id, event_id, opts) do
+      {:ok, child_events, recurse_depth} ->
+        # TOIMPL: this endpoint can take a from/to token returned from /messages
+        # and /sync (so a PaginationToken). Room.get_children does not currently
+        # support this (nor a `limit`), so just returning all children for now -
+        # need to come back to do this properly
 
-      json(conn, %{chunk: child_events, recursion_depth: recurse_depth})
-    else
-      {:error, _error} -> handle_common_error(conn, :not_found)
+        json(conn, %{chunk: child_events, recursion_depth: recurse_depth})
+
+      {:error, _error} ->
+        handle_common_error(conn, :not_found)
     end
   end
 end

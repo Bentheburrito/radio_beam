@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.Sync do
+  @moduledoc false
   alias RadioBeam.PubSub
   alias RadioBeam.Repo
   alias RadioBeam.Room
@@ -25,6 +26,7 @@ defmodule RadioBeam.Room.Sync do
     max_concurrency: @task_concurrency
   ]
 
+  # credo:disable-for-lines:52 Credo.Check.Refactor.CyclomaticComplexity
   def init(user, device_id, opts \\ []) do
     since = Keyword.get(opts, :since)
 

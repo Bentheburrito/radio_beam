@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.Sync.Result do
+  @moduledoc false
   alias RadioBeam.Room.Sync.Core.InvitedRoomResult
   alias RadioBeam.Room.Sync.Core.JoinedRoomResult
 

@@ -168,14 +168,15 @@ defmodule RadioBeam.User.Keys do
     {self_signatures, others_signatures} = Map.pop(user_key_map, signer_user_id)
 
     Repo.transaction(fn ->
-      with {:ok, signer} when map_size(others_signatures) == 0 or not is_nil(signer.cross_signing_key_ring.user) <-
-             Repo.fetch(User, signer_user_id) do
-        case Map.merge(put_self_signatures(self_signatures, signer), put_others_signatures(others_signatures, signer)) do
-          failures when map_size(failures) == 0 -> :ok
-          failures -> {:error, failures}
-        end
-      else
-        _ -> {:error, :signer_has_no_user_csk}
+      case Repo.fetch(User, signer_user_id) do
+        {:ok, signer} when map_size(others_signatures) == 0 or not is_nil(signer.cross_signing_key_ring.user) ->
+          case Map.merge(put_self_signatures(self_signatures, signer), put_others_signatures(others_signatures, signer)) do
+            failures when map_size(failures) == 0 -> :ok
+            failures -> {:error, failures}
+          end
+
+        _ ->
+          {:error, :signer_has_no_user_csk}
       end
     end)
   end

@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.EphemeralState.Server do
+  @moduledoc false
   use GenServer
 
   alias RadioBeam.PubSub

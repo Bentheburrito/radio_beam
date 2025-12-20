@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.EphemeralState do
+  @moduledoc false
   alias RadioBeam.Room.EphemeralState.Core
   alias RadioBeam.Room.EphemeralState.Server
 

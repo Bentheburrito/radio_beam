@@ -144,9 +144,10 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def query(conn, _params) do
-    with %{} = user_key_map <- Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.session.user.id) do
-      json(conn, user_key_map)
-    else
+    case Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.session.user.id) do
+      %{} = user_key_map ->
+        json(conn, user_key_map)
+
       error ->
         Logger.error("Expected a map as the result of Keys.query_all, got: #{inspect(error)}")
         json_error(conn, 500, :unknown)

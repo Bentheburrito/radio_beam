@@ -189,6 +189,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     end
   end
 
+  # credo:disable-for-lines:47 Credo.Check.Refactor.CyclomaticComplexity
   defp visible_to_user?(timeline, user_id, latest_known_join_topo_id, topological_id) do
     event_id = Map.fetch!(timeline.topological_id_to_event_id, topological_id)
     event_metadata = Map.fetch!(timeline.event_metadata, event_id)
@@ -291,6 +292,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   defmodule EventMetadata do
+    @moduledoc false
     @enforce_keys ~w|topological_id visibility_group_id|a
     defstruct topological_id: nil, visibility_group_id: nil, bundled_event_ids: []
 
@@ -310,6 +312,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   defmodule TimestampToEventIDIndex do
+    @moduledoc false
     @round_to_multiples_of :timer.minutes(20)
     @default_cutoff :timer.hours(24)
 

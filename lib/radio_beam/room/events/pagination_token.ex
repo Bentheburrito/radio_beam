@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.Events.PaginationToken do
+  @moduledoc false
   alias RadioBeam.Room
 
   @attrs ~w|direction room_id_event_id_pairs created_at_ms|a

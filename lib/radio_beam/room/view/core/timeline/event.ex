@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.View.Core.Timeline.Event do
+  @moduledoc false
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID

@@ -1,4 +1,7 @@
 defmodule RadioBeam.Sync do
+  @moduledoc """
+  Functions for performing /sync
+  """
   alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.Events.PaginationToken

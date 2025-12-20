@@ -1,4 +1,5 @@
 defmodule RadioBeam.Room.View do
+  @moduledoc false
   alias RadioBeam.PubSub
   alias RadioBeam.Repo
   alias RadioBeam.Room

@@ -1,4 +1,5 @@
 defmodule RadioBeam.OAuth2.Builtin.AuthzCodeCache do
+  @moduledoc false
   use GenServer
 
   @expire_authz_code_after_ms :timer.minutes(10)
