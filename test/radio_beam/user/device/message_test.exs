@@ -16,12 +16,10 @@ defmodule RadioBeam.User.Device.MessageTest do
     test "adds an unsent message to a user's devices", %{user: user, device: device1} do
       {user, device2} = Fixtures.device(user)
 
-      entries =
-        for device_id <- [device1.id, device2.id] do
-          {user.id, device_id, Message.new(%{"hello" => "world"}, "@someone:somewhere", "org.msg.type")}
-        end
+      message = %{"hello" => "world"}
+      entries = %{user.id => %{device1.id => message, device2.id => message}}
 
-      assert {:ok, 2} = Message.put_many(entries)
+      assert :ok = Message.put_many(entries, "@someone:somewhere", "org.msg.type")
       {:ok, user} = Repo.fetch(User, user.id)
       assert {:ok, %Device{messages: %{unsent: [%Message{type: "org.msg.type"}]}}} = User.get_device(user, device1.id)
     end
@@ -33,47 +31,37 @@ defmodule RadioBeam.User.Device.MessageTest do
     end
 
     test "returns unsent messages, marking them as sent with the given since_token", %{user: user, device: device} do
-      message1 = Message.new(%{"hola" => "mundo"}, "@yo:hello", "org.msg.type")
-      Message.put(user.id, device.id, message1)
-      message2 = Message.new(%{"hola" => "mundo"}, "@yo:hello", "com.msg.type")
-      Message.put(user.id, device.id, message2)
+      message1 = %{"hola" => "mundo"}
+      Message.put(user.id, device.id, message1, "@yo:hello", "org.msg.type")
+      message2 = %{"hola" => "mundo"}
+      Message.put(user.id, device.id, message2, "@yo:hello", "com.msg.type")
       {:ok, user} = Repo.fetch(User, user.id)
 
-      assert {:ok, [^message1, ^message2]} = Message.take_unsent(user.id, device.id, "abc")
+      assert {:ok, [%Message{content: ^message1}, %Message{content: ^message2}]} =
+               Message.take_unsent(user.id, device.id, "abc")
+
       {:ok, user} = Repo.fetch(User, user.id)
-      assert {:ok, %Device{messages: %{"abc" => [^message2, ^message1]}}} = User.get_device(user, device.id)
+
+      assert {:ok, %Device{messages: %{"abc" => [%Message{content: ^message2}, %Message{content: ^message1}]}}} =
+               User.get_device(user, device.id)
     end
 
     test "marks messages as read (deletes them)", %{user: user, device: device} do
-      message1 = Message.new(%{"hola" => "mundo"}, "@yo:hello", "org.msg.type")
-      Message.put(user.id, device.id, message1)
-      message2 = Message.new(%{"hola" => "mundo"}, "@yo:hello", "com.msg.type")
-      Message.put(user.id, device.id, message2)
+      message1 = %{"hola" => "mundo"}
+      Message.put(user.id, device.id, message1, "@yo:hello", "org.msg.type")
+      message2 = %{"hola" => "mundo"}
+      Message.put(user.id, device.id, message2, "@yo:hello", "com.msg.type")
 
       Message.take_unsent(user.id, device.id, "abc")
 
-      message3 = Message.new(%{"hola" => "mundo"}, "@yo:hello", "com2.msg.type")
-      Message.put(user.id, device.id, message3)
+      message3 = %{"hola" => "mundo"}
+      Message.put(user.id, device.id, message3, "@yo:hello", "com2.msg.type")
 
-      assert {:ok, [^message3]} = Message.take_unsent(user.id, device.id, "xyz", "abc")
+      assert {:ok, [%Message{content: ^message3}]} = Message.take_unsent(user.id, device.id, "xyz", "abc")
       {:ok, user} = Repo.fetch(User, user.id)
       assert {:ok, %Device{messages: messages}} = User.get_device(user, device.id)
       refute is_map_key(messages, "abc")
-      assert %{"xyz" => [^message3]} = messages
-    end
-  end
-
-  describe "expand_device_id/2" do
-    test "expands glob (*) to all a user's device IDs", %{user: user, device: %{id: d1}} do
-      {user, %{id: d2}} = Fixtures.device(user)
-      {user, %{id: d3}} = Fixtures.device(user)
-
-      expected_ids = Enum.sort([d1, d2, d3])
-      assert ^expected_ids = Enum.sort(Message.expand_device_id(user, "*"))
-    end
-
-    test "wraps a device ID in a list", %{user: user, device: %{id: d1}} do
-      assert [^d1] = Message.expand_device_id(user.id, d1)
+      assert %{"xyz" => [%Message{content: ^message3}]} = messages
     end
   end
 end

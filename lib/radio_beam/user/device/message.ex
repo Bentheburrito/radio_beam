@@ -22,32 +22,53 @@ defmodule RadioBeam.User.Device.Message do
     %__MODULE__{content: content, sender: sender, type: type}
   end
 
-  def expand_device_id(user, "*"), do: user |> User.get_all_devices() |> Enum.map(& &1.id)
-  def expand_device_id(_user, device_id), do: [device_id]
-
   @doc """
   Queues a one-off message to be sent to a particular device when it next sync.
   Must be used in a transaction
   """
-  def put(user_id, device_id, %__MODULE__{} = message) do
-    put_many([{user_id, device_id, message}])
+  def put(user_id, device_id, message, sender_id, type) do
+    put_many(%{user_id => %{device_id => message}}, sender_id, type)
   end
 
-  def put_many(entries) do
+  def put_many(nil, _sender_id, _type), do: {:error, :no_message}
+  def put_many(empty, _sender_id, _type) when map_size(empty) == 0, do: :ok
+
+  def put_many(put_request, sender_id, type) do
     Repo.transaction(fn ->
-      Enum.find_value(entries, {:ok, length(entries)}, fn {user_id, device_id, message} ->
-        with {:ok, %User{}} <- persist(user_id, device_id, message), do: false
+      put_request
+      |> parse_request(sender_id, type)
+      |> Enum.find_value(:ok, fn {user, device_id, message} ->
+        with {:ok, %User{}} <- persist(user, device_id, message), do: false
       end)
     end)
   end
 
-  defp persist(user_id, device_id, %__MODULE__{} = message) do
-    with {:ok, user} <- Repo.fetch(User, user_id, lock: :write),
-         {:ok, %Device{} = device} <- User.get_device(user, device_id) do
+  defp persist(user, device_id, %__MODULE__{} = message) do
+    with {:ok, %Device{} = device} <- User.get_device(user, device_id) do
       messages = Map.update(device.messages, :unsent, [message], &[message | &1])
       Repo.insert(put_in(user.device_map[device.id].messages, messages))
     end
   end
+
+  defp parse_request(request, sender_id, type) do
+    request
+    |> Stream.flat_map(fn {"@" <> _rest = user_id, %{} = device_map} ->
+      Stream.map(device_map, fn {device_id_or_glob, msg_content} ->
+        {user_id, device_id_or_glob, Device.Message.new(msg_content, sender_id, type)}
+      end)
+    end)
+    |> Stream.flat_map(fn {user_id, device_id_or_glob, message} ->
+      case Repo.fetch(User, user_id, lock: :write) do
+        {:ok, %User{} = user} -> user |> expand_device_id(device_id_or_glob) |> Stream.map(&{user, &1, message})
+        # TODO: raise if user not found?
+        # TOIMPL: put device over federation
+        {:error, :not_found} -> []
+      end
+    end)
+  end
+
+  defp expand_device_id(user, "*"), do: user |> User.get_all_devices() |> Enum.map(& &1.id)
+  defp expand_device_id(_user, device_id), do: [device_id]
 
   @doc """
   Returns unsent to-device messages, marking them as sent in the sync response

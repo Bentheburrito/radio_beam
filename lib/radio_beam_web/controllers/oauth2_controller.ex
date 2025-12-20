@@ -99,7 +99,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
           json_error(conn, 400, :endpoint_error, [:weak_password, OAuth2.weak_password_message()])
 
         {:error, :already_exists} ->
-          json_error(conn, 400, :endpoint_error, [:invalid_username, "Localpart already taken"])
+          json_error(conn, 400, :endpoint_error, [:user_in_use, "Localpart already taken"])
 
         {:error, :unknown_username_or_password} ->
           error_params = oauth_error("access_denied", "Unknown user or password", auth_params.state)
@@ -167,6 +167,16 @@ defmodule RadioBeamWeb.OAuth2Controller do
         Logger.error("Error exchanging an authz code: #{inspect(error)}")
         json_error(conn, 500, :unknown, "Something went very wrong")
     end
+  end
+
+  def revoke_token(conn, %{"token" => token}) do
+    case OAuth2.revoke_token(token) do
+      :ok -> json(conn, %{})
+    end
+  end
+
+  def revoke_token(conn, _params) do
+    conn |> put_status(400) |> json(oauth_error(:invalid_request, "No 'token' to revoke was provided"))
   end
 
   # TOIMPL: application service users

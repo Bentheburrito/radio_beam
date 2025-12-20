@@ -46,6 +46,7 @@ defmodule RadioBeamWeb.Router do
 
     post "/clients/register", OAuth2Controller, :register_client
     post "/token", OAuth2Controller, :get_token
+    post "/revoke", OAuth2Controller, :revoke_token
   end
 
   scope "/oauth2" do

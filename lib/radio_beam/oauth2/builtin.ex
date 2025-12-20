@@ -440,10 +440,10 @@ defmodule RadioBeam.OAuth2.Builtin do
     refresh_opts = [ttl: Application.fetch_env!(:radio_beam, :refresh_token_lifetime)]
 
     with {:ok, {^refresh_token, old_claims}, {new_access_token, new_claims}} <-
-           Guardian.exchange(refresh_token, "refresh", "access", access_opts),
+           exchange_for(refresh_token, "access", access_opts),
          :ok <- validate_unrevoked_or_retryable(old_claims),
          {:ok, {^refresh_token, _}, {new_refresh_token, %{"jti" => new_refresh_token_id}}} <-
-           Guardian.exchange(refresh_token, "refresh", "refresh", refresh_opts),
+           exchange_for(refresh_token, "refresh", refresh_opts),
          {:ok, session} <- Guardian.resource_from_claims(new_claims) do
       device =
         session.device
@@ -454,6 +454,10 @@ defmodule RadioBeam.OAuth2.Builtin do
 
       {:ok, new_access_token, new_refresh_token, new_claims["scope"], new_claims["exp"]}
     end
+  end
+
+  defp exchange_for(token, new_token_type, opts) when new_token_type in ~w|access refresh| do
+    Guardian.exchange(token, "refresh", new_token_type, opts)
   end
 
   defp validate_unrevoked_or_retryable(claims) do
@@ -472,6 +476,30 @@ defmodule RadioBeam.OAuth2.Builtin do
 
       _else ->
         {:error, :invalid_token}
+    end
+  end
+
+  @impl RadioBeam.OAuth2
+  def revoke_token(token) do
+    case Guardian.resource_from_token(token) do
+      {:ok, %UserDeviceSession{} = session, claims} ->
+        if claims["jti"] in Map.values(session.device.last_issued_token_ids) do
+          device =
+            session.device
+            |> Device.rotate_token_ids(nil, nil)
+            |> Device.put_retryable_refresh_token_id(nil)
+
+          session.user |> User.put_device(device) |> Repo.insert!()
+          :ok
+        else
+          :ok
+        end
+
+      {:error, :token_expired} ->
+        :ok
+
+      {:error, :invalid_token} ->
+        :ok
     end
   end
 end

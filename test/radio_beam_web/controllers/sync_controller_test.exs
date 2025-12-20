@@ -59,8 +59,14 @@ defmodule RadioBeamWeb.SyncControllerTest do
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
       {:ok, user} = Account.put(user.id, :global, "m.some_config", %{"hello" => "world"})
       {:ok, user} = Account.put(user.id, room_id1, "m.some_config", %{"hello" => "room"})
-      message = Device.Message.new(%{"hello" => "world"}, "@hello:world", "com.spectrum.corncobtv.new_release")
-      Device.Message.put(user.id, device.id, message)
+
+      Device.Message.put(
+        user.id,
+        device.id,
+        %{"hello" => "world"},
+        "@hello:world",
+        "com.spectrum.corncobtv.new_release"
+      )
 
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}", %{})
 
@@ -97,9 +103,21 @@ defmodule RadioBeamWeb.SyncControllerTest do
       {:ok, _event_id} = Room.join(room_id1, user.id)
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "yo")
 
-      Device.Message.put(user.id, device.id, message)
-      message = Device.Message.new(%{"hello2" => "world"}, "@hello:world", "com.spectrum.corncobtv.notification")
-      Device.Message.put(user.id, device.id, message)
+      Device.Message.put(
+        user.id,
+        device.id,
+        %{"hello" => "world"},
+        "@hello:world",
+        "com.spectrum.corncobtv.new_release"
+      )
+
+      Device.Message.put(
+        user.id,
+        device.id,
+        %{"hello2" => "world"},
+        "@hello:world",
+        "com.spectrum.corncobtv.notification"
+      )
 
       {:ok, user} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
 

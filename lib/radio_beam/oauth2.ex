@@ -84,6 +84,7 @@ defmodule RadioBeam.OAuth2 do
   @callback refresh_token(Guardian.Token.token()) ::
               {:ok, Guardian.Token.token(), Guardian.Token.token(), scope_urns :: String.t(), non_neg_integer()}
               | {:error, :expired_token | :invalid_token | :not_found}
+  @callback revoke_token(Guardian.Token.token()) :: :ok
 
   def metadata(scheme \\ :https, host \\ RadioBeam.server_name(), oauth2_module \\ oauth2_module())
 
@@ -140,6 +141,10 @@ defmodule RadioBeam.OAuth2 do
 
   def refresh_token(refresh_token, oauth2_module \\ oauth2_module()) do
     oauth2_module.refresh_token(refresh_token)
+  end
+
+  def revoke_token(token, oauth2_module \\ oauth2_module()) do
+    oauth2_module.revoke_token(token)
   end
 
   defp oauth2_module, do: Application.fetch_env!(:radio_beam, :oauth2_module)
