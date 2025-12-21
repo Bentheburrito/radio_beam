@@ -38,26 +38,26 @@ defmodule RadioBeamWeb.Layouts do
     <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
         <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
+          <img src={~p"/images/logo.png"} width="72" />
+          <span class="text-sm font-semibold">RadioBeam v{Application.spec(:radio_beam, :vsn)}</span>
         </a>
       </div>
       <div class="flex-none">
         <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
+          <%!-- <li> --%>
+          <%!--   <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a> --%>
+          <%!-- </li> --%>
+          <%!-- <li> --%>
+          <%!--   <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a> --%>
+          <%!-- </li> --%>
           <li>
             <.theme_toggle />
           </li>
-          <li>
-            <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
+          <%!-- <li> --%>
+          <%!--   <a href="https://hexdocs.pm/phoenix/overview.html" class="btn btn-primary"> --%>
+          <%!--     Get Started <span aria-hidden="true">&rarr;</span> --%>
+          <%!--   </a> --%>
+          <%!-- </li> --%>
         </ul>
       </div>
     </header>
@@ -129,7 +129,9 @@ defmodule RadioBeamWeb.Layouts do
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
+        onclick="setTheme('system')"
       >
+        <%!-- needed to add 'onclick' ^ above for this to work in a non-LiveView context. --%>
         <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
 
@@ -137,7 +139,9 @@ defmodule RadioBeamWeb.Layouts do
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
+        onclick="setTheme('light')"
       >
+        <%!-- needed to add 'onclick' ^ above for this to work in a non-LiveView context. --%>
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
 
@@ -145,7 +149,9 @@ defmodule RadioBeamWeb.Layouts do
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
+        onclick="setTheme('dark')"
       >
+        <%!-- needed to add 'onclick' ^ above for this to work in a non-LiveView context. --%>
         <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
     </div>

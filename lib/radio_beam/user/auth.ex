@@ -38,13 +38,13 @@ defmodule RadioBeam.User.Auth do
     code_challenge = Base.url_encode64(:crypto.hash(:sha256, code_verifier), padding: false)
     client_id = "legacy_api_client"
     redirect_uri = URI.new!("")
-    scopes = %{:cs_api => [:read, :write], device_id: device_id}
+    scope = %{:cs_api => [:read, :write], device_id: device_id}
 
     grant_params = %{
       code_challenge: code_challenge,
       client_id: client_id,
       redirect_uri: redirect_uri,
-      scopes: scopes,
+      scope: scope,
       prompt: :login
     }
 

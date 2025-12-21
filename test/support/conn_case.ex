@@ -45,13 +45,13 @@ defmodule RadioBeamWeb.ConnCase do
     client_id = "test_client"
     redirect_uri = URI.new!("")
     device_id = Fixtures.device_id()
-    scopes = %{:cs_api => [:read, :write], device_id: device_id}
+    scope = %{:cs_api => [:read, :write], device_id: device_id}
 
     grant_params = %{
       code_challenge: code_challenge,
       client_id: client_id,
       redirect_uri: redirect_uri,
-      scopes: scopes,
+      scope: scope,
       prompt: :login
     }
 

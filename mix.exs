@@ -10,6 +10,7 @@ defmodule RadioBeam.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
+      # compilers: [:phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
       test_coverage: [
         ignore_modules: [
@@ -34,6 +35,12 @@ defmodule RadioBeam.MixProject do
     ]
   end
 
+  def cli do
+    [
+      preferred_envs: [lint: :test]
+    ]
+  end
+
   # Specifies which paths to compile per environment.
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
@@ -51,6 +58,10 @@ defmodule RadioBeam.MixProject do
       {:ecto_sql, "~> 3.10"},
       # {:postgrex, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
+      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      {:heroicons,
+       github: "tailwindlabs/heroicons", tag: "v2.2.0", sparse: "optimized", app: false, compile: false, depth: 1},
       {:swoosh, "~> 1.5"},
       {:finch, "~> 0.13"},
       {:telemetry_metrics, "~> 0.6"},
@@ -99,11 +110,20 @@ defmodule RadioBeam.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "ecto.setup"],
+      # setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
+      setup: ["deps.get", "assets.setup", "assets.build"],
       # "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       # "ecto.reset": ["ecto.drop", "ecto.setup"],
       # test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
-      test: ["test"]
+      test: ["test"],
+      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
+      "assets.build": ["compile", "tailwind radio_beam", "esbuild radio_beam"],
+      "assets.deploy": [
+        "tailwind radio_beam --minify",
+        "esbuild radio_beam --minify",
+        "phx.digest"
+      ],
+      lint: ["compile --warnings-as-errors", "deps.unlock --unused", "credo", "format --check-formatted", "test"]
     ]
   end
 end

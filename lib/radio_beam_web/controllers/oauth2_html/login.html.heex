@@ -1,10 +1,29 @@
-<.header :if={@prompt == :create}>Register your account</.header>
-<.header :if={@prompt == :login}>Login to your account</.header>
+<Layouts.app flash={@flash}>
+  <.header :if={@prompt == :create}>Register your account</.header>
+  <.header :if={@prompt == :login}>Login to your account</.header>
 
-<.form :let={f} for={@form} action={@submit_to} method="post">
-  <.input field={f[:user_id_localpart]} label={"User ID Localpart (e.g. 'example' in '@example:#{@server_name}'"} type="text" required/>
-  <.input field={f[:password]} label="Password" type="password" required/>
+  <.form :let={f} for={@form} action={@submit_to} method="post">
+    <div class="fieldset mb-2">
+      <label>
+        <span class="label mb-1">{"User ID Localpart (e.g. 'example' in '@example:#{@server_name}')"}</span>
+        <.input field={f[:user_id_localpart]} label={"@"} trailing_label={":#{@server_name}"} type="text" placeholder="example" class="w-fit input inline" errors={f[:user_id_localpart].errors} required/>
+      </label>
+    </div>
 
-  <.button :if={@prompt == :login} variant="primary">Authorize Device</.button>
-  <.button :if={@prompt == :create} variant="primary">Create Account & Authorize Device</.button>
-</.form>
+    <.input field={f[:password]} value={f[:password].value} label="Password" type="password" errors={f[:password].errors} required/>
+
+    <p>{@client_name} is requesting the following access to your {if @prompt == :create, do: " new ", else: ""} account:</p>
+    <.list>
+      <:item :for={scope <- @scope} title={scope_title(scope)}>{scope_description(scope)}</:item>
+    </.list>
+
+    <div :if={@prompt == :login}>
+      <.button variant="primary">Authorize Device</.button>
+      <p>Or <.link class="text-blue-600 visited:text-purple-600" href={~p"/oauth2/auth?#{@oauth_params_to_swap_flow}"} method="get">create an account here</.link> if you don't already have one</p>
+    </div>
+    <div :if={@prompt == :create}>
+      <.button variant="primary">Create Account & Authorize Device</.button>
+      <p>Already have an account? <.link class="text-blue-600 visited:text-purple-600" href={~p"/oauth2/auth?#{@oauth_params_to_swap_flow}"} method="get">Log In</.link></p>
+    </div>
+  </.form>
+</Layouts.app>

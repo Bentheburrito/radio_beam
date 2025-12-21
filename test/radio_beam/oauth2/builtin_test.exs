@@ -252,16 +252,16 @@ defmodule RadioBeam.OAuth2.BuiltinTest do
       code_challenge = Base.url_encode64(:crypto.hash(:sha256, code_verifier), padding: false)
       device_id = Fixtures.device_id()
 
-      stable_scopes = "urn:matrix:client:api:* urn:matrix:client:device:#{device_id}"
+      stable_scope = "urn:matrix:client:api:* urn:matrix:client:device:#{device_id}"
 
-      msc2967_scopes =
+      msc2967_scope =
         "urn:matrix:org.matrix.msc2967.client:api:* urn:matrix:org.matrix.msc2967.client:device:#{device_id}"
 
       state = 24 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
 
       for response_mode <- ~w|fragment query|,
           redirect_uri <- client_metadata.redirect_uris,
-          scope <- [stable_scopes, msc2967_scopes],
+          scope <- [stable_scope, msc2967_scope],
           prompt <- [nil, "create"] do
         redirect_uri = to_string(redirect_uri)
 
@@ -290,7 +290,7 @@ defmodule RadioBeam.OAuth2.BuiltinTest do
                   redirect_uri: ^redirect_uri,
                   response_mode: ^response_mode,
                   code_challenge: ^code_challenge,
-                  scopes: %{device_id: ^device_id, cs_api: [:read, :write]},
+                  scope: %{device_id: ^device_id, cs_api: [:read, :write]},
                   prompt: ^expected_prompt
                 }} =
                  Builtin.validate_authz_code_grant_params(params)
@@ -304,9 +304,9 @@ defmodule RadioBeam.OAuth2.BuiltinTest do
       code_challenge = Base.url_encode64(:crypto.hash(:sha256, code_verifier), padding: false)
       device_id = Fixtures.device_id()
 
-      stable_scopes = "urn:matrix:client:api:* urn:matrix:client:device:#{device_id}"
+      stable_scope = "urn:matrix:client:api:* urn:matrix:client:device:#{device_id}"
 
-      msc2967_scopes =
+      msc2967_scope =
         "urn:matrix:org.matrix.msc2967.client:api:* urn:matrix:org.matrix.msc2967.client:device:#{device_id}"
 
       state = 24 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
@@ -316,7 +316,7 @@ defmodule RadioBeam.OAuth2.BuiltinTest do
         {"client_id", "asdfasdfasdf"},
         {"scope", :delete},
         {"scope", "urn:unknown:scope"},
-        {"scope", "urn:unknown:scope #{stable_scopes |> String.split(" ") |> hd()}"},
+        {"scope", "urn:unknown:scope #{stable_scope |> String.split(" ") |> hd()}"},
         {"redirect_uri", :delete},
         {"redirect_uri", "https://some.randomasswebsite.com"},
         {"state", :delete},
@@ -332,7 +332,7 @@ defmodule RadioBeam.OAuth2.BuiltinTest do
       for {field_name, value_or_action} <- invalid_params,
           response_mode <- ~w|fragment query|,
           redirect_uri <- client_metadata.redirect_uris,
-          scope <- [stable_scopes, msc2967_scopes],
+          scope <- [stable_scope, msc2967_scope],
           prompt <- [nil, "create"] do
         redirect_uri = to_string(redirect_uri)
 
@@ -360,7 +360,7 @@ defmodule RadioBeam.OAuth2.BuiltinTest do
                  [
                    :missing_client_id,
                    :client_not_found,
-                   :missing_scopes,
+                   :missing_scope,
                    :redirect_uri,
                    :state,
                    :response_mode,

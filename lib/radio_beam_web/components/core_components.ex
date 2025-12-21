@@ -159,6 +159,7 @@ defmodule RadioBeamWeb.CoreComponents do
   attr :id, :any, default: nil
   attr :name, :any
   attr :label, :string, default: nil
+  attr :trailing_label, :string, default: nil
   attr :value, :any
 
   attr :type, :string,
@@ -287,6 +288,7 @@ defmodule RadioBeamWeb.CoreComponents do
           ]}
           {@rest}
         />
+        <span :if={@trailing_label} class="label mb-1">{@trailing_label}</span>
       </label>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>

@@ -1,0 +1,7 @@
+<Layouts.app flash={@flash}>
+  <.header>Sorry, something went wrong.</.header>
+  <p>The Matrix client you are using seems to be missing some required information:</p>
+  <.list>
+    <:item :for={{field, error} <- @errors} title={field}>{error}</:item>
+  </.list>
+</Layouts.app>

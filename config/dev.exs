@@ -25,7 +25,10 @@ config :radio_beam, RadioBeamWeb.Endpoint,
   # clients will get confused with 200 the responses from debug_errors
   debug_errors: false,
   secret_key_base: "9ecAggd84rh0M/JB8+1W7mbwdheVluVOwRQsqI/Ov6zfGBF8FfCbZmKRH5HtUYu4",
-  watchers: []
+  watchers: [
+    esbuild: {Esbuild, :install_and_run, [:radio_beam, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:radio_beam, ~w(--watch)]}
+  ]
 
 config :radio_beam,
   server_name: "localhost",

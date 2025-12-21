@@ -26,6 +26,7 @@ defmodule RadioBeamWeb do
       # Import common connection and controller functions to use in pipelines
       import Plug.Conn
       import Phoenix.Controller
+      import Phoenix.LiveView.Router
     end
   end
 
@@ -37,10 +38,7 @@ defmodule RadioBeamWeb do
 
   def controller do
     quote do
-      use Phoenix.Controller,
-        formats: [:html, :json]
-
-      # layouts: [html: RadioBeamWeb.Layouts]
+      use Phoenix.Controller, formats: [:html, :json]
 
       import Plug.Conn
 
@@ -64,7 +62,7 @@ defmodule RadioBeamWeb do
   defp html_helpers do
     quote do
       # Translation
-      use Gettext, backend: PhxNew183TestProjWeb.Gettext
+      use Gettext, backend: RadioBeamWeb.Gettext
 
       # HTML escaping functionality
       import Phoenix.HTML
@@ -73,6 +71,7 @@ defmodule RadioBeamWeb do
 
       # Shortcut for generating JS commands
       alias Phoenix.LiveView.JS
+      alias RadioBeamWeb.Layouts
 
       # Routes generation with the ~p sigil
       unquote(verified_routes())

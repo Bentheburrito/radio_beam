@@ -66,7 +66,7 @@ defmodule RadioBeam.OAuth2 do
           redirect_uri: URI.t(),
           response_mode: response_mode(),
           code_challenge: String.t(),
-          scopes: map()
+          scope: map()
         }
 
   @callback metadata() :: server_metadata()
@@ -136,7 +136,8 @@ defmodule RadioBeam.OAuth2 do
         oauth2_module \\ oauth2_module()
       ) do
     issuer = URI.new!(metadata(scheme, host).issuer)
-    oauth2_module.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, issuer, device_opts)
+    opts = Keyword.put(device_opts, :scope_to_urn, &scope_to_urn/1)
+    oauth2_module.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, issuer, opts)
   end
 
   def authenticate_user_by_access_token(token, ip, oauth2_module \\ oauth2_module()) do
@@ -152,6 +153,13 @@ defmodule RadioBeam.OAuth2 do
   end
 
   defp oauth2_module, do: Application.fetch_env!(:radio_beam, :oauth2_module)
+
+  def scope_to_urn(scope) do
+    Enum.map_join(scope, " ", fn
+      {:device_id, device_id} -> "urn:matrix:client:device:#{device_id}"
+      {:cs_api, [:read, :write]} -> "urn:matrix:client:api:*"
+    end)
+  end
 
   def weak_password_message do
     """

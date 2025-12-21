@@ -1,0 +1,4 @@
+<Layouts.app flash={@flash}>
+  <.header>Sorry, this homeserver is not accepting new users at this time.</.header>
+  <.link class="text-blue-600 visited:text-purple-600" href={~p"/oauth2/auth?#{@oauth_params}"} method="get">Back to Log In</.link>
+</Layouts.app>

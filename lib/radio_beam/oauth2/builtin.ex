@@ -39,7 +39,7 @@ defmodule RadioBeam.OAuth2.Builtin do
          {:ok, tos_uri} <- validate_extra_uri(client_metadata_attrs, client_uri, "tos_uri") do
       %{
         application_type: app_type,
-        client_name: Map.get(client_metadata_attrs, "client_name", "Matrix Client (name not provided)"),
+        client_name: Map.get(client_metadata_attrs, "client_name", "A Matrix Client (name not provided)"),
         client_uri: client_uri,
         grant_types: grant_types,
         logo_uri: logo_uri,
@@ -221,7 +221,7 @@ defmodule RadioBeam.OAuth2.Builtin do
 
     with client_id when is_binary(client_id) <- Map.get(params, "client_id", {:error, :missing_client_id}),
          {:ok, client_metadata} <- lookup_client(client_id),
-         {:ok, scopes} <- validate_scopes(params) do
+         {:ok, scope} <- validate_scope(params) do
       redirect_uri =
         case URI.new!(params["redirect_uri"] || "") do
           # For "http [redirect] URI on the loopback interface" during client
@@ -263,9 +263,11 @@ defmodule RadioBeam.OAuth2.Builtin do
                client_id: params["client_id"],
                state: params["state"],
                redirect_uri: params["redirect_uri"],
+               response_type: params["response_type"],
                response_mode: response_mode,
                code_challenge: params["code_challenge"],
-               scopes: scopes,
+               code_challenge_method: params["code_challenge_method"],
+               scope: scope,
                prompt: prompt
              }}
           end
@@ -273,25 +275,25 @@ defmodule RadioBeam.OAuth2.Builtin do
     end
   end
 
-  defp validate_scopes(%{"scope" => scope_str}) do
-    scopes =
+  defp validate_scope(%{"scope" => scope_str}) when is_binary(scope_str) do
+    scope =
       scope_str
       |> String.split(" ")
-      |> Enum.reduce({:ok, %{}}, fn scope, {:ok, scopes} ->
+      |> Enum.reduce({:ok, %{}}, fn scope, {:ok, validated_scope_map} ->
         case parse_scope(scope) do
-          {:ok, {:cs_api, perms}} -> {:ok, Map.put(scopes, :cs_api, perms)}
-          {:ok, {:device_id, device_id}} -> {:ok, Map.put(scopes, :device_id, device_id)}
-          {:error, :unrecognized_scope} -> {:ok, scopes}
+          {:ok, {:cs_api, perms}} -> {:ok, Map.put(validated_scope_map, :cs_api, perms)}
+          {:ok, {:device_id, device_id}} -> {:ok, Map.put(validated_scope_map, :device_id, device_id)}
+          {:error, :unrecognized_scope} -> {:ok, validated_scope_map}
         end
       end)
 
-    case scopes do
-      {:ok, %{device_id: "" <> _, cs_api: [:read, :write]}} -> scopes
-      _else -> {:error, :missing_scopes}
+    case scope do
+      {:ok, %{device_id: "" <> _, cs_api: [:read, :write]}} -> scope
+      _else -> {:error, :missing_scope}
     end
   end
 
-  defp validate_scopes(_params), do: {:error, :missing_scopes}
+  defp validate_scope(_params), do: {:error, :missing_scope}
 
   defp parse_scope("urn:matrix:client:api:*"), do: {:ok, {:cs_api, [:read, :write]}}
 
@@ -311,13 +313,6 @@ defmodule RadioBeam.OAuth2.Builtin do
   end
 
   defp parse_scope(_), do: {:error, :unrecognized_scope}
-
-  defp scopes_to_urn(scopes) do
-    Enum.map_join(scopes, " ", fn
-      {:device_id, device_id} -> "urn:matrix:client:device:#{device_id}"
-      {:cs_api, [:read, :write]} -> "urn:matrix:client:api:*"
-    end)
-  end
 
   defp parse_prompt("create") do
     if Application.get_env(:radio_beam, :registration_enabled, false),
@@ -348,11 +343,11 @@ defmodule RadioBeam.OAuth2.Builtin do
          code_challenge: code_challenge,
          client_id: client_id,
          redirect_uri: redirect_uri,
-         scopes: scopes
+         scope: scope
        }) do
     code = @num_code_gen_bytes |> :crypto.strong_rand_bytes() |> Base.url_encode64()
 
-    with :ok <- AuthzCodeCache.put(code, code_challenge, client_id, redirect_uri, user_id, scopes) do
+    with :ok <- AuthzCodeCache.put(code, code_challenge, client_id, redirect_uri, user_id, scope) do
       {:ok, code}
     end
   end
@@ -364,13 +359,15 @@ defmodule RadioBeam.OAuth2.Builtin do
         client_id,
         %URI{} = redirect_uri,
         %URI{} = issuer,
-        device_opts
+        opts
       ) do
+    {scope_to_urn, device_opts} = Keyword.pop!(opts, :scope_to_urn)
+
     Repo.transaction(fn ->
-      with {:ok, user_id, scopes} <- AuthzCodeCache.pop(code, code_verifier, client_id, redirect_uri),
+      with {:ok, user_id, scope} <- AuthzCodeCache.pop(code, code_verifier, client_id, redirect_uri),
            {:ok, %User{} = user} <- Repo.fetch(User, user_id),
-           session = UserDeviceSession.new_from_user!(user, scopes.device_id, device_opts),
-           {:ok, access_token, access_claims} <- new_access_token(session, scopes, issuer),
+           session = UserDeviceSession.new_from_user!(user, scope.device_id, device_opts),
+           {:ok, access_token, access_claims} <- new_access_token(session, scope, issuer, scope_to_urn),
            {:ok, refresh_token, refresh_claims} <- new_refresh_token(session, access_claims, issuer),
            {:ok, _user} <- rotate_device_ids(session, access_claims["jti"], refresh_claims["jti"]) do
         {:ok, access_token, refresh_token, access_claims["scope"], access_claims["exp"] - System.os_time(:second)}
@@ -378,8 +375,8 @@ defmodule RadioBeam.OAuth2.Builtin do
     end)
   end
 
-  defp new_access_token(session, scopes, issuer) do
-    claims = %{scope: scopes_to_urn(scopes)}
+  defp new_access_token(session, scope, issuer, scope_to_urn) do
+    claims = %{scope: scope_to_urn.(scope)}
     opts = [token_type: "access", ttl: Application.fetch_env!(:radio_beam, :access_token_lifetime), issuer: issuer]
 
     with {:ok, access_token, claims} <- Guardian.encode_and_sign(session, claims, opts) do
@@ -388,8 +385,8 @@ defmodule RadioBeam.OAuth2.Builtin do
     end
   end
 
-  defp new_refresh_token(session, %{"jti" => access_token_id, "scope" => scopes}, issuer) do
-    claims = %{scope: scopes, access_token_id: access_token_id}
+  defp new_refresh_token(session, %{"jti" => access_token_id, "scope" => scope}, issuer) do
+    claims = %{scope: scope, access_token_id: access_token_id}
     opts = [token_type: "refresh", ttl: Application.fetch_env!(:radio_beam, :refresh_token_lifetime), issuer: issuer]
 
     with {:ok, refresh_token, claims} <- Guardian.encode_and_sign(session, claims, opts) do
