@@ -54,6 +54,7 @@ defmodule RadioBeamWeb.Router do
     @unauth_heavily_restrict_ip @do_whatever_the_hell_you_want
     @user_metadata_read @do_whatever_the_hell_you_want
     @user_metadata_write @do_whatever_the_hell_you_want
+    @user_sync @do_whatever_the_hell_you_want
   end
 
   @cs_api_cors %{
