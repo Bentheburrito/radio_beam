@@ -5,7 +5,7 @@ defmodule RadioBeamWeb.HomeserverInfoControllerTest do
 
   test "home/2", %{conn: conn} do
     conn = get(conn, ~p"/", %{})
-    assert "RadioBeam is up and running" = response(conn, 200)
+    assert "RadioBeam is up and running 🎉" = response(conn, 200)
   end
 
   test "capabilities/2", %{conn: conn} do

@@ -39,4 +39,6 @@ defmodule RadioBeamWeb.Utils do
     |> json_error(status, errors_fxn_name, arg_or_args)
     |> halt()
   end
+
+  def rl(rl), do: [assigns: %{rate_limit: rl}]
 end

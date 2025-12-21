@@ -4,7 +4,7 @@ defmodule RadioBeamWeb.HomeserverInfoController do
   def home(conn, _params) do
     conn
     |> put_status(200)
-    |> text("RadioBeam is up and running")
+    |> text("RadioBeam is up and running 🎉")
   end
 
   def capabilities(conn, _params) do

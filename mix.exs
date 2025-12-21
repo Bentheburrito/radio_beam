@@ -76,6 +76,7 @@ defmodule RadioBeam.MixProject do
       {:vix, "~> 0.30.0"},
       {:guardian, "~> 2.4"},
       {:gettext, "~> 1.0"},
+      {:hammer, "~> 7.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
