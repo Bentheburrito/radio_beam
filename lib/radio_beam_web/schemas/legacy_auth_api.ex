@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.Schemas.Auth do
+defmodule RadioBeamWeb.Schemas.LegacyAuthAPI do
   @moduledoc false
 
   alias RadioBeamWeb.Schemas

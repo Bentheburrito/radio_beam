@@ -1,6 +1,9 @@
-defmodule RadioBeam.User.Auth do
+defmodule RadioBeam.User.Authentication.LegacyAPI do
   @moduledoc """
-  Functions for use in the Legacy Auth API
+  A minimal implementation of the [Legacy Auth
+  API](https://spec.matrix.org/latest/client-server-api/#legacy-api). This
+  implementation only supports registration, login, and refreshing.
+  User-Interactive Authentication is not planned.
   """
 
   alias RadioBeam.OAuth2

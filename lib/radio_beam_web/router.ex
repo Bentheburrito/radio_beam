@@ -7,7 +7,7 @@ defmodule RadioBeamWeb.Router do
   import Kernel, except: [/: 2]
 
   alias RadioBeamWeb.AccountController
-  alias RadioBeamWeb.AuthController
+  alias RadioBeamWeb.LegacyAuthAPIController
   alias RadioBeamWeb.ClientController
   alias RadioBeamWeb.ContentRepoController
   alias RadioBeamWeb.FilterController
@@ -119,9 +119,9 @@ defmodule RadioBeamWeb.Router do
     scope "/client" do
       scope "/v3" do
         get "/login", HomeserverInfoController, :login_types, rl(@device_upkeep)
-        post "/login", AuthController, :login, rl(@device_upkeep)
-        post "/register", AuthController, :register, rl(@device_lifecycle)
-        post "/refresh", AuthController, :refresh, rl(@device_upkeep)
+        post "/login", LegacyAuthAPIController, :login, rl(@device_upkeep)
+        post "/register", LegacyAuthAPIController, :register, rl(@device_lifecycle)
+        post "/refresh", LegacyAuthAPIController, :refresh, rl(@device_upkeep)
       end
     end
   end

@@ -1,15 +1,16 @@
-defmodule RadioBeamWeb.AuthController do
+defmodule RadioBeamWeb.LegacyAuthAPIController do
   use RadioBeamWeb, :controller
 
   import RadioBeamWeb.Utils, only: [json_error: 4]
 
   alias RadioBeam.Errors
   alias RadioBeam.User
-  alias RadioBeam.User.Auth
+  alias RadioBeam.User.Authentication.LegacyAPI
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Auth] when action in [:register, :login, :refresh]
+  plug RadioBeamWeb.Plugs.EnforceSchema,
+       [mod: RadioBeamWeb.Schemas.LegacyAuthAPI] when action in [:register, :login, :refresh]
 
   def register(%{params: %{"kind" => "guest"}} = conn, _params),
     do: json_error(conn, 403, :unrecognized, "This homeserver does not support guest users.")
@@ -20,16 +21,16 @@ defmodule RadioBeamWeb.AuthController do
   def register(conn, _params) do
     %{"username" => {_version, localpart}, "password" => pwd, "inhibit_login" => inhibit_login?} = conn.assigns.request
 
-    case Auth.register(localpart, pwd) do
+    case LegacyAPI.register(localpart, pwd) do
       {:ok, %User{} = user} ->
         if inhibit_login? do
           json(conn, %{user_id: user.id})
         else
-          device_id = Map.get_lazy(conn.assigns.request, "device_id", &Auth.generate_device_id/0)
+          device_id = Map.get_lazy(conn.assigns.request, "device_id", &LegacyAPI.generate_device_id/0)
           display_name = Map.fetch!(conn.assigns.request, "initial_device_display_name")
 
           {:ok, access_token, refresh_token, _scope, expires_in} =
-            Auth.password_login(user.id, pwd, device_id, display_name)
+            LegacyAPI.password_login(user.id, pwd, device_id, display_name)
 
           json(conn, %{
             device_id: device_id,
@@ -59,7 +60,7 @@ defmodule RadioBeamWeb.AuthController do
       {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
         conn
         |> put_status(400)
-        |> json(Errors.endpoint_error(:weak_password, Auth.weak_password_message()))
+        |> json(Errors.endpoint_error(:weak_password, LegacyAPI.weak_password_message()))
 
       {:error, changeset} ->
         Logger.error("Error creating a user during registration: #{inspect(changeset.errors)}")
@@ -78,9 +79,9 @@ defmodule RadioBeamWeb.AuthController do
       end
 
     %{"initial_device_display_name" => display_name, "password" => pwd} = conn.assigns.request
-    device_id = Map.get_lazy(conn.assigns.request, "device_id", &Auth.generate_device_id/0)
+    device_id = Map.get_lazy(conn.assigns.request, "device_id", &LegacyAPI.generate_device_id/0)
 
-    case Auth.password_login(user_id, pwd, device_id, display_name) do
+    case LegacyAPI.password_login(user_id, pwd, device_id, display_name) do
       {:ok, access_token, refresh_token, _scope, expires_in} ->
         json(conn, %{
           device_id: device_id,
@@ -98,7 +99,7 @@ defmodule RadioBeamWeb.AuthController do
   def refresh(conn, _params) do
     %{"refresh_token" => refresh_token} = conn.assigns.request
 
-    case Auth.refresh(refresh_token) do
+    case LegacyAPI.refresh(refresh_token) do
       {:ok, access_token, refresh_token, _scope, expires_in} ->
         json(conn, %{
           access_token: access_token,

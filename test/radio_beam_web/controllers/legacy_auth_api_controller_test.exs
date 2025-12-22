@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.AuthControllerTest do
+defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Repo
