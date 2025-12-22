@@ -36,7 +36,7 @@ defmodule RadioBeam.RateLimit do
   """
   def limit / scale, do: %{limit: limit, scale: scale}
 
-  @global_user_rate_limit %{limit: 100, scale: :timer.minutes(1)}
+  @global_user_rate_limit %{limit: 100, scale: :timer.seconds(15)}
 
   def new!(global_endpoint, user_endpoint, user_device, ip) do
     %__MODULE__{global_endpoint: global_endpoint, user_endpoint: user_endpoint, user_device: user_device, ip: ip}
