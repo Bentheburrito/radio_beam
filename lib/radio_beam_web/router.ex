@@ -35,7 +35,7 @@ defmodule RadioBeamWeb.Router do
   @unauth_static_read new!(200 / minutes(1), 1 / minutes(1), 1 / minutes(1), 100 / minutes(2))
   @user_metadata_read new!(500 / minutes(1), 100 / minutes(2), 50 / minutes(2), 100 / minutes(2))
   @user_metadata_write new!(100 / minutes(1), 20 / minutes(2), 15 / minutes(2), 50 / minutes(2))
-  @user_sync new!(1_000 / minutes(1), 8 / minutes(1), 4 / minutes(1), 100 / minutes(1))
+  @user_sync new!(5_000 / minutes(1), 100 / minutes(1), 80 / minutes(1), 100 / minutes(1))
 
   if Mix.env() == :test do
     @absurdly_high_limit 2 ** 16

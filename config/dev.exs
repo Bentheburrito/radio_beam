@@ -30,9 +30,7 @@ config :radio_beam, RadioBeamWeb.Endpoint,
     tailwind: {Tailwind, :install_and_run, [:radio_beam, ~w(--watch)]}
   ]
 
-config :radio_beam,
-  server_name: "localhost",
-  well_known_client: %{"m.homeserver" => %{"base_url" => "localhost:4000"}}
+config :radio_beam, server_name: "localhost"
 
 # ## SSL Support
 #

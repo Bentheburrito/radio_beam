@@ -35,7 +35,7 @@ config :radio_beam,
   },
   versions: %{
     unstable_features: %{},
-    versions: ["v1.8", "v1.9", "v1.10", "v1.11", "v1.11", "v1.12", "v1.13", "v1.14", "v1.15", "v1.16"]
+    versions: ["v1.8", "v1.9", "v1.10", "v1.11", "v1.11", "v1.12", "v1.13", "v1.14", "v1.15", "v1.16", "v1.17"]
   }
 
 config :radio_beam, RadioBeam.ContentRepo,
