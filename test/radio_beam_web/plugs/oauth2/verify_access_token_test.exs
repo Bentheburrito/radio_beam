@@ -3,8 +3,8 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
   import Plug.Test
   import Plug.Conn
 
-  alias RadioBeam.OAuth2
-  alias RadioBeam.OAuth2.UserDeviceSession
+  alias RadioBeam.User.Authentication.OAuth2
+  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
   alias RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken
 
   describe "call/2" do

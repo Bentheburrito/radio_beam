@@ -6,7 +6,7 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
   User-Interactive Authentication is not planned.
   """
 
-  alias RadioBeam.OAuth2
+  alias RadioBeam.User.Authentication.OAuth2
   alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.Device

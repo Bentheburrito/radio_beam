@@ -7,7 +7,7 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
   import RadioBeam.RateLimit, only: [/: 2]
 
   alias RadioBeamWeb.Plugs.RateLimit
-  alias RadioBeam.OAuth2.UserDeviceSession
+  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
 
   describe "call/2" do
     setup do

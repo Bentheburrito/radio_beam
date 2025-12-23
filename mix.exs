@@ -16,7 +16,7 @@ defmodule RadioBeam.MixProject do
         ignore_modules: [
           RadioBeam.Application,
           RadioBeam.DataCase,
-          RadioBeam.OAuth2.Builtin.Guardian.Plug,
+          RadioBeam.User.Authentication.OAuth2.Builtin.Guardian.Plug,
           RadioBeamWeb.Telemetry,
           RadioBeamWeb.CoreComponents,
           RadioBeamWeb.Gettext,

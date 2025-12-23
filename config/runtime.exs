@@ -14,7 +14,7 @@ end
 # The block below contains prod specific runtime configuration.
 
 server_name = System.fetch_env!("SERVER_NAME")
-oauth2_module = RadioBeam.OAuth2.Builtin
+oauth2_module = RadioBeam.User.Authentication.OAuth2.Builtin
 
 config :radio_beam,
   registration_enabled: System.get_env("ENABLE_REGISTRATION", "false") == "true",
@@ -25,7 +25,7 @@ config :radio_beam,
 case System.get_env("AUTHORIZATION_MODULE", "builtin") do
   "builtin" ->
     # TODO: do we need to do this, or can we pass via opts?
-    config :radio_beam, RadioBeam.OAuth2.Builtin.Guardian,
+    config :radio_beam, RadioBeam.User.Authentication.OAuth2.Builtin.Guardian,
       # issuer: oauth2_module.metadata().issuer,
       secret_key: System.fetch_env!("GUARDIAN_TOKEN_SECRET_KEY")
 end

@@ -35,7 +35,7 @@ defmodule RadioBeam.Application do
       # Cache to reduce redundant membership events in /sync
       LazyLoadMembersCache,
       # Cache for authorization code grant flow state
-      RadioBeam.OAuth2.Builtin.AuthzCodeCache,
+      RadioBeam.User.Authentication.OAuth2.Builtin.AuthzCodeCache,
       # Start the Hammer rate limiter
       RadioBeam.RateLimit,
       # Start to serve requests, typically the last entry

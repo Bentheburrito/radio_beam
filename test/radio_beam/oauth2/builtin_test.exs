@@ -1,7 +1,7 @@
-defmodule RadioBeam.OAuth2.BuiltinTest do
+defmodule RadioBeam.User.Authentication.OAuth2.BuiltinTest do
   use ExUnit.Case, async: true
-  alias RadioBeam.OAuth2.Builtin
-  alias RadioBeam.OAuth2.Builtin.DynamicOAuth2Client
+  alias RadioBeam.User.Authentication.OAuth2.Builtin
+  alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
 
   @valid_native_redirect_uris [
     "http://localhost",

@@ -1,4 +1,4 @@
-defmodule RadioBeam.OAuth2.UserDeviceSession do
+defmodule RadioBeam.User.Authentication.OAuth2.UserDeviceSession do
   @moduledoc false
   alias RadioBeam.Repo
   alias RadioBeam.User

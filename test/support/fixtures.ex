@@ -97,7 +97,7 @@ defmodule Fixtures do
     device_id = device_id()
 
     %{user: user, device: device} =
-      RadioBeam.OAuth2.UserDeviceSession.new_from_user!(user, device_id, display_name: display_name)
+      RadioBeam.User.Authentication.OAuth2.UserDeviceSession.new_from_user!(user, device_id, display_name: display_name)
 
     {user, device}
   end

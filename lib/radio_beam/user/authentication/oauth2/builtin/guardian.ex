@@ -1,8 +1,8 @@
-defmodule RadioBeam.OAuth2.Builtin.Guardian do
+defmodule RadioBeam.User.Authentication.OAuth2.Builtin.Guardian do
   @moduledoc false
   use Guardian, otp_app: :radio_beam
 
-  alias RadioBeam.OAuth2.UserDeviceSession
+  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
   alias RadioBeam.User
 
   def subject_for_token(%UserDeviceSession{user: user, device: device}, _claims), do: {:ok, device.id <> user.id}

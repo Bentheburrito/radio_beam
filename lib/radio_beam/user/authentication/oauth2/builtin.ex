@@ -1,13 +1,13 @@
-defmodule RadioBeam.OAuth2.Builtin do
+defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   @moduledoc """
   A minimal, built-in OAuth 2.0 authorization server for Matrix clients.
   """
-  @behaviour RadioBeam.OAuth2
+  @behaviour RadioBeam.User.Authentication.OAuth2
 
-  alias RadioBeam.OAuth2.Builtin.AuthzCodeCache
-  alias RadioBeam.OAuth2.Builtin.DynamicOAuth2Client
-  alias RadioBeam.OAuth2.Builtin.Guardian
-  alias RadioBeam.OAuth2.UserDeviceSession
+  alias RadioBeam.User.Authentication.OAuth2.Builtin.AuthzCodeCache
+  alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
+  alias RadioBeam.User.Authentication.OAuth2.Builtin.Guardian
+  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
   alias RadioBeam.Repo
   alias RadioBeam.User
   alias RadioBeam.User.Device
@@ -15,7 +15,7 @@ defmodule RadioBeam.OAuth2.Builtin do
   @required_grant_types ["authorization_code", "refresh_token"]
   @num_code_gen_bytes 32
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def metadata do
     %{
       code_challenge_methods_supported: ["S256"],
@@ -26,7 +26,7 @@ defmodule RadioBeam.OAuth2.Builtin do
     }
   end
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def register_client(client_metadata_attrs) do
     with {:ok, app_type} <- validate_appliation_type(client_metadata_attrs),
          {:ok, %URI{} = client_uri} <- validate_client_uri(client_metadata_attrs),
@@ -210,12 +210,12 @@ defmodule RadioBeam.OAuth2.Builtin do
       else: {:error, :unsupported_token_endpoint_auth_method}
   end
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def lookup_client(client_id) do
     with {:error, :not_found} <- Repo.fetch(DynamicOAuth2Client, client_id), do: {:error, :client_not_found}
   end
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def validate_authz_code_grant_params(params) do
     server_metadata = metadata()
 
@@ -323,7 +323,7 @@ defmodule RadioBeam.OAuth2.Builtin do
   defp parse_prompt(nil), do: {:ok, :login}
   defp parse_prompt(_unrecognized_prompt), do: {:error, :prompt}
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_password(user_id, password, code_grant_values) do
     case Repo.fetch(User, user_id) do
       {:ok, %User{} = user} ->
@@ -352,7 +352,7 @@ defmodule RadioBeam.OAuth2.Builtin do
     end
   end
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def exchange_authz_code_for_tokens(
         code,
         code_verifier,
@@ -401,7 +401,7 @@ defmodule RadioBeam.OAuth2.Builtin do
     Repo.insert(user)
   end
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_access_token(token, device_ip) do
     Repo.transaction(fn -> verify_token(token, device_ip) end)
   end
@@ -426,7 +426,7 @@ defmodule RadioBeam.OAuth2.Builtin do
     end
   end
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def refresh_token(refresh_token) do
     Repo.transaction(fn ->
       with {:ok, new_access_token, new_refresh_token, scope, expires_at} <- refresh_tokens(refresh_token) do
@@ -479,7 +479,7 @@ defmodule RadioBeam.OAuth2.Builtin do
     end
   end
 
-  @impl RadioBeam.OAuth2
+  @impl RadioBeam.User.Authentication.OAuth2
   def revoke_token(token) do
     case Guardian.resource_from_token(token) do
       {:ok, %UserDeviceSession{} = session, claims} ->

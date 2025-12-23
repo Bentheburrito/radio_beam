@@ -1,4 +1,4 @@
-defmodule RadioBeam.OAuth2.Builtin.DynamicOAuth2Client do
+defmodule RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client do
   @moduledoc false
   defstruct [
     :client_id,

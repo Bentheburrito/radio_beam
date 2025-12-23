@@ -5,7 +5,7 @@ defmodule RadioBeam.Repo do
 
   require Logger
 
-  alias RadioBeam.OAuth2.Builtin.DynamicOAuth2Client
+  alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Room
   alias RadioBeam.Repo.Tables

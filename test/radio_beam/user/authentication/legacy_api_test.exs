@@ -24,7 +24,7 @@ defmodule RadioBeam.User.Authentication.LegacyAPITest do
                LegacyAPI.password_login(user.id, Fixtures.strong_password(), device_id, display_name)
 
       assert {:ok, %{device: %{id: ^device_id, display_name: ^display_name}}} =
-               RadioBeam.OAuth2.authenticate_user_by_access_token(at, {127, 0, 0, 1})
+               RadioBeam.User.Authentication.OAuth2.authenticate_user_by_access_token(at, {127, 0, 0, 1})
     end
   end
 

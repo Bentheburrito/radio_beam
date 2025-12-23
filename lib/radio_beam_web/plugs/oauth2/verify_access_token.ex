@@ -5,8 +5,8 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken do
   import Plug.Conn
   import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4]
 
-  alias RadioBeam.OAuth2
-  alias RadioBeam.OAuth2.UserDeviceSession
+  alias RadioBeam.User.Authentication.OAuth2
+  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
 
   require Logger
 

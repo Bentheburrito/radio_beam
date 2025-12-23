@@ -1,4 +1,4 @@
-defmodule RadioBeam.OAuth2.Builtin.AuthzCodeCache do
+defmodule RadioBeam.User.Authentication.OAuth2.Builtin.AuthzCodeCache do
   @moduledoc false
   use GenServer
 

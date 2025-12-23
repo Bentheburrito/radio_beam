@@ -3,7 +3,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
 
   import RadioBeamWeb.Utils, only: [json_error: 4]
 
-  alias RadioBeam.OAuth2
+  alias RadioBeam.User.Authentication.OAuth2
 
   require Logger
 

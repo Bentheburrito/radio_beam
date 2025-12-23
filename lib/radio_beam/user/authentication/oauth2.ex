@@ -1,4 +1,4 @@
-defmodule RadioBeam.OAuth2 do
+defmodule RadioBeam.User.Authentication.OAuth2 do
   @moduledoc """
   The main API for user authentication via OAuth 2.0. Includes a behaviour to
   interface with dedicated authorization servers.
