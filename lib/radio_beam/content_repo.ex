@@ -3,13 +3,13 @@ defmodule RadioBeam.ContentRepo do
   The content/media repository. Manages user-uploaded files, authorizing based
   on configured limits.
   """
+  alias RadioBeam.Database
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Thumbnail
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.PubSub, as: PS
-  alias RadioBeam.Repo
 
   @type quota_kind() :: :max_reserved | :max_files | :max_bytes
 
@@ -55,7 +55,7 @@ defmodule RadioBeam.ContentRepo do
     timeout = Keyword.get_lazy(opts, :timeout, &max_wait_for_download_ms/0)
     PS.subscribe(PS.file_uploaded(mxc))
 
-    case Repo.fetch(Upload, mxc) do
+    case Database.fetch(Upload, mxc) do
       {:ok, %Upload{file: %FileInfo{byte_size: byte_size}}} when byte_size > max_size_bytes -> {:error, :too_large}
       {:ok, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload}
       {:ok, %Upload{file: :reserved}} -> await_upload(timeout)
@@ -126,7 +126,7 @@ defmodule RadioBeam.ContentRepo do
   def create(%User{} = reserver) do
     %{max_reserved: max_reserved, max_files: max_files} = user_upload_limits()
 
-    Repo.transaction(fn ->
+    Database.transaction(fn ->
       user_upload_counts = Upload.user_upload_counts(reserver.id)
       reserved_count = Map.get(user_upload_counts, :reserved, 0)
       total_count = Map.get(user_upload_counts, :uploaded, 0) + reserved_count
@@ -146,7 +146,7 @@ defmodule RadioBeam.ContentRepo do
   @spec upload(Upload.t(), FileInfo.t(), Path.t()) ::
           {:ok, Upload.t()} | {:error, :too_large | {:quota_reached, :max_bytes} | File.posix()}
   def upload(%Upload{file: :reserved} = upload, %FileInfo{} = file_info, tmp_upload_path, repo_path \\ path()) do
-    Repo.transaction(fn ->
+    Database.transaction(fn ->
       with :ok <- validate_upload_size(upload.uploaded_by_id, file_info.byte_size),
            {:ok, %Upload{} = upload} <- upload |> Upload.put_file(file_info) |> Upload.put(),
            :ok <- copy_upload_if_no_exists(tmp_upload_path, upload_file_path(upload, repo_path)) do

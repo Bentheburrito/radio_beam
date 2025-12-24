@@ -1,7 +1,7 @@
 defmodule RadioBeam.Room.Sync do
   @moduledoc false
   alias RadioBeam.PubSub
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.Events.PaginationToken
@@ -100,7 +100,7 @@ defmodule RadioBeam.Room.Sync do
 
   @spec perform(t(), Room.id()) :: :no_update | JoinedRoomResult.t() | InvitedRoomResult.t()
   defp perform(%__MODULE__{} = sync, room_id) do
-    with {:ok, room} <- Repo.fetch(Room, room_id) do
+    with {:ok, room} <- Database.fetch(Room, room_id) do
       room_sync_result = Core.perform(sync, room)
 
       maybe_next_batch_event_id = get_next_batch_event_id(sync.start, room_id, room_sync_result)
@@ -161,7 +161,7 @@ defmodule RadioBeam.Room.Sync do
           end
 
         {:room_ephemeral_state_update, room_id, %EphemeralState{} = state}, sync_result ->
-          case Repo.fetch(Room, room_id) do
+          case Database.fetch(Room, room_id) do
             {:ok, room} ->
               room_sync_result =
                 case Room.State.fetch(room.state, "m.room.member", sync.user.id) do

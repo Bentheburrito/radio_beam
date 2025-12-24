@@ -3,12 +3,9 @@ defmodule RadioBeam.ContentRepo.Upload do
   An `%Upload{}` represents a user-uploaded file on disk, including metadata
   such as its size and who it was uploaded by.
   """
-  use Memento.Table,
-    attributes: ~w|id file inserted_at uploaded_by_id|a,
-    index: [:uploaded_by_id],
-    type: :set
+  defstruct ~w|id file inserted_at uploaded_by_id|a
 
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload.FileInfo
@@ -46,28 +43,19 @@ defmodule RadioBeam.ContentRepo.Upload do
     %__MODULE__{upload | file: file_info}
   end
 
-  def put(%__MODULE__{file: nil} = upload), do: Repo.insert(%__MODULE__{upload | file: :reserved})
-  def put(%__MODULE__{} = upload), do: Repo.insert(upload)
+  def put(%__MODULE__{file: file} = upload) do
+    upload = if is_nil(file), do: %__MODULE__{upload | file: :reserved}, else: upload
+    :ok = Database.insert(upload)
+    {:ok, upload}
+  end
 
   def user_total_uploaded_bytes("@" <> _ = uploaded_by_id) do
-    match_head = {__MODULE__, :_, :"$1", :_, uploaded_by_id}
-    match_spec = [{match_head, [{:is_map, :"$1"}], [:"$1"]}]
-
-    __MODULE__
-    |> Memento.Query.select_raw(match_spec, coerce: false)
-    |> Stream.map(& &1.byte_size)
-    |> Enum.sum()
+    # temp
+    RadioBeam.Database.Mnesia.user_total_uploaded_bytes(uploaded_by_id)
   end
 
   def user_upload_counts("@" <> _ = uploaded_by_id) do
-    match_head = {__MODULE__, :_, :"$1", :_, uploaded_by_id}
-    match_spec = [{match_head, [], [:"$1"]}]
-
-    __MODULE__
-    |> Memento.Query.select_raw(match_spec, coerce: false)
-    |> Enum.reduce(%{}, fn
-      :reserved, acc -> Map.update(acc, :reserved, 1, &(&1 + 1))
-      %FileInfo{}, acc -> Map.update(acc, :uploaded, 1, &(&1 + 1))
-    end)
+    # temp
+    RadioBeam.Database.Mnesia.user_upload_counts(uploaded_by_id)
   end
 end

@@ -14,6 +14,8 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client do
     :tos_uri
   ]
 
+  @type t() :: %__MODULE__{}
+
   def new!(init_params) do
     init_params_binary = :erlang.term_to_binary(init_params)
     client_id = :sha256 |> :crypto.hash(init_params_binary) |> Base.encode16(case: :lower)

@@ -17,9 +17,7 @@ defmodule RadioBeam.User do
 
   @type id() :: String.t()
 
-  use Memento.Table,
-    attributes: @attrs,
-    type: :set
+  defstruct @attrs
 
   import Ecto.Changeset
 

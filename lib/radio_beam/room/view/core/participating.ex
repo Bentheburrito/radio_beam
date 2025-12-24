@@ -4,6 +4,8 @@ defmodule RadioBeam.Room.View.Core.Participating do
   """
   defstruct latest_known_join_pdus: %{}, all: MapSet.new()
 
+  @type t() :: %__MODULE__{}
+
   alias RadioBeam.Room.PDU
 
   def new!(), do: %__MODULE__{}

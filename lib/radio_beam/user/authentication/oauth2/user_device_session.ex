@@ -1,6 +1,6 @@
 defmodule RadioBeam.User.Authentication.OAuth2.UserDeviceSession do
   @moduledoc false
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
@@ -21,7 +21,8 @@ defmodule RadioBeam.User.Authentication.OAuth2.UserDeviceSession do
         {:error, :not_found} -> Device.new(device_id, device_opts)
       end
 
-    %User{} = user = user |> User.put_device(device) |> Repo.insert!()
+    user = User.put_device(user, device)
+    :ok = Database.insert!(user)
     %__MODULE__{user: user, device: device}
   end
 end

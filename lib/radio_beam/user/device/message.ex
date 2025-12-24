@@ -3,7 +3,7 @@ defmodule RadioBeam.User.Device.Message do
   Functions for Send-to-Device messaging
   """
 
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
@@ -34,11 +34,11 @@ defmodule RadioBeam.User.Device.Message do
   def put_many(empty, _sender_id, _type) when map_size(empty) == 0, do: :ok
 
   def put_many(put_request, sender_id, type) do
-    Repo.transaction(fn ->
+    Database.transaction(fn ->
       put_request
       |> parse_request(sender_id, type)
       |> Enum.find_value(:ok, fn {user, device_id, message} ->
-        with {:ok, %User{}} <- persist(user, device_id, message), do: false
+        with :ok <- persist(user, device_id, message), do: false
       end)
     end)
   end
@@ -46,7 +46,7 @@ defmodule RadioBeam.User.Device.Message do
   defp persist(user, device_id, %__MODULE__{} = message) do
     with {:ok, %Device{} = device} <- User.get_device(user, device_id) do
       messages = Map.update(device.messages, :unsent, [message], &[message | &1])
-      Repo.insert(put_in(user.device_map[device.id].messages, messages))
+      Database.insert(put_in(user.device_map[device.id].messages, messages))
     end
   end
 
@@ -58,7 +58,7 @@ defmodule RadioBeam.User.Device.Message do
       end)
     end)
     |> Stream.flat_map(fn {user_id, device_id_or_glob, message} ->
-      case Repo.fetch(User, user_id, lock: :write) do
+      case Database.fetch(User, user_id, lock: :write) do
         {:ok, %User{} = user} -> user |> expand_device_id(device_id_or_glob) |> Stream.map(&{user, &1, message})
         # TODO: raise if user not found?
         # TOIMPL: put device over federation
@@ -77,8 +77,8 @@ defmodule RadioBeam.User.Device.Message do
   messages that are assumed to be delivered successfully at this point.
   """
   def take_unsent(user_id, device_id, since_token, mark_as_read \\ nil) do
-    Repo.transaction(fn ->
-      {:ok, %User{} = user} = Repo.fetch(User, user_id, lock: :write)
+    Database.transaction(fn ->
+      {:ok, %User{} = user} = Database.fetch(User, user_id, lock: :write)
       {:ok, %Device{messages: message_map}} = User.get_device(user, device_id)
 
       # TOIMPL: only take first 100 msgs
@@ -101,11 +101,11 @@ defmodule RadioBeam.User.Device.Message do
 
       case desc_ordered_messages do
         [] ->
-          Repo.insert!(put_in(user.device_map[device_id].messages, %{}))
+          Database.insert!(put_in(user.device_map[device_id].messages, %{}))
           :none
 
         [_ | _] ->
-          Repo.insert!(put_in(user.device_map[device_id].messages, %{since_token => desc_ordered_messages}))
+          Database.insert!(put_in(user.device_map[device_id].messages, %{since_token => desc_ordered_messages}))
           {:ok, Enum.reverse(desc_ordered_messages)}
       end
     end)

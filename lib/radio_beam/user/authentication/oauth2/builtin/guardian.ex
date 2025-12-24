@@ -13,7 +13,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin.Guardian do
 
   defp lookup_user(composite_id) do
     with [device_id, user_id] <- String.split(composite_id, "@", parts: 2),
-         {:ok, %User{} = user} <- RadioBeam.Repo.fetch(User, "@" <> user_id) do
+         {:ok, %User{} = user} <- RadioBeam.Database.fetch(User, "@" <> user_id) do
       UserDeviceSession.existing_from_user(user, device_id)
     else
       _ -> {:error, :not_found}

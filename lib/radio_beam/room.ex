@@ -9,7 +9,7 @@ defmodule RadioBeam.Room do
   require Logger
 
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Events
@@ -269,6 +269,6 @@ defmodule RadioBeam.Room do
     do: Enum.sort_by(event_stream, & &1.order_id, {:desc, TopologicalID})
 
   defp get(id) do
-    with {:error, :not_found} <- Repo.fetch(Repo.Tables.Room, id), do: {:error, :unauthorized}
+    with {:error, :not_found} <- Database.fetch(Room, id), do: {:error, :unauthorized}
   end
 end

@@ -2,7 +2,7 @@ defmodule RadioBeam.User.Keys do
   @moduledoc """
   Query a User's Device and CrossSigningKeys
   """
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
@@ -16,20 +16,21 @@ defmodule RadioBeam.User.Keys do
   @type put_signatures_error() :: :unknown_key | :disallowed_key_type | :no_master_csk | :user_not_found
 
   def put_device_keys(user_id, device_id, opts) do
-    Repo.transaction(fn ->
-      with {:ok, %User{} = user} <- Repo.fetch(User, user_id, lock: :write),
+    Database.transaction(fn ->
+      with {:ok, %User{} = user} <- Database.fetch(User, user_id, lock: :write),
            {:ok, %Device{} = device} <- User.get_device(user, device_id),
            {:ok, %Device{} = device} <- Device.put_keys(device, user.id, opts) do
         user = User.put_device(user, device)
-        Repo.insert(user)
+        :ok = Database.insert(user)
+        {:ok, user}
       end
     end)
   end
 
   def claim_otks(user_device_algo_map) do
-    Repo.transaction(fn ->
+    Database.transaction(fn ->
       user_ids = Map.keys(user_device_algo_map)
-      user_map = User |> Repo.get_all(user_ids) |> Map.new(&{&1.id, &1})
+      user_map = User |> Database.get_all(user_ids) |> Map.new(&{&1.id, &1})
 
       user_device_key_map =
         user_device_algo_map
@@ -37,7 +38,7 @@ defmodule RadioBeam.User.Keys do
         |> User.claim_device_otks()
 
       Map.new(user_device_key_map, fn {%User{} = updated_user, device_key_map} ->
-        Repo.insert(updated_user)
+        :ok = Database.insert(updated_user)
         {updated_user.id, device_key_map}
       end)
     end)
@@ -47,7 +48,7 @@ defmodule RadioBeam.User.Keys do
     since_created_at = PaginationToken.created_at(since)
 
     {shared_memberships_by_user, since_event_map} =
-      Repo.transaction(fn ->
+      Database.transaction(fn ->
         room_ids = Room.joined(user.id)
 
         shared_memberships_by_user =
@@ -101,7 +102,7 @@ defmodule RadioBeam.User.Keys do
   end
 
   defp zip_with_user(member_event) do
-    case Repo.fetch(User, member_event.state_key) do
+    case Database.fetch(User, member_event.state_key) do
       {:ok, user} -> {user, member_event}
       {:error, :not_found} -> {nil, member_event}
     end
@@ -116,14 +117,14 @@ defmodule RadioBeam.User.Keys do
   """
   @spec query_all(%{User.id() => [Device.id()]}, User.id()) :: map()
   def query_all(query_map, querying_user_id) do
-    Repo.transaction(fn ->
-      with {:ok, querying_user} <- Repo.fetch(User, querying_user_id) do
+    Database.transaction(fn ->
+      with {:ok, querying_user} <- Database.fetch(User, querying_user_id) do
         Enum.reduce(query_map, %{}, fn
           {^querying_user_id, device_ids}, key_results ->
             add_authz_keys(key_results, querying_user, querying_user, device_ids)
 
           {user_id, device_ids}, key_results ->
-            case Repo.fetch(User, user_id) do
+            case Database.fetch(User, user_id) do
               {:error, :not_found} -> key_results
               {:ok, user} -> add_authz_keys(key_results, user, device_ids)
             end
@@ -167,8 +168,8 @@ defmodule RadioBeam.User.Keys do
   def put_signatures(signer_user_id, user_key_map) do
     {self_signatures, others_signatures} = Map.pop(user_key_map, signer_user_id)
 
-    Repo.transaction(fn ->
-      case Repo.fetch(User, signer_user_id) do
+    Database.transaction(fn ->
+      case Database.fetch(User, signer_user_id) do
         {:ok, signer} when map_size(others_signatures) == 0 or not is_nil(signer.cross_signing_key_ring.user) ->
           case Map.merge(put_self_signatures(self_signatures, signer), put_others_signatures(others_signatures, signer)) do
             failures when map_size(failures) == 0 -> :ok
@@ -195,7 +196,7 @@ defmodule RadioBeam.User.Keys do
       end)
       |> Enum.reduce(failures, fn
         {:ok, %User{} = user}, failures ->
-          Repo.insert(user)
+          Database.insert(user)
           failures
 
         {:error, error}, failures ->
@@ -228,7 +229,7 @@ defmodule RadioBeam.User.Keys do
 
   defp put_others_signatures(others_signatures, signer) do
     user_ids = Map.keys(others_signatures)
-    user_map = User |> Repo.get_all(user_ids) |> Map.new(&{&1.id, &1})
+    user_map = User |> Database.get_all(user_ids) |> Map.new(&{&1.id, &1})
 
     others_signatures
     |> Stream.flat_map(fn {user_id, key_map} ->
@@ -237,7 +238,7 @@ defmodule RadioBeam.User.Keys do
     |> Stream.map(&put_others_signature(&1, signer, user_map))
     |> Enum.reduce(_failures = %{}, fn
       {:ok, %User{} = user}, failures ->
-        Repo.insert(user)
+        Database.insert(user)
         failures
 
       {:error, {user_id, keyb64, error}}, failures ->

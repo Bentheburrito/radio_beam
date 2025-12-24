@@ -6,7 +6,7 @@ defmodule RadioBeam.Room.Server do
   """
   use GenServer
 
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
@@ -23,7 +23,7 @@ defmodule RadioBeam.Room.Server do
 
   def create(version, creator_id, opts) do
     with {%Room{} = room, pdu_queue} <- Room.Core.new(version, creator_id, deps(), opts),
-         %Room{} <- Repo.insert!(room),
+         :ok <- Database.insert!(room),
          {:ok, _pid} <- Supervisor.start_room(room, pdu_queue) do
       {:ok, room.id}
     end
@@ -41,7 +41,7 @@ defmodule RadioBeam.Room.Server do
       _ ->
         Logger.debug("Room.Server for #{room_id} is not alive, trying to start...")
 
-        case Repo.fetch(Repo.Tables.Room, room_id) do
+        case Database.fetch(Room, room_id) do
           {:ok, %Room{} = room} ->
             with {:ok, pid} <- Supervisor.start_room(room), do: GenServer.call(pid, message)
 
@@ -80,7 +80,7 @@ defmodule RadioBeam.Room.Server do
   def handle_call({:send, event_attrs}, _from, %Room{} = room) do
     case Room.Core.send(room, event_attrs, deps()) do
       {:sent, %Room{} = room, %PDU{event: event} = pdu} ->
-        Repo.insert!(room)
+        Database.insert!(room)
 
         Room.View.handle_pdu(room, pdu)
 

@@ -3,7 +3,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
   The main API for user authentication via OAuth 2.0. Includes a behaviour to
   interface with dedicated authorization servers.
   """
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.User
 
   @type ip_tuple() :: {non_neg_integer(), non_neg_integer(), non_neg_integer(), non_neg_integer()}
@@ -117,7 +117,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
   def authenticate_user_by_password(user_id, password, code_grant_values, oauth2_module \\ oauth2_module()) do
     if code_grant_values.prompt == :create do
       with {:ok, %User{} = user} <- User.new(user_id, password),
-           {:ok, _user} <- Repo.insert_new(user) do
+           :ok <- Database.insert_new(user) do
         oauth2_module.authenticate_user_by_password(user_id, password, code_grant_values)
       end
     else

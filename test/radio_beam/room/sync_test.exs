@@ -211,8 +211,6 @@ defmodule RadioBeam.Room.SyncTest do
           "ignored_users" => %{annoying_user.id => %{}}
         })
 
-      # {:ok, user} = RadioBeam.Repo.fetch(RadioBeam.User, user.id)
-
       {:ok, room_id} = Room.create(creator)
       {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
       {:ok, _event_id} = Room.join(room_id, user.id)
@@ -256,8 +254,6 @@ defmodule RadioBeam.Room.SyncTest do
           "ignored_users" => %{annoying_user.id => %{}}
         })
 
-      # {:ok, user} = RadioBeam.Repo.fetch(RadioBeam.User, user.id)
-
       {:ok, room_id} = Room.create(annoying_user)
       {:ok, _event_id} = Room.invite(room_id, annoying_user.id, user.id)
 
@@ -265,7 +261,6 @@ defmodule RadioBeam.Room.SyncTest do
                user |> Sync.init(device.id) |> Sync.perform()
 
       {:ok, user} = RadioBeam.User.Account.put(user.id, :global, "m.ignored_user_list", %{"ignored_users" => %{}})
-      # {:ok, user} = RadioBeam.Repo.fetch(RadioBeam.User, user.id)
 
       assert %Sync.Result{data: [%InvitedRoomResult{room_id: ^room_id}]} =
                user

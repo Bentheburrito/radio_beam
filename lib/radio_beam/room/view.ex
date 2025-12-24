@@ -1,15 +1,14 @@
 defmodule RadioBeam.Room.View do
   @moduledoc false
+  alias RadioBeam.Database
   alias RadioBeam.PubSub
-  alias RadioBeam.Repo
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
-  alias RadioBeam.Repo.Tables
-  alias RadioBeam.Repo.Tables.ViewState
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Timeline
+  alias RadioBeam.Room.View.State
   alias RadioBeam.User
 
   def handle_pdu(%Room{} = room, %PDU{} = pdu) do
@@ -29,7 +28,7 @@ defmodule RadioBeam.Room.View do
   end
 
   def timeline_event_stream(room_id, user_id, from) do
-    with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
+    with {:ok, %Room{} = room} <- Database.fetch(Room, room_id),
          {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
       {:ok, Timeline.topological_stream(timeline, user_id, from, &Room.DAG.fetch!(room.dag, &1))}
     end
@@ -43,7 +42,7 @@ defmodule RadioBeam.Room.View do
   end
 
   def get_events(room_id, user_id, event_ids) do
-    with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
+    with {:ok, %Room{} = room} <- Database.fetch(Room, room_id),
          {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
       {:ok, Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))}
     end
@@ -70,7 +69,7 @@ defmodule RadioBeam.Room.View do
   @spec get_child_events(Room.id(), User.id(), [Room.event_id()] | Room.event_id()) ::
           %{Room.event_id() => Enumerable.t(Event.t())} | {:ok, Enumerable.t(Event.t())} | {:error, :not_found}
   def get_child_events(room_id, user_id, event_ids) when is_list(event_ids) do
-    with {:ok, %Room{} = room} <- Repo.fetch(Tables.Room, room_id),
+    with {:ok, %Room{} = room} <- Database.fetch(Room, room_id),
          {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}),
          {:ok, %RelatedEvents{} = relations} <- fetch_view({RelatedEvents, room_id}) do
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
@@ -103,12 +102,12 @@ defmodule RadioBeam.Room.View do
   end
 
   defp fetch_view(key) do
-    with {:ok, %ViewState{value: view_state}} <- Repo.fetch(ViewState, key) do
+    with {:ok, %State{state: view_state}} <- Database.fetch(State, key) do
       {:ok, view_state}
     end
   end
 
-  defp save_view!(view_state, key), do: Repo.insert!(%ViewState{key: key, value: view_state})
+  defp save_view!(view_state, key), do: Database.insert!(%State{key: key, state: view_state})
 
   defp broadcast!(pubsub_topic, pubsub_message), do: PubSub.broadcast(pubsub_topic, pubsub_message)
 end

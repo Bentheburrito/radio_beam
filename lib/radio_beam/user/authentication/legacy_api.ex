@@ -7,7 +7,7 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
   """
 
   alias RadioBeam.User.Authentication.OAuth2
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
@@ -19,8 +19,9 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
           {:ok, User.t()} | {:error, :registration_disabled | :already_exists | Ecto.Changeset.t()}
   def register(localpart, server_name \\ RadioBeam.server_name(), password) do
     if Application.get_env(:radio_beam, :registration_enabled, false) do
-      with {:ok, %User{} = user} <- User.new("@#{localpart}:#{server_name}", password) do
-        Repo.insert_new(user)
+      with {:ok, %User{} = user} <- User.new("@#{localpart}:#{server_name}", password),
+           :ok <- Database.insert_new(user) do
+        {:ok, user}
       end
     else
       {:error, :registration_disabled}

@@ -6,7 +6,7 @@ defmodule RadioBeam.Room.Timeline do
 
   require Logger
 
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
@@ -30,10 +30,10 @@ defmodule RadioBeam.Room.Timeline do
   """
   # credo:disable-for-lines:93 Credo.Check.Refactor.CyclomaticComplexity
   def get_messages(room_id, user_id, device_id, from_token, opts \\ []) do
-    Repo.transaction(fn ->
+    Database.transaction(fn ->
       with :ok <- check_membership(room_id, user_id),
-           {:ok, user} = Repo.fetch(User, user_id),
-           {:ok, %Room{} = room} <- Repo.fetch(Room, room_id),
+           {:ok, user} = Database.fetch(User, user_id),
+           {:ok, %Room{} = room} <- Database.fetch(Room, room_id),
            {:ok, from, direction} <- map_from_pagination_token(from_token, room_id),
            {:ok, user_event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
         ignored_user_ids =

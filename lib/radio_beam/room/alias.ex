@@ -3,11 +3,9 @@ defmodule RadioBeam.Room.Alias do
   This table maps room aliases to room IDs
   """
 
-  use Memento.Table,
-    attributes: [:alias_tuple, :room_id],
-    type: :set
+  defstruct ~w|alias_tuple room_id|a
 
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
 
   @type t() :: %__MODULE__{}
 
@@ -24,10 +22,17 @@ defmodule RadioBeam.Room.Alias do
     with {:ok, alias_localpart, server_name} <- validate(alias) do
       alias_tuple = {alias_localpart, server_name}
 
-      Repo.transaction(fn ->
-        case Repo.fetch(__MODULE__, alias_tuple) do
-          {:ok, %__MODULE__{}} -> {:error, :alias_in_use}
-          {:error, :not_found} -> Repo.insert(%__MODULE__{alias_tuple: alias_tuple, room_id: room_id})
+      Database.transaction(fn ->
+        case Database.fetch(__MODULE__, alias_tuple) do
+          {:ok, %__MODULE__{}} ->
+            {:error, :alias_in_use}
+
+          {:error, :not_found} ->
+            alias = %__MODULE__{alias_tuple: alias_tuple, room_id: room_id}
+
+            with :ok <- Database.insert(alias) do
+              {:ok, alias}
+            end
         end
       end)
     end
@@ -51,7 +56,7 @@ defmodule RadioBeam.Room.Alias do
 
   def get_room_id(alias) do
     with {:ok, localpart, server_name} <- validate(alias),
-         {:ok, %__MODULE__{room_id: room_id}} <- Repo.fetch(__MODULE__, {localpart, server_name}) do
+         {:ok, %__MODULE__{room_id: room_id}} <- Database.fetch(__MODULE__, {localpart, server_name}) do
       {:ok, room_id}
     end
   end

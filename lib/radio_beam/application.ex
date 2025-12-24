@@ -11,13 +11,10 @@ defmodule RadioBeam.Application do
 
   @impl Application
   def start(_type, _args) do
-    Logger.info("Initializing Mnesia...")
-    db_init_result = RadioBeam.Repo.init_mnesia()
-    Logger.info("Mnesia init finished with result: #{inspect(db_init_result)}")
+    :ok = RadioBeam.Database.init()
 
     children = [
       RadioBeamWeb.Telemetry,
-      # RadioBeam.Repo,
       {DNSCluster, query: Application.get_env(:radio_beam, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: RadioBeam.PubSub},
       # Start the Finch HTTP client for sending emails

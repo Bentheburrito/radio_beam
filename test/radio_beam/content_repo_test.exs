@@ -2,7 +2,7 @@ defmodule RadioBeam.ContentRepoTest do
   use ExUnit.Case, async: true
   doctest RadioBeam.ContentRepo
 
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
   alias RadioBeam.ContentRepo.Thumbnail
   alias Vix.Vips.Operation
   alias Vix.Vips.Image
@@ -146,7 +146,7 @@ defmodule RadioBeam.ContentRepoTest do
     } do
       assert {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, tmp_dir)
       assert IO.iodata_to_binary(iodata) == File.read!(ContentRepo.upload_file_path(upload, tmp_dir))
-      assert {:ok, ^upload} = Repo.fetch(Upload, upload.id)
+      assert {:ok, ^upload} = Database.fetch(Upload, upload.id)
     end
 
     test "errors when a user has reached their max total file size limit", %{

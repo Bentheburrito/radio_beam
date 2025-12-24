@@ -6,7 +6,7 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
 
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
-  alias RadioBeam.Repo
+  alias RadioBeam.Database
 
   @type t() :: %__MODULE__{
           master: CrossSigningKey.t() | nil,
@@ -28,8 +28,8 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
           | {:error, :not_found | :missing_master_key | :missing_or_invalid_master_key_signatures}
           | CrossSigningKey.parse_error()
   def put(user_id, opts) do
-    Repo.transaction(fn ->
-      with {:ok, %User{} = user} <- Repo.fetch(User, user_id, lock: :write) do
+    Database.transaction(fn ->
+      with {:ok, %User{} = user} <- Database.fetch(User, user_id, lock: :write) do
         master_key = Keyword.get(opts, :master_key, user.cross_signing_key_ring.master)
         self_signing_key = Keyword.get(opts, :self_signing_key, user.cross_signing_key_ring.self)
         user_signing_key = Keyword.get(opts, :user_signing_key, user.cross_signing_key_ring.user)
@@ -52,9 +52,13 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
                 user: user_signing_key
               }
 
-              user
-              |> struct!(cross_signing_key_ring: key_ring, last_cross_signing_change_at: System.os_time(:millisecond))
-              |> Repo.insert()
+              user =
+                struct!(user,
+                  cross_signing_key_ring: key_ring,
+                  last_cross_signing_change_at: System.os_time(:millisecond)
+                )
+
+              with :ok <- Database.insert(user), do: {:ok, user}
           end
         end
       end

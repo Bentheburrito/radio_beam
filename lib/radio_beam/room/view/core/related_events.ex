@@ -4,6 +4,8 @@ defmodule RadioBeam.Room.View.Core.RelatedEvents do
   """
   defstruct related_by_event_id: %{}
 
+  @type t() :: %__MODULE__{}
+
   alias RadioBeam.Room.PDU
 
   def new!, do: %__MODULE__{}
