@@ -17,7 +17,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   require Logger
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: ContentRepoSchema] when action in [:thumbnail, :download]
-  plug :parse_mxc_and_fetch_upload when action in [:thumbnail, :download]
+  plug :parse_mxc when action in [:thumbnail, :download]
 
   plug :get_or_reserve_upload when action == :upload
   plug :parse_mime when action == :upload
@@ -32,23 +32,31 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   def download(conn, params) do
-    upload = conn.assigns.upload
+    request = conn.assigns.request
+    mxc = conn.assigns.mxc
 
-    content_type = MIME.type(upload.file.type)
-    disposition = if content_type in content_types_to_inline(), do: :inline, else: :attachment
+    case ContentRepo.get(mxc, timeout: request["timeout_ms"]) do
+      {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} ->
+        content_type = MIME.type(upload.file.type)
+        disposition = if content_type in content_types_to_inline(), do: :inline, else: :attachment
 
-    send_download(conn, {:file, ContentRepo.upload_file_path(upload)},
-      filename: Map.get(params, "filename", upload.file.filename),
-      content_type: content_type,
-      disposition: disposition
-    )
+        send_download(conn, {:file, ContentRepo.upload_file_path(upload)},
+          filename: Map.get(params, "filename", upload.file.filename),
+          content_type: content_type,
+          disposition: disposition
+        )
+
+      error ->
+        handle_error(conn, error)
+    end
   end
 
   def thumbnail(conn, _params) do
     request = conn.assigns.request
-    upload = conn.assigns.upload
+    mxc = conn.assigns.mxc
 
     with {:ok, spec} <- Thumbnail.coerce_spec(request["width"], request["height"], request["method"]),
+         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} <- ContentRepo.get(mxc, timeout: request["timeout_ms"]),
          {:ok, thumbnail_path} <- ContentRepo.get_thumbnail(upload, spec) do
       send_download(conn, {:file, thumbnail_path},
         filename: "thumbnail.#{upload.file.type}",
@@ -61,6 +69,9 @@ defmodule RadioBeamWeb.ContentRepoController do
 
       {:error, {:cannot_thumbnail, type}} ->
         json_error(conn, 400, :unknown, "This homeserver does not support thumbnailing #{type} files")
+
+      error ->
+        handle_error(conn, error)
     end
   end
 
@@ -113,23 +124,20 @@ defmodule RadioBeamWeb.ContentRepoController do
 
   ### HELPERS / PLUGS ###
 
-  defp parse_mxc_and_fetch_upload(conn, _opts) do
-    %{"server_name" => server_name, "media_id" => media_id} = request = conn.assigns.request
+  defp parse_mxc(conn, _opts) do
+    %{"server_name" => server_name, "media_id" => media_id} = conn.assigns.request
 
-    timeout =
-      case Map.fetch(request, "timeout_ms") do
-        {:ok, timeout} -> timeout
-        :error -> ContentRepo.max_wait_for_download_ms()
-      end
+    case MatrixContentURI.new(server_name, media_id) do
+      {:ok, %MatrixContentURI{} = mxc} -> assign(conn, :mxc, mxc)
+      {:error, reason} -> halting_json_error(conn, 400, :endpoint_error, [:bad_param, "Malformed MXC URI: #{reason}"])
+    end
+  end
 
-    with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
-         {:ok, %Upload{id: ^mxc, file: %FileInfo{}} = upload} <- ContentRepo.get(mxc, timeout: timeout) do
-      assign(conn, :upload, upload)
-    else
+  defp handle_error(conn, error) do
+    case error do
       {:error, :not_found} -> halting_json_error(conn, 404, :not_found, "File not found")
       {:error, :not_yet_uploaded} -> halting_not_yet_uploaded_error(conn)
       {:error, :too_large} -> halting_json_error(conn, 502, :endpoint_error, [:too_large, "File too large"])
-      {:error, reason} -> halting_json_error(conn, 400, :endpoint_error, [:bad_param, "Malformed MXC URI: #{reason}"])
     end
   end
 
@@ -155,6 +163,9 @@ defmodule RadioBeamWeb.ContentRepoController do
 
       {:ok, %Upload{}} ->
         halting_json_error(conn, 409, :endpoint_error, [:cannot_overwrite_media, @overwrite_error_msg])
+
+      error ->
+        handle_error(conn, error)
     end
   end
 
