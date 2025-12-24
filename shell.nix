@@ -1,9 +1,15 @@
-{ pkgs ? import <nixpkgs> { }, target }:
+{
+  pkgs ? import <nixpkgs> { },
+  target,
+}:
 with pkgs;
-mkShell {
+mkShellNoCC {
   packages = with pkgs; [
     tailwindcss_4
     esbuild
+    gnumake # for argon2
+    inotify-tools # for phoenix live-reload
+    beam28Packages.elixir_1_19
   ];
   # Set env vars
   # GREETING = "Hello, Nix!";

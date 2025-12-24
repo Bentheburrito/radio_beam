@@ -27,6 +27,7 @@ radio_beam-*.tar
 
 .vscode/
 .elixir_ls/
+.expert/
 .DS_Store
 .env
 .mnesia

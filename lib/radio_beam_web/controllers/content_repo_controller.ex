@@ -99,7 +99,7 @@ defmodule RadioBeamWeb.ContentRepoController do
         })
 
       {:error, {:quota_reached, :max_reserved}} ->
-        Logger.info("MEDIA QUOTA REACHED max_reserved: #{user} tried to upload a file after reaching a limit")
+        Logger.info("MEDIA QUOTA REACHED max_reserved: #{user.id} tried to upload a file after reaching a limit")
 
         json_error(conn, 429, :limit_exceeded, [
           ContentRepo.unused_mxc_uris_expire_in_ms(),

@@ -30,8 +30,7 @@ defmodule RadioBeam.Room.DAGTest do
                 pdu_map: %{^msg_event_id => ^expected_msg_pdu},
                 forward_extremities: [^msg_event_id],
                 next_stream_number: 2
-              } = dag,
-              ^expected_msg_pdu} =
+              } = dag, ^expected_msg_pdu} =
                DAG.append!(dag, msg_event)
 
       %{id: msg_event_id2} = msg_event2 = Fixtures.authz_message_event(room_id, create_event_id, [], "hello?")
@@ -41,8 +40,7 @@ defmodule RadioBeam.Room.DAGTest do
                 pdu_map: %{^msg_event_id2 => ^expected_msg_pdu2},
                 forward_extremities: [^msg_event_id2],
                 next_stream_number: 3
-              },
-              ^expected_msg_pdu2} =
+              }, ^expected_msg_pdu2} =
                DAG.append!(dag, msg_event2)
     end
   end

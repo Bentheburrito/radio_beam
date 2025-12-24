@@ -3,7 +3,6 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
   alias RadioBeam.ContentRepo.Thumbnail
   alias RadioBeam.ContentRepo.Upload
-  alias RadioBeam.ContentRepo.Upload.FileInfo
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo
   alias Vix.Vips.Operation
@@ -94,7 +93,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
       {:ok, upload} = ContentRepo.upload(upload, Fixtures.file_info(content, "csv"), tmp_upload_path)
-      Upload.put(%Upload{upload | file: %FileInfo{upload.file | byte_size: upload.file.byte_size + 1}})
+      Upload.put(put_in(upload.file.byte_size, upload.file.byte_size + 1))
 
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout_ms=200", %{})
       assert %{"errcode" => "M_TOO_LARGE"} = json_response(conn, 502)
@@ -193,8 +192,11 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       assert %{"errcode" => "M_NOT_YET_UPLOADED"} = json_response(conn, 504)
     end
 
-    test "returns M_TOO_LARGE (502) if the (local) content is too large", %{conn: conn, upload: %{id: mxc} = upload} do
-      Upload.put(%Upload{upload | file: %FileInfo{upload.file | byte_size: upload.file.byte_size ** 2}})
+    test "returns M_TOO_LARGE (502) if the (local) content is too large", %{
+      conn: conn,
+      upload: %Upload{id: mxc} = upload
+    } do
+      Upload.put(put_in(upload.file.byte_size, upload.file.byte_size ** 2))
 
       params = %{"width" => @width, "height" => @height, "method" => @method}
 

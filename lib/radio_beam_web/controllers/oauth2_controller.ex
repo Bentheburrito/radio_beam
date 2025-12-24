@@ -259,7 +259,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
     end
   end
 
-  defp redirect_with(conn, redirect_uri, response_mode, response_params) do
+  defp redirect_with(conn, %URI{} = redirect_uri, response_mode, response_params) do
     populated_redirect_uri =
       case response_mode do
         "query" -> URI.append_query(redirect_uri, URI.encode_query(response_params))
