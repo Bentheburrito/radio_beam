@@ -2,7 +2,6 @@ defmodule RadioBeam.ContentRepoTest do
   use ExUnit.Case, async: true
   doctest RadioBeam.ContentRepo
 
-  alias RadioBeam.Database
   alias RadioBeam.ContentRepo.Thumbnail
   alias Vix.Vips.Operation
   alias Vix.Vips.Image
@@ -110,7 +109,10 @@ defmodule RadioBeam.ContentRepoTest do
     @file_info Fixtures.file_info(Fixtures.random_string(12))
     test "errors when max uploaded files quota is reached", %{user: user} do
       %{max_files: max_files} = ContentRepo.user_upload_limits()
-      for _i <- 1..max_files, do: user |> Upload.new() |> Upload.put_file(@file_info) |> Upload.put()
+
+      for _i <- 1..max_files,
+          do: user |> Upload.new() |> Upload.put_file(@file_info) |> ContentRepo.Database.upsert_upload()
+
       assert {:error, {:quota_reached, :max_files}} = ContentRepo.create(user)
     end
 
@@ -118,7 +120,10 @@ defmodule RadioBeam.ContentRepoTest do
       %{max_reserved: max_reserved, max_files: max_files} = ContentRepo.user_upload_limits()
       num_to_reserve = max_reserved - 2
       for _i <- 1..num_to_reserve, do: ContentRepo.create(user)
-      for _i <- 1..(max_files - num_to_reserve), do: user |> Upload.new() |> Upload.put_file(@file_info) |> Upload.put()
+
+      for _i <- 1..(max_files - num_to_reserve),
+          do: user |> Upload.new() |> Upload.put_file(@file_info) |> ContentRepo.Database.upsert_upload()
+
       assert {:error, {:quota_reached, :max_files}} = ContentRepo.create(user)
     end
   end
@@ -146,7 +151,7 @@ defmodule RadioBeam.ContentRepoTest do
     } do
       assert {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, tmp_dir)
       assert IO.iodata_to_binary(iodata) == File.read!(ContentRepo.upload_file_path(upload, tmp_dir))
-      assert {:ok, ^upload} = Database.fetch(Upload, upload.id)
+      assert {:ok, ^upload} = ContentRepo.Database.fetch_upload(upload.id)
     end
 
     test "errors when a user has reached their max total file size limit", %{

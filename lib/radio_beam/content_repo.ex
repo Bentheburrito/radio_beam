@@ -3,7 +3,7 @@ defmodule RadioBeam.ContentRepo do
   The content/media repository. Manages user-uploaded files, authorizing based
   on configured limits.
   """
-  alias RadioBeam.Database
+  alias RadioBeam.ContentRepo.Database
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Thumbnail
@@ -55,7 +55,7 @@ defmodule RadioBeam.ContentRepo do
     timeout = Keyword.get_lazy(opts, :timeout, &max_wait_for_download_ms/0)
     PS.subscribe(PS.file_uploaded(mxc))
 
-    case Database.fetch(Upload, mxc) do
+    case Database.fetch_upload(mxc) do
       {:ok, %Upload{file: %FileInfo{byte_size: byte_size}}} when byte_size > max_size_bytes -> {:error, :too_large}
       {:ok, %Upload{file: %FileInfo{}} = upload} -> {:ok, upload}
       {:ok, %Upload{file: :reserved}} -> await_upload(timeout)
@@ -126,15 +126,14 @@ defmodule RadioBeam.ContentRepo do
   def create(%User{} = reserver) do
     %{max_reserved: max_reserved, max_files: max_files} = user_upload_limits()
 
-    Database.transaction(fn ->
-      user_upload_counts = Upload.user_upload_counts(reserver.id)
+    Database.with_user_upload_counts(reserver.id, fn user_upload_counts ->
       reserved_count = Map.get(user_upload_counts, :reserved, 0)
       total_count = Map.get(user_upload_counts, :uploaded, 0) + reserved_count
 
       cond do
         reserved_count >= max_reserved -> {:error, {:quota_reached, :max_reserved}}
         total_count >= max_files -> {:error, {:quota_reached, :max_files}}
-        :else -> reserver |> Upload.new() |> Upload.put()
+        :else -> reserver |> Upload.new() |> upsert_upload()
       end
     end)
   end
@@ -146,14 +145,19 @@ defmodule RadioBeam.ContentRepo do
   @spec upload(Upload.t(), FileInfo.t(), Path.t()) ::
           {:ok, Upload.t()} | {:error, :too_large | {:quota_reached, :max_bytes} | File.posix()}
   def upload(%Upload{file: :reserved} = upload, %FileInfo{} = file_info, tmp_upload_path, repo_path \\ path()) do
-    Database.transaction(fn ->
-      with :ok <- validate_upload_size(upload.uploaded_by_id, file_info.byte_size),
-           {:ok, %Upload{} = upload} <- upload |> Upload.put_file(file_info) |> Upload.put(),
+    Database.with_user_total_uploaded_bytes(upload.uploaded_by_id, fn user_total_uploaded_bytes ->
+      with :ok <- validate_upload_size(user_total_uploaded_bytes, file_info.byte_size),
+           {:ok, %Upload{} = upload} <- upload |> Upload.put_file(file_info) |> upsert_upload(),
            :ok <- copy_upload_if_no_exists(tmp_upload_path, upload_file_path(upload, repo_path)) do
         PS.broadcast(PS.file_uploaded(upload.id), {:file_uploaded, upload})
         {:ok, upload}
       end
     end)
+  end
+
+  defp upsert_upload(upload) do
+    upload = if is_nil(upload.file), do: put_in(upload.file, :reserved), else: upload
+    with :ok <- Database.upsert_upload(upload), do: {:ok, upload}
   end
 
   # copies the uploaded file from a temp path to the content repo's directory,
@@ -164,12 +168,12 @@ defmodule RadioBeam.ContentRepo do
     end
   end
 
-  defp validate_upload_size(uploader_id, upload_size) do
+  defp validate_upload_size(user_total_uploaded_bytes, upload_size) do
     cond do
       upload_size > max_upload_size_bytes() ->
         {:error, :too_large}
 
-      Upload.user_total_uploaded_bytes(uploader_id) + upload_size > user_upload_limits().max_bytes ->
+      user_total_uploaded_bytes + upload_size > user_upload_limits().max_bytes ->
         {:error, {:quota_reached, :max_bytes}}
 
       :else ->

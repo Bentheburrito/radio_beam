@@ -3,6 +3,7 @@ defmodule RadioBeam.Database.Mnesia do
   A database backend for `:mnesia`
   """
   @behaviour RadioBeam.Database
+  @behaviour RadioBeam.ContentRepo.Database
 
   import RadioBeam.Database.Mnesia.Tables.User
   import RadioBeam.Database.Mnesia.Tables.Room
@@ -11,9 +12,8 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.RoomView
   import RadioBeam.Database.Mnesia.Tables.DynamicOAuth2Client
 
-  alias RadioBeam.Database.Mnesia.Tables
-
   alias RadioBeam.ContentRepo.Upload
+  alias RadioBeam.Database.Mnesia.Tables
   alias RadioBeam.Room
   alias RadioBeam.Room.View
   alias RadioBeam.User
@@ -164,7 +164,6 @@ defmodule RadioBeam.Database.Mnesia do
         Tables.User -> &user(id: &1, user: :_)
         Tables.Room -> &room(id: &1, room: :_)
         Tables.RoomAlias -> &room_alias(id: &1, room_alias: :_)
-        Tables.Upload -> &upload(id: &1, file: :_, inserted_at: :_, uploaded_by_id: :_)
         Tables.RoomView -> &room_view(id: &1, room_view: :_)
         Tables.DynamicOAuth2Client -> &dynamic_oauth2_client(id: &1, dynamic_oauth2_client: :_)
       end
@@ -173,30 +172,51 @@ defmodule RadioBeam.Database.Mnesia do
       for id <- ids, do: {match_head_fxn.(id), [], [:"$_"]}
   end
 
-  ### TEMP / TOFIX - want to move this into ContentRepo bounded context
-  def user_total_uploaded_bytes("@" <> _ = uploaded_by_id) do
-    # match_head = {Tables.Upload, :_, :"$1", :_, uploaded_by_id}
-    match_head = upload(id: :_, file: :"$1", inserted_at: :_, uploaded_by_id: uploaded_by_id)
+  @impl RadioBeam.ContentRepo.Database
+  def upsert_upload(%Upload{} = upload) do
+    data_record =
+      upload(id: upload.id, file: upload.file, inserted_at: upload.inserted_at, uploaded_by_id: upload.uploaded_by_id)
 
-    match_spec = [{match_head, [{:is_map, :"$1"}], [:"$1"]}]
-
-    Tables.Upload
-    |> :mnesia.select(match_spec)
-    |> Stream.map(& &1.byte_size)
-    |> Enum.sum()
+    transaction(fn -> :mnesia.write(Tables.Upload, data_record, :write) end)
   end
 
-  def user_upload_counts("@" <> _ = uploaded_by_id) do
-    # match_head = {Tables.Upload, :_, :"$1", :_, uploaded_by_id}
-    match_head = upload(id: :_, file: :"$1", inserted_at: :_, uploaded_by_id: uploaded_by_id)
+  @impl RadioBeam.ContentRepo.Database
+  def fetch_upload(mxc) do
+    transaction(fn ->
+      case :mnesia.read(Tables.Upload, mxc, :read) do
+        [] -> {:error, :not_found}
+        [record] -> {:ok, record_to_domain_struct(record)}
+      end
+    end)
+  end
 
+  @impl RadioBeam.ContentRepo.Database
+  def with_user_total_uploaded_bytes("@" <> _ = uploaded_by_id, callback) do
+    match_head = upload(id: :_, file: :"$1", inserted_at: :_, uploaded_by_id: uploaded_by_id)
+    match_spec = [{match_head, [{:is_map, :"$1"}], [:"$1"]}]
+
+    transaction(fn ->
+      Tables.Upload
+      |> :mnesia.select(match_spec)
+      |> Stream.map(& &1.byte_size)
+      |> Enum.sum()
+      |> callback.()
+    end)
+  end
+
+  @impl RadioBeam.ContentRepo.Database
+  def with_user_upload_counts("@" <> _ = uploaded_by_id, callback) do
+    match_head = upload(id: :_, file: :"$1", inserted_at: :_, uploaded_by_id: uploaded_by_id)
     match_spec = [{match_head, [], [:"$1"]}]
 
-    Tables.Upload
-    |> :mnesia.select(match_spec)
-    |> Enum.reduce(%{}, fn
-      :reserved, acc -> Map.update(acc, :reserved, 1, &(&1 + 1))
-      %Upload.FileInfo{}, acc -> Map.update(acc, :uploaded, 1, &(&1 + 1))
+    transaction(fn ->
+      Tables.Upload
+      |> :mnesia.select(match_spec)
+      |> Enum.reduce(%{}, fn
+        :reserved, acc -> Map.update(acc, :reserved, 1, &(&1 + 1))
+        %Upload.FileInfo{}, acc -> Map.update(acc, :uploaded, 1, &(&1 + 1))
+      end)
+      |> callback.()
     end)
   end
 
@@ -204,15 +224,6 @@ defmodule RadioBeam.Database.Mnesia do
   defp domain_struct_to_record(%Room{} = room), do: room(id: room.id, room: room)
 
   defp domain_struct_to_record(%Room.Alias{} = alias), do: room_alias(id: alias.alias_tuple, room_alias: alias)
-
-  defp domain_struct_to_record(%Upload{} = upload) do
-    upload(
-      id: upload.id,
-      file: upload.file,
-      inserted_at: upload.inserted_at,
-      uploaded_by_id: upload.uploaded_by_id
-    )
-  end
 
   defp domain_struct_to_record(%View.State{} = view_state), do: room_view(id: view_state.key, room_view: view_state)
 
@@ -234,7 +245,6 @@ defmodule RadioBeam.Database.Mnesia do
   defp domain_mod_to_table(User), do: Tables.User
   defp domain_mod_to_table(Room), do: Tables.Room
   defp domain_mod_to_table(Room.Alias), do: Tables.RoomAlias
-  defp domain_mod_to_table(Upload), do: Tables.Upload
   defp domain_mod_to_table(View.State), do: Tables.RoomView
   defp domain_mod_to_table(DynamicOAuth2Client), do: Tables.DynamicOAuth2Client
 end

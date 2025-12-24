@@ -5,7 +5,6 @@ defmodule RadioBeam.ContentRepo.Upload do
   """
   defstruct ~w|id file inserted_at uploaded_by_id|a
 
-  alias RadioBeam.Database
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Upload.FileInfo
@@ -41,21 +40,5 @@ defmodule RadioBeam.ContentRepo.Upload do
 
   def put_file(%__MODULE__{file: file} = upload, %FileInfo{} = file_info) when file in [nil, :reserved] do
     %__MODULE__{upload | file: file_info}
-  end
-
-  def put(%__MODULE__{file: file} = upload) do
-    upload = if is_nil(file), do: %__MODULE__{upload | file: :reserved}, else: upload
-    :ok = Database.insert(upload)
-    {:ok, upload}
-  end
-
-  def user_total_uploaded_bytes("@" <> _ = uploaded_by_id) do
-    # temp
-    RadioBeam.Database.Mnesia.user_total_uploaded_bytes(uploaded_by_id)
-  end
-
-  def user_upload_counts("@" <> _ = uploaded_by_id) do
-    # temp
-    RadioBeam.Database.Mnesia.user_upload_counts(uploaded_by_id)
   end
 end

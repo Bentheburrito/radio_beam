@@ -40,6 +40,8 @@ config :radio_beam,
 
 config :radio_beam, RadioBeam.Database, backend: RadioBeam.Database.Mnesia
 
+config :radio_beam, RadioBeam.ContentRepo.Database, backend: RadioBeam.Database.Mnesia
+
 config :radio_beam, RadioBeam.ContentRepo,
   allowed_mimes:
     ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,

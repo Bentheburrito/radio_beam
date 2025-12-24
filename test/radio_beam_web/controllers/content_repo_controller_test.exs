@@ -93,7 +93,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
       {:ok, upload} = ContentRepo.upload(upload, Fixtures.file_info(content, "csv"), tmp_upload_path)
-      Upload.put(put_in(upload.file.byte_size, upload.file.byte_size + 1))
+      ContentRepo.Database.upsert_upload(put_in(upload.file.byte_size, upload.file.byte_size + 1))
 
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout_ms=200", %{})
       assert %{"errcode" => "M_TOO_LARGE"} = json_response(conn, 502)
@@ -196,7 +196,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       conn: conn,
       upload: %Upload{id: mxc} = upload
     } do
-      Upload.put(put_in(upload.file.byte_size, upload.file.byte_size ** 2))
+      ContentRepo.Database.upsert_upload(put_in(upload.file.byte_size, upload.file.byte_size ** 2))
 
       params = %{"width" => @width, "height" => @height, "method" => @method}
 
