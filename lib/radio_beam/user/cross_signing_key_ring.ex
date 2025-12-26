@@ -6,7 +6,7 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
 
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
-  alias RadioBeam.Database
+  alias RadioBeam.User.Database
 
   @type t() :: %__MODULE__{
           master: CrossSigningKey.t() | nil,
@@ -28,38 +28,36 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
           | {:error, :not_found | :missing_master_key | :missing_or_invalid_master_key_signatures}
           | CrossSigningKey.parse_error()
   def put(user_id, opts) do
-    Database.transaction(fn ->
-      with {:ok, %User{} = user} <- Database.fetch(User, user_id, lock: :write) do
-        master_key = Keyword.get(opts, :master_key, user.cross_signing_key_ring.master)
-        self_signing_key = Keyword.get(opts, :self_signing_key, user.cross_signing_key_ring.self)
-        user_signing_key = Keyword.get(opts, :user_signing_key, user.cross_signing_key_ring.user)
+    Database.with_user(user_id, fn %User{} = user ->
+      master_key = Keyword.get(opts, :master_key, user.cross_signing_key_ring.master)
+      self_signing_key = Keyword.get(opts, :self_signing_key, user.cross_signing_key_ring.self)
+      user_signing_key = Keyword.get(opts, :user_signing_key, user.cross_signing_key_ring.user)
 
-        with {:ok, master_key} <- parse_signing_key(master_key, user_id),
-             {:ok, self_signing_key} <- parse_signing_key(self_signing_key, user_id),
-             {:ok, user_signing_key} <- parse_signing_key(user_signing_key, user_id) do
-          cond do
-            # disallow uploading self-/user-signing keys if we have no master key to verify signatures
-            is_nil(master_key) and (not is_nil(self_signing_key) or not is_nil(user_signing_key)) ->
-              {:error, :missing_master_key}
+      with {:ok, master_key} <- parse_signing_key(master_key, user_id),
+           {:ok, self_signing_key} <- parse_signing_key(self_signing_key, user_id),
+           {:ok, user_signing_key} <- parse_signing_key(user_signing_key, user_id) do
+        cond do
+          # disallow uploading self-/user-signing keys if we have no master key to verify signatures
+          is_nil(master_key) and (not is_nil(self_signing_key) or not is_nil(user_signing_key)) ->
+            {:error, :missing_master_key}
 
-            not valid_signing_keys?(master_key, self_signing_key, user_signing_key, user_id) ->
-              {:error, :missing_or_invalid_master_key_signatures}
+          not valid_signing_keys?(master_key, self_signing_key, user_signing_key, user_id) ->
+            {:error, :missing_or_invalid_master_key_signatures}
 
-            :else ->
-              key_ring = %__MODULE__{
-                master: master_key,
-                self: self_signing_key,
-                user: user_signing_key
-              }
+          :else ->
+            key_ring = %__MODULE__{
+              master: master_key,
+              self: self_signing_key,
+              user: user_signing_key
+            }
 
-              user =
-                struct!(user,
-                  cross_signing_key_ring: key_ring,
-                  last_cross_signing_change_at: System.os_time(:millisecond)
-                )
+            user =
+              struct!(user,
+                cross_signing_key_ring: key_ring,
+                last_cross_signing_change_at: System.os_time(:millisecond)
+              )
 
-              with :ok <- Database.insert(user), do: {:ok, user}
-          end
+            with :ok <- Database.update_user(user), do: {:ok, user}
         end
       end
     end)

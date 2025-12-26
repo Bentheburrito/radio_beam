@@ -1,7 +1,7 @@
 defmodule RadioBeam.User.Authentication.OAuth2.UserDeviceSession do
   @moduledoc false
-  alias RadioBeam.Database
   alias RadioBeam.User
+  alias RadioBeam.User.Database
   alias RadioBeam.User.Device
 
   defstruct ~w|user device|a
@@ -22,7 +22,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.UserDeviceSession do
       end
 
     user = User.put_device(user, device)
-    :ok = Database.insert!(user)
+    :ok = Database.update_user(user)
     %__MODULE__{user: user, device: device}
   end
 end

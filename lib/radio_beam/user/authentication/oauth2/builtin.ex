@@ -8,7 +8,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.Authentication.OAuth2.Builtin.Guardian
   alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
-  alias RadioBeam.Database
+  alias RadioBeam.User.Database
   alias RadioBeam.User
   alias RadioBeam.User.Device
 
@@ -51,7 +51,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
           tos_uri: tos_uri
         })
 
-      with :ok <- Database.insert(client) do
+      with :ok <- Database.upsert_oauth2_client(client) do
         {:ok, client}
       end
     end
@@ -215,7 +215,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
 
   @impl RadioBeam.User.Authentication.OAuth2
   def lookup_client(client_id) do
-    with {:error, :not_found} <- Database.fetch(DynamicOAuth2Client, client_id), do: {:error, :client_not_found}
+    with {:error, :not_found} <- Database.fetch_oauth2_client(client_id), do: {:error, :client_not_found}
   end
 
   @impl RadioBeam.User.Authentication.OAuth2
@@ -328,7 +328,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
 
   @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_password(user_id, password, code_grant_values) do
-    case Database.fetch(User, user_id) do
+    case Database.fetch_user(user_id) do
       {:ok, %User{} = user} ->
         if Argon2.verify_pass(password, user.pwd_hash) do
           create_authz_code(user_id, code_grant_values)
@@ -366,16 +366,17 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
       ) do
     {scope_to_urn, device_opts} = Keyword.pop!(opts, :scope_to_urn)
 
-    Database.transaction(fn ->
-      with {:ok, user_id, scope} <- AuthzCodeCache.pop(code, code_verifier, client_id, redirect_uri),
-           {:ok, %User{} = user} <- Database.fetch(User, user_id),
-           session = UserDeviceSession.new_from_user!(user, scope.device_id, device_opts),
-           {:ok, access_token, access_claims} <- new_access_token(session, scope, issuer, scope_to_urn),
-           {:ok, refresh_token, refresh_claims} <- new_refresh_token(session, access_claims, issuer),
-           :ok <- rotate_device_ids(session, access_claims["jti"], refresh_claims["jti"]) do
-        {:ok, access_token, refresh_token, access_claims["scope"], access_claims["exp"] - System.os_time(:second)}
-      end
-    end)
+    with {:ok, user_id, scope} <- AuthzCodeCache.pop(code, code_verifier, client_id, redirect_uri) do
+      Database.with_user(user_id, fn user ->
+        session = UserDeviceSession.new_from_user!(user, scope.device_id, device_opts)
+
+        with {:ok, access_token, access_claims} <- new_access_token(session, scope, issuer, scope_to_urn),
+             {:ok, refresh_token, refresh_claims} <- new_refresh_token(session, access_claims, issuer),
+             :ok <- rotate_device_ids(session, access_claims["jti"], refresh_claims["jti"]) do
+          {:ok, access_token, refresh_token, access_claims["scope"], access_claims["exp"] - System.os_time(:second)}
+        end
+      end)
+    end
   end
 
   defp new_access_token(session, scope, issuer, scope_to_urn) do
@@ -401,37 +402,35 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   defp rotate_device_ids(session, access_token_id, refresh_token_id) do
     device = Device.rotate_token_ids(session.device, access_token_id, refresh_token_id)
     user = User.put_device(session.user, device)
-    Database.insert(user)
+    Database.update_user(user)
   end
 
   @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_access_token(token, device_ip) do
-    Database.transaction(fn -> verify_token(token, device_ip) end)
-  end
-
-  defp verify_token(token, device_ip) do
-    with {:ok, claims} <- Guardian.decode_and_verify(token),
-         {:ok, session} <- Guardian.resource_from_claims(claims) do
-      if claims["typ"] != "access" or claims["jti"] in session.device.revoked_unexpired_token_ids do
-        {:error, :invalid_token}
-      else
-        perform_device_upkeep(session, device_ip)
+    Database.txn(fn ->
+      with {:ok, claims} <- Guardian.decode_and_verify(token),
+           {:ok, session} <- Guardian.resource_from_claims(claims) do
+        if claims["typ"] != "access" or claims["jti"] in session.device.revoked_unexpired_token_ids do
+          {:error, :invalid_token}
+        else
+          perform_device_upkeep(session, device_ip)
+        end
       end
-    end
+    end)
   end
 
   defp perform_device_upkeep(%UserDeviceSession{} = session, device_ip) do
     device = session.device |> Device.put_last_seen_at(device_ip) |> Device.put_retryable_refresh_token_id(nil)
     user = User.put_device(session.user, device)
 
-    with :ok <- Database.insert(user) do
+    with :ok <- Database.update_user(user) do
       UserDeviceSession.existing_from_user(user, device.id)
     end
   end
 
   @impl RadioBeam.User.Authentication.OAuth2
   def refresh_token(refresh_token) do
-    Database.transaction(fn ->
+    Database.txn(fn ->
       with {:ok, new_access_token, new_refresh_token, scope, expires_at} <- refresh_tokens(refresh_token) do
         {:ok, new_access_token, new_refresh_token, scope, expires_at - System.os_time(:second)}
       end
@@ -453,7 +452,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
         |> Device.rotate_token_ids(new_claims["jti"], new_refresh_token_id)
         |> Device.put_retryable_refresh_token_id(old_claims["jti"])
 
-      session.user |> User.put_device(device) |> Database.insert!()
+      session.user |> User.put_device(device) |> Database.update_user()
 
       {:ok, new_access_token, new_refresh_token, new_claims["scope"], new_claims["exp"]}
     end
@@ -492,7 +491,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
             |> Device.rotate_token_ids(nil, nil)
             |> Device.put_retryable_refresh_token_id(nil)
 
-          session.user |> User.put_device(device) |> Database.insert!()
+          session.user |> User.put_device(device) |> Database.update_user()
           :ok
         else
           :ok

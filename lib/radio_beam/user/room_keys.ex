@@ -68,6 +68,6 @@ defmodule RadioBeam.User.RoomKeys do
 
   def insert_user_room_keys(%User{} = user, %__MODULE__{} = room_keys) do
     user = User.put_room_keys(user, room_keys)
-    with :ok <- RadioBeam.Database.insert(user), do: {:ok, user}
+    with :ok <- RadioBeam.User.Database.update_user(user), do: {:ok, user}
   end
 end

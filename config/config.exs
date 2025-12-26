@@ -39,6 +39,7 @@ config :radio_beam,
   }
 
 config :radio_beam, RadioBeam.Database, backend: RadioBeam.Database.Mnesia
+config :radio_beam, RadioBeam.User.Database, backend: RadioBeam.Database.Mnesia
 config :radio_beam, RadioBeam.Room.Database, backend: RadioBeam.Database.Mnesia
 config :radio_beam, RadioBeam.ContentRepo.Database, backend: RadioBeam.Database.Mnesia
 

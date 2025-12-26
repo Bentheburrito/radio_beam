@@ -4,7 +4,7 @@ defmodule Fixtures do
   """
 
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
-  alias RadioBeam.Database
+  alias RadioBeam.User.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.AuthorizedEvent
@@ -82,14 +82,14 @@ defmodule Fixtures do
 
   def user(user_id \\ user_id()) do
     {:ok, user} = User.new(user_id, strong_password())
-    :ok = Database.insert(user)
+    :ok = Database.insert_new_user(user)
     user
   end
 
   def device(user_or_user_id, display_name \\ Device.default_device_name())
 
   def device("@" <> _ = user_id, display_name) do
-    {:ok, user} = Database.fetch(User, user_id)
+    {:ok, user} = Database.fetch_user(user_id)
     device(user, display_name)
   end
 
@@ -210,7 +210,7 @@ defmodule Fixtures do
   def create_and_put_device_keys(user, device) do
     {key, _} = device_keys(device.id, user.id)
     {:ok, device} = Device.put_keys(device, user.id, identity_keys: key)
-    :ok = user |> User.put_device(device) |> Database.insert()
+    :ok = user |> User.put_device(device) |> Database.update_user()
     {user, device}
   end
 

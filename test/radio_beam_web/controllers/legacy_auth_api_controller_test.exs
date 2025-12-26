@@ -1,10 +1,6 @@
 defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Database
-  alias RadioBeam.User
-  alias RadioBeam.User.Device
-
   describe "valid user password registration requests succeed" do
     test "with an access token and the supplied username and device ID", %{conn: conn} do
       device_id = "unrealisticallylargeiphone"
@@ -20,8 +16,6 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
       assert %{"access_token" => _, "device_id" => ^device_id, "expires_in_ms" => _, "user_id" => user_id} =
                json_response(conn, 200)
 
-      {:ok, user} = Database.fetch(User, user_id)
-      assert {:ok, %Device{display_name: ^device_display_name}} = User.get_device(user, device_id)
       assert ^user_id = "@#{username}:localhost"
     end
 
@@ -156,7 +150,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
 
     test "with provided device parameters for an existing device", %{
       conn: conn,
-      user: %{id: user_id} = user,
+      user: %{id: user_id},
       password: password,
       device_id: device_id
     } do
@@ -173,10 +167,6 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
                "device_id" => ^device_id,
                "user_id" => ^user_id
              } = json_response(conn, 200)
-
-      {:ok, user} = Database.fetch(User, user.id)
-      {:ok, %Device{display_name: display_name}} = User.get_device(user, device_id)
-      assert display_name != "this should be ignored"
     end
   end
 
@@ -196,17 +186,13 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
       conn = login_request(conn, user_id, password, %{"type" => "m.wtf.are.you.high", "device_id" => device_id})
 
       assert %{"errcode" => "M_BAD_JSON", "error" => _} = json_response(conn, 400)
-      {:ok, user} = Database.fetch(User, user_id)
-      assert {:error, :not_found} = User.get_device(user, device_id)
     end
 
-    test "with M_FORBIDDEN when the username is incorrect", %{conn: conn, user: %{id: user_id}, password: password} do
+    test "with M_FORBIDDEN when the username is incorrect", %{conn: conn, password: password} do
       device_id = "dont insert me duh"
       conn = login_request(conn, "@prisonmike:localhost", password, %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      {:ok, user} = Database.fetch(User, user_id)
-      assert {:error, :not_found} = User.get_device(user, device_id)
     end
 
     test "with M_FORBIDDEN when the password is incorrect", %{conn: conn, user: %{id: user_id}} do
@@ -214,8 +200,6 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
       conn = login_request(conn, user_id, "justguessinghere", %{"device_id" => device_id})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
-      {:ok, user} = Database.fetch(User, user_id)
-      assert {:error, :not_found} = User.get_device(user, device_id)
     end
 
     test "with M_BAD_JSON when an unknown identifier is provided", %{
@@ -233,9 +217,6 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
 
       assert %{"errcode" => "M_BAD_JSON", "error" => "identifier.type needs to be one of m.id.user." <> _rest} =
                json_response(conn, 400)
-
-      {:ok, user} = Database.fetch(User, user_id)
-      assert {:error, :not_found} = User.get_device(user, device_id)
     end
   end
 

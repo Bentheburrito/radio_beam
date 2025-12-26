@@ -2,7 +2,7 @@ defmodule RadioBeam.Sync do
   @moduledoc """
   Functions for performing /sync
   """
-  alias RadioBeam.Database
+  alias RadioBeam.User.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User
@@ -17,7 +17,7 @@ defmodule RadioBeam.Sync do
   def perform_v2(user_id, device_id, opts) do
     since_or_nil = Keyword.get(opts, :since)
 
-    with {:ok, user} <- Database.fetch(User, user_id) do
+    with {:ok, user} <- Database.fetch_user(user_id) do
       room_sync_result =
         user
         |> Room.Sync.init(device_id, opts)

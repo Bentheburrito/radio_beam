@@ -5,6 +5,7 @@ defmodule RadioBeam.Database.Mnesia do
   @behaviour RadioBeam.Database
   @behaviour RadioBeam.ContentRepo.Database
   @behaviour RadioBeam.Room.Database
+  @behaviour RadioBeam.User.Database
 
   import RadioBeam.Database.Mnesia.Tables.User
   import RadioBeam.Database.Mnesia.Tables.Room
@@ -16,7 +17,6 @@ defmodule RadioBeam.Database.Mnesia do
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Database.Mnesia.Tables
   alias RadioBeam.Room
-  alias RadioBeam.Room.View
   alias RadioBeam.User
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
 
@@ -60,8 +60,7 @@ defmodule RadioBeam.Database.Mnesia do
     end
   end
 
-  @impl RadioBeam.Database
-  def transaction(fxn) do
+  defp transaction(fxn) do
     if :mnesia.is_transaction() do
       fxn.()
     else
@@ -70,107 +69,6 @@ defmodule RadioBeam.Database.Mnesia do
         {:aborted, error} -> {:error, error}
       end
     end
-  end
-
-  defp transaction!(fxn) do
-    case transaction(fxn) do
-      :ok -> :ok
-      {:ok, result} -> result
-      {:error, error} -> raise error
-      result -> result
-    end
-  end
-
-  @impl RadioBeam.Database
-  def insert(data, opts) do
-    data_record = domain_struct_to_record(data)
-    table = elem(data_record, 0)
-
-    lock_type = Keyword.get(opts, :lock, :write)
-    transaction(fn -> :mnesia.write(table, data_record, lock_type) end)
-  end
-
-  @impl RadioBeam.Database
-  def insert!(data, opts) do
-    data_record = domain_struct_to_record(data)
-    table = elem(data_record, 0)
-
-    lock_type = Keyword.get(opts, :lock, :write)
-    transaction!(fn -> :mnesia.write(table, data_record, lock_type) end)
-  end
-
-  @impl RadioBeam.Database
-  def insert_new(data, opts) do
-    data_record = domain_struct_to_record(data)
-    table = elem(data_record, 0)
-
-    lock_type = Keyword.get(opts, :lock, :write)
-
-    transaction(fn ->
-      if exists?(table, data.id, lock_type) do
-        {:error, :already_exists}
-      else
-        :mnesia.write(table, data_record, lock_type)
-      end
-    end)
-  end
-
-  defp exists?(table, id, lock_type) do
-    table |> :mnesia.read(id, lock_type) |> Enum.empty?() |> Kernel.not()
-  end
-
-  @impl RadioBeam.Database
-  def fetch(data_mod, id, opts \\ []) do
-    table = domain_mod_to_table(data_mod)
-    lock_type = Keyword.get(opts, :lock, :read)
-
-    transaction(fn ->
-      case :mnesia.read(table, id, lock_type) do
-        [] -> {:error, :not_found}
-        [record] -> {:ok, record_to_domain_struct(record)}
-      end
-    end)
-  end
-
-  @impl RadioBeam.Database
-  def fetch!(data_mod, id, opts) do
-    table = domain_mod_to_table(data_mod)
-    lock_type = Keyword.get(opts, :lock, :read)
-
-    transaction!(fn ->
-      case :mnesia.read(table, id, lock_type) do
-        [] -> {:error, :not_found}
-        [record] -> {:ok, record_to_domain_struct(record)}
-      end
-    end)
-  end
-
-  @impl RadioBeam.Database
-  def get_all(_data_mod, [], _opts), do: []
-
-  def get_all(data_mod, ids, opts) when is_list(ids) do
-    table = domain_mod_to_table(data_mod)
-    lock_type = Keyword.get(opts, :lock, :read)
-
-    transaction(fn ->
-      case :mnesia.select(table, get_all_match_spec(table, ids), lock_type) do
-        matched_records when is_list(matched_records) -> Enum.map(matched_records, &record_to_domain_struct/1)
-      end
-    end)
-  end
-
-  defp get_all_match_spec(table, ids) do
-    match_head_fxn =
-      case table do
-        Tables.User -> &user(id: &1, user: :_)
-        Tables.Room -> &room(id: &1, room: :_)
-        Tables.RoomAlias -> &room_alias(alias_struct: &1, room_id: :_)
-        Tables.RoomView -> &room_view(id: &1, room_view: :_)
-        Tables.DynamicOAuth2Client -> &dynamic_oauth2_client(id: &1, dynamic_oauth2_client: :_)
-      end
-
-    _match_functions =
-      for id <- ids, do: {match_head_fxn.(id), [], [:"$_"]}
   end
 
   @impl RadioBeam.Room.Database
@@ -289,10 +187,82 @@ defmodule RadioBeam.Database.Mnesia do
     end)
   end
 
-  defp domain_struct_to_record(%User{} = user), do: user(id: user.id, user: user)
+  @impl RadioBeam.User.Database
+  def insert_new_user(%User{} = user) do
+    user_record = user(id: user.id, user: user)
 
-  defp domain_struct_to_record(%DynamicOAuth2Client{} = dyn_oauth2_client),
-    do: dynamic_oauth2_client(id: dyn_oauth2_client.client_id, dynamic_oauth2_client: dyn_oauth2_client)
+    transaction(fn ->
+      if user_exists?(user.id), do: {:error, :already_exists}, else: :mnesia.write(Tables.User, user_record, :write)
+    end)
+  end
+
+  defp user_exists?(id), do: Tables.User |> :mnesia.read(id, :write) |> Enum.empty?() |> Kernel.not()
+
+  @impl RadioBeam.User.Database
+  def update_user(%User{id: user_id} = user) do
+    transaction(fn ->
+      case :mnesia.read(Tables.User, user.id, :write) do
+        [] -> {:error, :not_found}
+        [user(id: ^user_id)] -> :mnesia.write(Tables.User, user(id: user.id, user: user), :write)
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
+  def upsert_oauth2_client(%DynamicOAuth2Client{client_id: client_id} = client) do
+    data_record = dynamic_oauth2_client(id: client_id, dynamic_oauth2_client: client)
+
+    transaction(fn -> :mnesia.write(Tables.DynamicOAuth2Client, data_record, :write) end)
+  end
+
+  @impl RadioBeam.User.Database
+  def fetch_oauth2_client(client_id) do
+    transaction(fn ->
+      case :mnesia.read(Tables.DynamicOAuth2Client, client_id, :read) do
+        [] -> {:error, :not_found}
+        [record] -> {:ok, record_to_domain_struct(record)}
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
+  def fetch_user(user_id) do
+    transaction(fn ->
+      case :mnesia.read(Tables.User, user_id, :read) do
+        [] -> {:error, :not_found}
+        [record] -> {:ok, record_to_domain_struct(record)}
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
+  def with_user(user_id, callback) do
+    transaction(fn ->
+      case :mnesia.read(Tables.User, user_id, :write) do
+        [] -> {:error, :not_found}
+        [record] -> record |> record_to_domain_struct() |> callback.()
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
+  def with_all_users([], callback), do: callback.([])
+
+  def with_all_users(user_ids, callback) when is_list(user_ids) do
+    match_spec = for id <- user_ids, do: {user(id: id, user: :_), [], [:"$_"]}
+
+    transaction(fn ->
+      case :mnesia.select(Tables.User, match_spec, :write) do
+        matched_records when is_list(matched_records) ->
+          callback.(Enum.map(matched_records, &record_to_domain_struct/1))
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
+  def txn(callback) do
+    transaction(callback)
+  end
 
   defp record_to_domain_struct(user(user: %User{} = user)), do: user
   defp record_to_domain_struct(room(room: %Room{} = room)), do: room
@@ -305,10 +275,4 @@ defmodule RadioBeam.Database.Mnesia do
          dynamic_oauth2_client(dynamic_oauth2_client: %DynamicOAuth2Client{} = dyn_oauth2_client)
        ),
        do: dyn_oauth2_client
-
-  defp domain_mod_to_table(User), do: Tables.User
-  defp domain_mod_to_table(Room), do: Tables.Room
-  defp domain_mod_to_table(Room.Alias), do: Tables.RoomAlias
-  defp domain_mod_to_table(View.State), do: Tables.RoomView
-  defp domain_mod_to_table(DynamicOAuth2Client), do: Tables.DynamicOAuth2Client
 end
