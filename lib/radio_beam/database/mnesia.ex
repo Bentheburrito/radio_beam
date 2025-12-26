@@ -4,6 +4,7 @@ defmodule RadioBeam.Database.Mnesia do
   """
   @behaviour RadioBeam.Database
   @behaviour RadioBeam.ContentRepo.Database
+  @behaviour RadioBeam.Room.Database
 
   import RadioBeam.Database.Mnesia.Tables.User
   import RadioBeam.Database.Mnesia.Tables.Room
@@ -163,13 +164,81 @@ defmodule RadioBeam.Database.Mnesia do
       case table do
         Tables.User -> &user(id: &1, user: :_)
         Tables.Room -> &room(id: &1, room: :_)
-        Tables.RoomAlias -> &room_alias(id: &1, room_alias: :_)
+        Tables.RoomAlias -> &room_alias(alias_struct: &1, room_id: :_)
         Tables.RoomView -> &room_view(id: &1, room_view: :_)
         Tables.DynamicOAuth2Client -> &dynamic_oauth2_client(id: &1, dynamic_oauth2_client: :_)
       end
 
     _match_functions =
       for id <- ids, do: {match_head_fxn.(id), [], [:"$_"]}
+  end
+
+  @impl RadioBeam.Room.Database
+  def upsert_room(%Room{} = room) do
+    room_record = room(id: room.id, room: room)
+
+    transaction(fn ->
+      :mnesia.write(Tables.Room, room_record, :write)
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def fetch_room(room_id) do
+    transaction(fn ->
+      case :mnesia.read(Tables.Room, room_id, :read) do
+        [] -> {:error, :not_found}
+        [record] -> {:ok, record_to_domain_struct(record)}
+      end
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def upsert_view(key, view) do
+    room_view_record = room_view(id: key, room_view: view)
+
+    transaction(fn ->
+      :mnesia.write(Tables.RoomView, room_view_record, :write)
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def fetch_view(key) do
+    transaction(fn ->
+      case :mnesia.read(Tables.RoomView, key, :read) do
+        [] -> {:error, :not_found}
+        [record] -> {:ok, record_to_domain_struct(record)}
+      end
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def create_alias(%Room.Alias{} = alias, room_id, ensure_room_exists? \\ true) do
+    transaction(fn ->
+      case :mnesia.read(Tables.RoomAlias, alias, :write) do
+        [_record] ->
+          {:error, :alias_in_use}
+
+        [] ->
+          if ensure_room_exists? do
+            case :mnesia.read(Tables.Room, room_id, :read) do
+              [room(id: ^room_id)] -> [alias_struct: alias, room_id: room_id] |> room_alias() |> :mnesia.write()
+              [] -> {:error, :room_does_not_exist}
+            end
+          else
+            [alias_struct: alias, room_id: room_id] |> room_alias() |> :mnesia.write()
+          end
+      end
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def fetch_room_id_by_alias(%Room.Alias{} = alias) do
+    transaction(fn ->
+      case :mnesia.read(Tables.RoomAlias, alias, :read) do
+        [] -> {:error, :not_found}
+        [room_alias(room_id: room_id)] -> {:ok, room_id}
+      end
+    end)
   end
 
   @impl RadioBeam.ContentRepo.Database
@@ -221,21 +290,16 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   defp domain_struct_to_record(%User{} = user), do: user(id: user.id, user: user)
-  defp domain_struct_to_record(%Room{} = room), do: room(id: room.id, room: room)
-
-  defp domain_struct_to_record(%Room.Alias{} = alias), do: room_alias(id: alias.alias_tuple, room_alias: alias)
-
-  defp domain_struct_to_record(%View.State{} = view_state), do: room_view(id: view_state.key, room_view: view_state)
 
   defp domain_struct_to_record(%DynamicOAuth2Client{} = dyn_oauth2_client),
     do: dynamic_oauth2_client(id: dyn_oauth2_client.client_id, dynamic_oauth2_client: dyn_oauth2_client)
 
   defp record_to_domain_struct(user(user: %User{} = user)), do: user
   defp record_to_domain_struct(room(room: %Room{} = room)), do: room
-  defp record_to_domain_struct(room_alias(room_alias: %Room.Alias{} = room_alias)), do: room_alias
+  defp record_to_domain_struct(room_alias(alias_struct: %Room.Alias{} = room_alias)), do: room_alias
   defp record_to_domain_struct(upload() = upload_record), do: struct!(Upload, upload(upload_record))
 
-  defp record_to_domain_struct(room_view(room_view: %View.State{} = view_state)), do: view_state
+  defp record_to_domain_struct(room_view(room_view: view_state)), do: view_state
 
   defp record_to_domain_struct(
          dynamic_oauth2_client(dynamic_oauth2_client: %DynamicOAuth2Client{} = dyn_oauth2_client)

@@ -31,7 +31,7 @@ defmodule Fixtures do
       register_room_alias: fn
         "#invalid:localhost", _ -> {:error, :invalid_alias}
         "#not_mapped:localhost", _ -> :ok
-        _alias, _ -> {:error, :already_registered}
+        _alias, _ -> {:error, :alias_in_use}
       end
     }
   end

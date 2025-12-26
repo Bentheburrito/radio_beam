@@ -9,8 +9,9 @@ defmodule RadioBeam.Room do
   require Logger
 
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
-  alias RadioBeam.Database
   alias RadioBeam.Room
+  alias RadioBeam.Room.Alias
+  alias RadioBeam.Room.Database
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Events
   alias RadioBeam.User
@@ -136,6 +137,11 @@ defmodule RadioBeam.Room do
   def redact_event(room_id, user_id, event_id, reason \\ nil) do
     Room.Server.send(room_id, Events.redaction(room_id, user_id, event_id, reason))
   end
+
+  def lookup_id_by_alias(%Alias{} = alias), do: Database.fetch_room_id_by_alias(alias)
+
+  def bind_alias_to_room(%Alias{} = alias, room_id, ensure_room_exists? \\ true),
+    do: Database.create_alias(alias, room_id, ensure_room_exists?)
 
   def get_members(room_id, user_id, at_event_id \\ :latest_visible, membership_filter \\ fn _ -> true end)
 
@@ -269,6 +275,6 @@ defmodule RadioBeam.Room do
     do: Enum.sort_by(event_stream, & &1.order_id, {:desc, TopologicalID})
 
   defp get(id) do
-    with {:error, :not_found} <- Database.fetch(Room, id), do: {:error, :unauthorized}
+    with {:error, :not_found} <- Database.fetch_room(id), do: {:error, :unauthorized}
   end
 end

@@ -10,6 +10,27 @@ defmodule RadioBeam.User.Account do
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
 
+  def get_timeline_preferences(user_id, filter_or_filter_id \\ :none) do
+    with {:ok, user} <- Database.fetch(User, user_id) do
+      ignored_user_ids =
+        MapSet.new(user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
+
+      preferences = put_filter_if_id_present(%{ignored_user_ids: ignored_user_ids}, user, filter_or_filter_id)
+
+      {:ok, preferences}
+    end
+  end
+
+  defp put_filter_if_id_present(prefs, user, filter_id) when is_binary(filter_id) do
+    case User.get_event_filter(user, filter_id) do
+      {:ok, filter} -> Map.put(prefs, :filter, filter)
+      {:error, :not_found} -> Map.put(prefs, :filter, EventFilter.new(%{}))
+    end
+  end
+
+  defp put_filter_if_id_present(prefs, _user, :none), do: prefs
+  defp put_filter_if_id_present(prefs, _user, %{} = inline_filter), do: Map.put(prefs, :filter, inline_filter)
+
   def put_device_display_name(user_id, device_id, display_name) do
     Database.transaction(fn ->
       with {:ok, %User{} = user} <- Database.fetch(User, user_id, lock: :write),

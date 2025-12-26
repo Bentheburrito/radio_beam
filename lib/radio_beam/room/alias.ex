@@ -1,51 +1,34 @@
 defmodule RadioBeam.Room.Alias do
   @moduledoc """
-  This table maps room aliases to room IDs
+  Represents a user-friendly name to reference a `RadioBeam.Room`.
   """
 
-  defstruct ~w|alias_tuple room_id|a
+  alias Polyjuice.Util.Identifiers.V1.ServerName
 
-  alias RadioBeam.Database
+  defstruct ~w|localpart server_name|a
 
   @type t() :: %__MODULE__{}
 
-  def dump!(alias), do: alias
-  def load!(alias), do: alias
-
   # TOIMPL: check the room alias grammar
   @doc """
-  Adds a new room alias mapping. Returns `{:ok, %Alias{}}` on success, or
-  `{:error, error}` otherwise, where `error` is either `:room_does_not_exist` or
-  `:alias_in_use`.
+  Validate a room alias. Returns `{:ok, %Alias{}}` on success, or `{:error,
+  :invalid_alias}`.
   """
-  def put(alias, room_id) do
-    with {:ok, alias_localpart, server_name} <- validate(alias) do
-      alias_tuple = {alias_localpart, server_name}
-
-      Database.transaction(fn ->
-        case Database.fetch(__MODULE__, alias_tuple) do
-          {:ok, %__MODULE__{}} ->
-            {:error, :alias_in_use}
-
-          {:error, :not_found} ->
-            alias = %__MODULE__{alias_tuple: alias_tuple, room_id: room_id}
-
-            with :ok <- Database.insert(alias) do
-              {:ok, alias}
-            end
-        end
-      end)
+  def new(alias_str) when is_binary(alias_str) do
+    with {:ok, localpart, server_name} <- validate(alias_str) do
+      {:ok, %__MODULE__{localpart: localpart, server_name: server_name}}
     end
   end
 
-  defp validate(alias) do
-    case String.split(alias, ":", parts: 3) do
-      ["#" <> localpart, server_name] ->
+  defp validate(alias_str) do
+    case String.split(alias_str, ":", parts: 3) do
+      ["#" <> localpart | rest] ->
+        # handle server names with a port like `homeserver.com:7547`
+        server_name = Enum.join(rest, ":")
+
         cond do
-          # TOIMPL: "The localpart of a room alias may contain any valid non-surrogate
-          # Unicode codepoints except : and NUL."
           not String.valid?(localpart) or not String.printable?(localpart) -> {:error, :invalid_alias_localpart}
-          server_name != RadioBeam.server_name() -> {:error, :invalid_or_unknown_server_name}
+          not match?({:ok, _}, ServerName.parse(server_name)) -> {:error, :invalid_server_name}
           :else -> {:ok, localpart, server_name}
         end
 
@@ -54,10 +37,7 @@ defmodule RadioBeam.Room.Alias do
     end
   end
 
-  def get_room_id(alias) do
-    with {:ok, localpart, server_name} <- validate(alias),
-         {:ok, %__MODULE__{room_id: room_id}} <- Database.fetch(__MODULE__, {localpart, server_name}) do
-      {:ok, room_id}
-    end
+  defimpl String.Chars do
+    def to_string(alias), do: "##{alias.localpart}:#{alias.server_name}"
   end
 end

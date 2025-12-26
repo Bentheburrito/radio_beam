@@ -44,7 +44,7 @@ defmodule RadioBeam.Room.CoreTest do
 
         deps =
           Map.put(default_deps(), :register_room_alias, fn
-            ^alias, _ -> :ok
+            %Room.Alias{localpart: ^alias_localpart, server_name: ^server_name}, _ -> :ok
             other_alias, _ -> raise "room creation checking for alias #{other_alias}"
           end)
 
@@ -152,7 +152,7 @@ defmodule RadioBeam.Room.CoreTest do
       assert {:error, :invalid_alias} = Room.Core.send(room, canonical_alias_event, default_deps())
 
       canonical_alias_event = Events.canonical_alias(room.id, creator_id, "differentroom", "localhost")
-      assert {:error, :alias_room_id_mismatch} = Room.Core.send(room, canonical_alias_event, default_deps())
+      assert {:error, :alias_in_use} = Room.Core.send(room, canonical_alias_event, default_deps())
 
       canonical_alias_event = Events.canonical_alias(room.id, creator_id, "not_mapped", "localhost")
 
@@ -164,9 +164,9 @@ defmodule RadioBeam.Room.CoreTest do
   defp default_deps do
     %{
       register_room_alias: fn
-        "#invalid:localhost", _ -> {:error, :invalid_alias}
-        "#not_mapped:localhost", _ -> :ok
-        _alias, _ -> {:error, :already_registered}
+        %Room.Alias{localpart: "invalid", server_name: "localhost"}, _ -> {:error, :invalid_alias}
+        %Room.Alias{localpart: "not_mapped", server_name: "localhost"}, _ -> :ok
+        _alias, _ -> {:error, :alias_in_use}
       end
     }
   end

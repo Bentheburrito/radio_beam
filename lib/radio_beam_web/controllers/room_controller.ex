@@ -98,10 +98,10 @@ defmodule RadioBeamWeb.RoomController do
   # TOIMPL: server_name query parameter?
   def join(conn, %{"room_id_or_alias" => room_id_or_alias}) do
     if String.starts_with?(room_id_or_alias, "#") do
-      case Room.Alias.get_room_id(room_id_or_alias) do
-        {:ok, room_id} ->
-          join(conn, %{"room_id" => room_id})
-
+      with {:ok, alias} <- Room.Alias.new(room_id_or_alias),
+           {:ok, room_id} <- Room.lookup_id_by_alias(alias) do
+        join(conn, %{"room_id" => room_id})
+      else
         {:error, :not_found} ->
           conn
           |> put_status(404)

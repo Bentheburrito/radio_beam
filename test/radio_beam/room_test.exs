@@ -57,10 +57,41 @@ defmodule RadioBeam.RoomTest do
         assert {:ok, %{content: %{"name" => "The Computer Room"}}} =
                  Room.get_state(room_id, creator.id, "m.room.name", "")
 
-        alias = "##{alias_localpart}:#{server_name}"
-        assert {:ok, ^room_id} = Room.Alias.get_room_id(alias)
+        {:ok, alias} = Room.Alias.new("##{alias_localpart}:#{server_name}")
+        assert {:ok, ^room_id} = Room.lookup_id_by_alias(alias)
         # TODO: assert invite_3pid, and visibility
       end
+    end
+  end
+
+  describe "bind_alias_to_room/2" do
+    test "succeeds when no other alias is bound to the room" do
+      user = Fixtures.user()
+      {:ok, room_id} = Room.create(user)
+      {:ok, alias} = Room.Alias.new("#coffeetalk:localhost")
+      :ok = Room.bind_alias_to_room(alias, room_id)
+    end
+
+    test "errors with :alias_in_use when the given alias is already mapped to a room ID" do
+      user = Fixtures.user()
+      {:ok, room_id} = Room.create(user)
+      {:ok, alias} = Room.Alias.new("#teatalk:localhost")
+      :ok = Room.bind_alias_to_room(alias, room_id)
+
+      {:ok, another_room_id} = Room.create(user)
+      assert {:error, :alias_in_use} = Room.bind_alias_to_room(alias, another_room_id)
+    end
+
+    test "errors with :room_does_not_exist when the given alias is already mapped to a room ID" do
+      {:ok, alias} = Room.Alias.new("#justwaterforme:localhost")
+      assert {:error, :room_does_not_exist} = Room.bind_alias_to_room(alias, Fixtures.room_id())
+    end
+
+    test "errors with :invalid_or_unknown_server_name when servername does not match this homeserver" do
+      user = Fixtures.user()
+      {:ok, room_id} = Room.create(user)
+      {:ok, alias} = Room.Alias.new("#hellooooooworld:blahblah")
+      assert {:error, :invalid_or_unknown_server_name} = Room.bind_alias_to_room(alias, room_id)
     end
   end
 

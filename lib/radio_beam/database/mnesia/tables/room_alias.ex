@@ -2,10 +2,9 @@ defmodule RadioBeam.Database.Mnesia.Tables.RoomAlias do
   @moduledoc false
 
   require Record
-  Record.defrecord(:room_alias, __MODULE__, id: nil, room_alias: nil)
-  @type alias_tuple() :: {localpart :: String.t(), server_name :: String.t()}
+  Record.defrecord(:room_alias, __MODULE__, alias_struct: nil, room_id: nil)
 
-  @type t() :: record(:room_alias, id: alias_tuple(), room_alias: RadioBeam.Room.Alias.t())
+  @type t() :: record(:room_alias, alias_struct: RadioBeam.Room.Alias.t(), room_id: RadioBeam.Room.id())
 
   def opts, do: [attributes: room_alias() |> room_alias() |> Keyword.keys(), type: :set]
 end

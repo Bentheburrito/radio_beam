@@ -1,15 +1,17 @@
 defmodule RadioBeam.Room.View do
   @moduledoc false
-  alias RadioBeam.Database
   alias RadioBeam.PubSub
   alias RadioBeam.Room
+  alias RadioBeam.Room.Database
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Timeline
-  alias RadioBeam.Room.View.State
   alias RadioBeam.User
+
+  @type key() :: term()
+  @type t() :: Participating.t() | RelatedEvents.t() | Timeline.t()
 
   def handle_pdu(%Room{} = room, %PDU{} = pdu) do
     Core.handle_pdu(room, pdu, deps())
@@ -17,19 +19,19 @@ defmodule RadioBeam.Room.View do
 
   def all_participating(user_id) do
     # TODO: should hide view_state key behind fxn in Participating here?
-    fetch_view({Participating, user_id})
+    Database.fetch_view({Participating, user_id})
   end
 
   def latest_known_join_pdu(room_id, user_id) do
-    with {:ok, %Participating{} = participating} <- fetch_view({Participating, user_id}),
+    with {:ok, %Participating{} = participating} <- Database.fetch_view({Participating, user_id}),
          :error <- Map.fetch(participating.latest_known_join_pdus, room_id) do
       {:error, :never_joined}
     end
   end
 
   def timeline_event_stream(room_id, user_id, from) do
-    with {:ok, %Room{} = room} <- Database.fetch(Room, room_id),
-         {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
+    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
+         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
       {:ok, Timeline.topological_stream(timeline, user_id, from, &Room.DAG.fetch!(room.dag, &1))}
     end
   end
@@ -42,8 +44,8 @@ defmodule RadioBeam.Room.View do
   end
 
   def get_events(room_id, user_id, event_ids) do
-    with {:ok, %Room{} = room} <- Database.fetch(Room, room_id),
-         {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
+    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
+         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
       {:ok, Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))}
     end
   end
@@ -56,7 +58,7 @@ defmodule RadioBeam.Room.View do
   end
 
   def nearest_events_stream(room_id, user_id, timestamp, direction) do
-    with {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}) do
+    with {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
       {:ok, Timeline.stream_event_ids_closest_to_ts(timeline, user_id, timestamp, direction)}
     end
   end
@@ -69,9 +71,9 @@ defmodule RadioBeam.Room.View do
   @spec get_child_events(Room.id(), User.id(), [Room.event_id()] | Room.event_id()) ::
           %{Room.event_id() => Enumerable.t(Event.t())} | {:ok, Enumerable.t(Event.t())} | {:error, :not_found}
   def get_child_events(room_id, user_id, event_ids) when is_list(event_ids) do
-    with {:ok, %Room{} = room} <- Database.fetch(Room, room_id),
-         {:ok, %Timeline{} = timeline} <- fetch_view({Timeline, room_id}),
-         {:ok, %RelatedEvents{} = relations} <- fetch_view({RelatedEvents, room_id}) do
+    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
+         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}),
+         {:ok, %RelatedEvents{} = relations} <- Database.fetch_view({RelatedEvents, room_id}) do
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
 
       timeline
@@ -95,19 +97,11 @@ defmodule RadioBeam.Room.View do
 
   defp deps do
     %{
-      fetch_view: &fetch_view/1,
+      fetch_view: &Database.fetch_view/1,
       save_view!: &save_view!/2,
-      broadcast!: &broadcast!/2
+      broadcast!: &PubSub.broadcast/2
     }
   end
 
-  defp fetch_view(key) do
-    with {:ok, %State{state: view_state}} <- Database.fetch(State, key) do
-      {:ok, view_state}
-    end
-  end
-
-  defp save_view!(view_state, key), do: Database.insert!(%State{key: key, state: view_state})
-
-  defp broadcast!(pubsub_topic, pubsub_message), do: PubSub.broadcast(pubsub_topic, pubsub_message)
+  defp save_view!(view_state, key), do: Database.upsert_view(key, view_state)
 end

@@ -72,10 +72,9 @@ defmodule RadioBeam.Room.Core do
     [event.content["alias"] | Map.get(event.content, "alt_aliases", [])]
     |> Stream.filter(&is_binary/1)
     |> Enum.find_value(send_common(room, event), fn alias ->
-      case deps.register_room_alias.(alias, room_id) do
-        :ok -> false
-        {:error, :already_registered} -> {:error, :alias_room_id_mismatch}
-        {:error, _} = error -> error
+      with {:ok, alias} <- Room.Alias.new(alias),
+           :ok <- deps.register_room_alias.(alias, room_id) do
+        false
       end
     end)
   end

@@ -1,49 +1,47 @@
 defmodule RadioBeam.Room.AliasTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room
   alias RadioBeam.Room.Alias
 
   describe "put/2" do
-    setup do
-      %{user: Fixtures.user()}
+    test "creates an Alias given a valid room alias string" do
+      valid_localparts = ~w|hello.world nottaken asjdf; %@#*I&SF&ED-gibberish|
+
+      valid_server_names =
+        ~w|localhost some.website.org hello-world.com 123.org my.matrixhs.co.uk [::1] 179.11.0.2|
+
+      ports = [":3456", ""]
+
+      for localpart <- valid_localparts, server_name <- valid_server_names, port <- ports do
+        server_name = "#{server_name}#{port}"
+        alias = "##{localpart}:#{server_name}"
+
+        assert {:ok, %Alias{localpart: ^localpart, server_name: ^server_name}} = Alias.new(alias)
+      end
     end
 
-    test "successfully maps a new alias if the room exists and the alias is not already used", %{user: user} do
-      {:ok, room_id} = Room.create(user)
-
-      alias_localpart = "nottaken"
-      alias_servername = "localhost"
-      alias = "##{alias_localpart}:#{alias_servername}"
-
-      assert {:ok, %Alias{alias_tuple: {^alias_localpart, ^alias_servername}, room_id: ^room_id}} =
-               Alias.put(alias, room_id)
+    test "errors with :invalid_alias when string is nonsensical" do
+      for alias <- ["", "asdf", ";"] do
+        assert {:error, :invalid_alias} = Alias.new(alias)
+      end
     end
 
-    test "errors with :invalid_aliaswhen localpart contains ':'" do
-      invalid_alias_localpart = "hello:world"
-      alias = "##{invalid_alias_localpart}:localhost"
-      assert {:error, :invalid_alias} = Alias.put(alias, "!asdf:localhost")
-    end
-
-    test "errors with :invalid_alias_localpart when localpart contains null byte or ':'" do
+    test "errors with :invalid_alias_localpart when localpart contains null byte" do
       invalid_alias_localpart = <<"helloworld", 0>>
       alias = "##{invalid_alias_localpart}:localhost"
-      assert {:error, :invalid_alias_localpart} = Alias.put(alias, "!asdf:localhost")
+      assert {:error, :invalid_alias_localpart} = Alias.new(alias)
     end
 
-    test "errors with :invalid_or_unknown_server_name when servername does not match this homeserver" do
-      alias = "#helloworld:blahblah"
-      assert {:error, :invalid_or_unknown_server_name} = Alias.put(alias, "!asdf:localhost")
-    end
+    test "errors with :invalid_server_name when server_name is invalid" do
+      alias_localpart = "helloowrld"
 
-    test "errors with :alias_in_use when the given alias is already mapped to a room ID", %{user: user} do
-      {:ok, room_id} = Room.create(user)
-      alias = "#uhoh:localhost"
-      Alias.put(alias, room_id)
+      invalid_server_names =
+        ~w|localhost:asdf localhost:6432:346 localhost:6543:asdf loca/host matrix$.org Wow!.com|
 
-      {:ok, another_room_id} = Room.create(user)
-      assert {:error, :alias_in_use} = Alias.put(alias, another_room_id)
+      for server_name <- invalid_server_names do
+        alias = "##{alias_localpart}:#{server_name}"
+        assert {:error, :invalid_server_name} = Alias.new(alias)
+      end
     end
   end
 end
