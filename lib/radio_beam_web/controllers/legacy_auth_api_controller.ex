@@ -52,18 +52,18 @@ defmodule RadioBeamWeb.LegacyAuthAPIController do
         |> json(Errors.forbidden("Registration is not enabled on this homeserver."))
         |> halt()
 
-      {:error, %{errors: [id: {error_message, _}]}} ->
+      {:error, [user_id: error_message]} ->
         conn
         |> put_status(400)
         |> json(Errors.endpoint_error(:invalid_username, error_message))
 
-      {:error, %{errors: [pwd_hash: {"password is too weak", _}]}} ->
+      {:error, [pwd_hash: "password is too weak"]} ->
         conn
         |> put_status(400)
         |> json(Errors.endpoint_error(:weak_password, LegacyAPI.weak_password_message()))
 
-      {:error, changeset} ->
-        Logger.error("Error creating a user during registration: #{inspect(changeset.errors)}")
+      {:error, errors} ->
+        Logger.error("Error creating a user during registration: #{inspect(errors)}")
 
         conn
         |> put_status(500)

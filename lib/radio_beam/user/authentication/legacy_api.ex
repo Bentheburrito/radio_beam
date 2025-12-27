@@ -10,6 +10,7 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
   alias RadioBeam.User.Database
   alias RadioBeam.User
   alias RadioBeam.User.Device
+  alias RadioBeam.User.LocalAccount
 
   require Logger
 
@@ -19,8 +20,12 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
           {:ok, User.t()} | {:error, :registration_disabled | :already_exists | Ecto.Changeset.t()}
   def register(localpart, server_name \\ RadioBeam.Config.server_name(), password) do
     if Application.get_env(:radio_beam, :registration_enabled, false) do
-      with {:ok, %User{} = user} <- User.new("@#{localpart}:#{server_name}", password),
-           :ok <- Database.insert_new_user(user) do
+      with {:ok, %LocalAccount{} = user_account} <- LocalAccount.new("@#{localpart}:#{server_name}", password),
+           :ok <- Database.insert_new_user_account(user_account) do
+        # temp
+        {:ok, user} = User.new("@#{localpart}:#{server_name}")
+        Database.insert_new_user(user)
+        # temp
         {:ok, user}
       end
     else

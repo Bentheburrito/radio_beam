@@ -13,6 +13,7 @@ defmodule Fixtures do
   alias RadioBeam.ContentRepo
   alias RadioBeam.User
   alias RadioBeam.User.Device
+  alias RadioBeam.User.LocalAccount
   alias Vix.Vips.Operation
 
   def strong_password, do: "Asdf123$"
@@ -82,8 +83,11 @@ defmodule Fixtures do
   def user_id(server_name \\ "localhost"), do: server_name |> UserIdentifier.generate() |> to_string()
 
   def user(user_id \\ user_id()) do
-    {:ok, user} = User.new(user_id, strong_password())
+    {:ok, user} = User.new(user_id)
     :ok = Database.insert_new_user(user)
+    {:ok, local_account} = LocalAccount.new(user.id, strong_password())
+    :ok = Database.insert_new_user_account(local_account)
+
     user
   end
 

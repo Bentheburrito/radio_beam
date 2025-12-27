@@ -8,9 +8,10 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.Authentication.OAuth2.Builtin.Guardian
   alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
-  alias RadioBeam.User.Database
   alias RadioBeam.User
+  alias RadioBeam.User.Database
   alias RadioBeam.User.Device
+  alias RadioBeam.User.LocalAccount
 
   @required_grant_types ["authorization_code", "refresh_token"]
   @num_code_gen_bytes 32
@@ -328,16 +329,16 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
 
   @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_password(user_id, password, code_grant_values) do
-    case Database.fetch_user(user_id) do
-      {:ok, %User{} = user} ->
-        if Argon2.verify_pass(password, user.pwd_hash) do
+    case Database.fetch_user_account(user_id) do
+      {:ok, %LocalAccount{} = user_account} ->
+        if Argon2.verify_pass(password, user_account.pwd_hash) do
           create_authz_code(user_id, code_grant_values)
         else
           {:error, :unknown_username_or_password}
         end
 
       {:error, :not_found} ->
-        Argon2.no_user_verify(User.hash_pwd_opts())
+        User.LocalAccount.no_user_verify()
         {:error, :unknown_username_or_password}
     end
   end

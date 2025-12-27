@@ -5,8 +5,6 @@ defmodule RadioBeam.User do
   @types [
     id: :string,
     account_data: :map,
-    pwd_hash: :string,
-    registered_at: :utc_datetime,
     cross_signing_key_ring: :map,
     last_cross_signing_change_at: :integer,
     room_keys: :map,
@@ -28,17 +26,9 @@ defmodule RadioBeam.User do
 
   @type t() :: %__MODULE__{}
 
-  @hash_pwd_opts [t_cost: 3, m_cost: 12, parallelism: 1]
-  def hash_pwd_opts, do: @hash_pwd_opts
-
-  def dump!(user), do: user
-  def load!(user), do: user
-
-  def new(id, password) do
+  def new(id) do
     params = %{
       id: id,
-      pwd_hash: Argon2.hash_pwd_salt(password, @hash_pwd_opts),
-      registered_at: DateTime.utc_now(),
       account_data: %{},
       cross_signing_key_ring: CrossSigningKeyRing.new(),
       last_cross_signing_change_at: 0,
@@ -52,7 +42,6 @@ defmodule RadioBeam.User do
     |> validate_required([:id])
     |> validate_length(:id, max: 255)
     |> validate_user_id()
-    |> validate_password(password)
     |> apply_action(:update)
   end
 
@@ -73,22 +62,6 @@ defmodule RadioBeam.User do
     else
       [id: "localpart can only contain lowercase alphanumeric characters, or the symbols ._=-/+"]
     end
-  end
-
-  defp validate_password(changeset, password) do
-    validate_change(changeset, :pwd_hash, fn :pwd_hash, _pwd_hash ->
-      if strong_password?(password) do
-        []
-      else
-        [pwd_hash: "password is too weak"]
-      end
-    end)
-  end
-
-  @doc "Checks if the password is strong"
-  @spec strong_password?(String.t()) :: boolean()
-  def strong_password?(password) do
-    Regex.match?(~r/^(?=.*[A-Z])(?=.*[!@#$%^&*\(\)\-+=\{\[\}\]|\\:;"'<,>.?\/])(?=.*[0-9])(?=.*[a-z]).{8,}$/, password)
   end
 
   @doc """

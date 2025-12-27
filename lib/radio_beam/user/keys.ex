@@ -1,6 +1,11 @@
 defmodule RadioBeam.User.Keys do
   @moduledoc """
   Query a User's Device and CrossSigningKeys
+
+  TODO: move the API fxns from here to RadioBeam.User. Make this module home to
+  a domain struct that manages cross signing keys and room backup keys (not
+  device keys)
+
   """
   alias RadioBeam.User.Database
   alias RadioBeam.Room
