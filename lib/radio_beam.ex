@@ -13,7 +13,6 @@ defmodule RadioBeam do
       ContentRepo,
       ContentRepo.MatrixContentURI,
       Errors,
-      PubSub,
       RateLimit,
       Room,
       Room.Alias,

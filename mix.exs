@@ -135,6 +135,11 @@ defmodule RadioBeam.MixProject do
         # "cmd --shell './bin/xref_check.sh'",
         "cmd --shell 'mix xref graph --format cycles --fail-above 3 > /dev/null'",
         "test"
+      ],
+      boundaries: [
+        "boundary.visualize",
+        "cmd --shell 'dot -Grankdir=TB -Tpng boundary/app.dot -o boundary/app.png'",
+        ~s|cmd --shell 'echo "generated graph in boundary/app.png"'|
       ]
     ]
   end

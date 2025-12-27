@@ -25,6 +25,7 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 radio_beam-*.tar
 
+boundary/
 .vscode/
 .elixir_ls/
 .expert/
