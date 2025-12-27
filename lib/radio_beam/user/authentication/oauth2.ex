@@ -90,7 +90,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
               | {:error, :expired_token | :invalid_token | :not_found}
   @callback revoke_token(Guardian.Token.token()) :: :ok
 
-  def metadata(scheme \\ :https, host \\ RadioBeam.server_name(), oauth2_module \\ oauth2_module())
+  def metadata(scheme \\ :https, host \\ RadioBeam.Config.server_name(), oauth2_module \\ oauth2_module())
 
   def metadata(scheme, host, oauth2_module) do
     base_url = "#{scheme}://#{host}"
@@ -132,7 +132,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
         %URI{} = redirect_uri,
         device_opts \\ [],
         scheme \\ :https,
-        host \\ RadioBeam.server_name(),
+        host \\ RadioBeam.Config.server_name(),
         oauth2_module \\ oauth2_module()
       ) do
     issuer = URI.new!(metadata(scheme, host).issuer)

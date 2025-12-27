@@ -12,7 +12,6 @@ config :radio_beam,
   # ecto_repos: [RadioBeam.Repo],
   access_token_lifetime: {60, :minute},
   refresh_token_lifetime: {2, :week},
-  env: config_env(),
   capabilities: %{
     "m.change_password": %{enabled: false},
     "m.room_versions": %{

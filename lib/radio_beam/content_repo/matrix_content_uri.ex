@@ -10,14 +10,14 @@ defmodule RadioBeam.ContentRepo.MatrixContentURI do
 
   @type t() :: %__MODULE__{id: String.t(), server_name: String.t()}
 
-  def new(server_name \\ RadioBeam.server_name(), id \\ Ecto.UUID.generate()) do
+  def new(server_name \\ RadioBeam.Config.server_name(), id \\ Ecto.UUID.generate()) do
     with :ok <- validate_server_name(server_name),
          :ok <- validate_media_id(id) do
       {:ok, %__MODULE__{id: id, server_name: server_name}}
     end
   end
 
-  def new!(server_name \\ RadioBeam.server_name(), id \\ Ecto.UUID.generate()) do
+  def new!(server_name \\ RadioBeam.Config.server_name(), id \\ Ecto.UUID.generate()) do
     case new(server_name, id) do
       {:ok, mxc} -> mxc
       {:error, error} -> raise to_string(error)

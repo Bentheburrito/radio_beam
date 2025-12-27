@@ -2,6 +2,7 @@ defmodule Fixtures do
   @moduledoc """
   Test fixtures
   """
+  use Boundary, check: [in: false, out: false]
 
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.User.Database

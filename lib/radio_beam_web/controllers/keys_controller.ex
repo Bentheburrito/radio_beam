@@ -113,28 +113,28 @@ defmodule RadioBeamWeb.KeysController do
     |> Enum.reduce(%{}, fn
       {user_id, id, :unknown_key}, acc ->
         error = Errors.not_found("The key used to make the signature is not known to the server.")
-        RadioBeam.put_nested(acc, [user_id, id], error)
+        RadioBeam.AccessExtras.put_nested(acc, [user_id, id], error)
 
       {user_id, id, :disallowed_key_type}, acc ->
         error =
           Errors.bad_json("You can only upload signatures for your own keys, or others' master cross-signing keys.")
 
-        RadioBeam.put_nested(acc, [user_id, id], error)
+        RadioBeam.AccessExtras.put_nested(acc, [user_id, id], error)
 
       {user_id, id, :no_master_csk}, acc ->
         error = Errors.not_found("The key this signature is for is not known to the server.")
-        RadioBeam.put_nested(acc, [user_id, id], error)
+        RadioBeam.AccessExtras.put_nested(acc, [user_id, id], error)
 
       {user_id, id, :user_not_found}, acc ->
-        RadioBeam.put_nested(acc, [user_id, id], Errors.not_found("User not found"))
+        RadioBeam.AccessExtras.put_nested(acc, [user_id, id], Errors.not_found("User not found"))
 
       {user_id, id, :different_keys}, acc ->
         error = Errors.bad_json("The key in the request does not match the key on the server.")
-        RadioBeam.put_nested(acc, [user_id, id], error)
+        RadioBeam.AccessExtras.put_nested(acc, [user_id, id], error)
 
       {user_id, id, :invalid_signature}, acc ->
         error = Errors.endpoint_error(:invalid_signature, "The uploaded signature failed verification.")
-        RadioBeam.put_nested(acc, [user_id, id], error)
+        RadioBeam.AccessExtras.put_nested(acc, [user_id, id], error)
     end)
   end
 

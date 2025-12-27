@@ -147,14 +147,15 @@ defmodule RadioBeam.User.Keys do
   defp add_csk(key_results, _path, nil, _user_id), do: key_results
 
   defp add_csk(key_results, path, %CrossSigningKey{} = key, user_id) do
-    RadioBeam.put_nested(key_results, path, CrossSigningKey.to_map(key, user_id))
+    RadioBeam.AccessExtras.put_nested(key_results, path, CrossSigningKey.to_map(key, user_id))
   end
 
   defp add_device_keys(key_results, user, device_ids) do
     devices = User.get_all_devices(user)
 
     for %{id: device_id} = device <- devices, Enum.empty?(device_ids) or device_id in device_ids, reduce: key_results do
-      key_results -> RadioBeam.put_nested(key_results, ["device_keys", user.id, device_id], device.identity_keys)
+      key_results ->
+        RadioBeam.AccessExtras.put_nested(key_results, ["device_keys", user.id, device_id], device.identity_keys)
     end
   end
 
@@ -199,7 +200,7 @@ defmodule RadioBeam.User.Keys do
           failures
 
         {:error, error}, failures ->
-          RadioBeam.put_nested(failures, [user.id, key_or_device_id], error)
+          RadioBeam.AccessExtras.put_nested(failures, [user.id, key_or_device_id], error)
       end)
     end)
   end
@@ -243,7 +244,7 @@ defmodule RadioBeam.User.Keys do
           failures
 
         {:error, {user_id, keyb64, error}}, failures ->
-          RadioBeam.put_nested(failures, [user_id, keyb64], error)
+          RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], error)
       end)
     end)
   end

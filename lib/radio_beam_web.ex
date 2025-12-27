@@ -16,6 +16,20 @@ defmodule RadioBeamWeb do
   below. Instead, define additional modules and import
   those modules here.
   """
+  use Boundary, deps: [RadioBeam, Phoenix, Polyjuice.Util.Schema], exports: []
+
+  def application_children do
+    [
+      RadioBeamWeb.Telemetry,
+      # Start to serve requests, typically the last entry
+      RadioBeamWeb.Endpoint
+    ]
+  end
+
+  def config_change(changed, _new, removed) do
+    RadioBeamWeb.Endpoint.config_change(changed, removed)
+    :ok
+  end
 
   def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
 

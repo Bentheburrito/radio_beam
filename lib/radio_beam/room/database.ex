@@ -24,7 +24,7 @@ defmodule RadioBeam.Room.Database do
   defdelegate fetch_room_id_by_alias(alias), to: @database_backend
 
   def create_alias(alias, room_id, ensure_room_exists? \\ true) do
-    if alias.server_name != RadioBeam.server_name() do
+    if alias.server_name != RadioBeam.Config.server_name() do
       {:error, :invalid_or_unknown_server_name}
     else
       @database_backend.create_alias(alias, room_id, ensure_room_exists?)

@@ -51,7 +51,7 @@ defmodule RadioBeam.Room.Core.Redactions do
 
   defp should_apply_redaction?(%Room{} = room, redactor, original_sender) do
     # TOOD: explicitly pass down dependency fxn to check admins
-    redactor in RadioBeam.admins() or State.user_has_power?(room.state, ["redact"], redactor) or
+    redactor in RadioBeam.Config.admins() or State.user_has_power?(room.state, ["redact"], redactor) or
       original_sender == redactor
   end
 end

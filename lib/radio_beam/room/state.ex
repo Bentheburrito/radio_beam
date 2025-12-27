@@ -81,7 +81,7 @@ defmodule RadioBeam.Room.State do
   def room_version(%__MODULE__{} = state) do
     case fetch(state, "m.room.create", "") do
       {:ok, %{event: %{content: %{"room_version" => version}}}} -> version
-      {:error, :not_found} -> RadioBeam.default_room_version()
+      {:error, :not_found} -> RadioBeam.Config.default_room_version()
     end
   end
 

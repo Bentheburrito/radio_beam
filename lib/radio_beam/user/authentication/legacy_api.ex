@@ -17,7 +17,7 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
 
   @spec register(user_localpart :: String.t(), server_name :: String.t(), password :: String.t()) ::
           {:ok, User.t()} | {:error, :registration_disabled | :already_exists | Ecto.Changeset.t()}
-  def register(localpart, server_name \\ RadioBeam.server_name(), password) do
+  def register(localpart, server_name \\ RadioBeam.Config.server_name(), password) do
     if Application.get_env(:radio_beam, :registration_enabled, false) do
       with {:ok, %User{} = user} <- User.new("@#{localpart}:#{server_name}", password),
            :ok <- Database.insert_new_user(user) do

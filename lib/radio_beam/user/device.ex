@@ -75,7 +75,7 @@ defmodule RadioBeam.User.Device do
 
       Polyjuice.Util.JSON.signed?(key_params_with_new_signature, user_id, verify_key) ->
         identity_keys =
-          RadioBeam.put_nested(
+          RadioBeam.AccessExtras.put_nested(
             device.identity_keys,
             ["signatures", user_id, device.id],
             key_params_with_new_signature["signatures"][user_id][device.id]

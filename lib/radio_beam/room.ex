@@ -26,7 +26,8 @@ defmodule RadioBeam.Room do
 
   ### API ###
 
-  def generate_id(domain \\ RadioBeam.server_name()), do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
+  def generate_id(domain \\ RadioBeam.Config.server_name()),
+    do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
 
   @doc """
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
@@ -34,7 +35,7 @@ defmodule RadioBeam.Room do
   """
   @spec create(User.t(), [Room.Core.create_opt() | {:version, String.t()}]) :: {:ok, id()} | {:error, any()}
   def create(%User{} = creator, opts \\ []) do
-    room_version = Keyword.get(opts, :version, RadioBeam.default_room_version())
+    room_version = Keyword.get(opts, :version, RadioBeam.Config.default_room_version())
     Room.Server.create(room_version, creator.id, opts)
   end
 

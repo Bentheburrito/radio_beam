@@ -53,7 +53,7 @@ defmodule RadioBeam.Room.Events do
     end
 
     maybe_canonical_alias_event =
-      event_from_optional_string.(:alias, &canonical_alias(room_id, creator_id, &1, RadioBeam.server_name()))
+      event_from_optional_string.(:alias, &canonical_alias(room_id, creator_id, &1, RadioBeam.Config.server_name()))
 
     maybe_name_event = event_from_optional_string.(:name, &name(room_id, creator_id, &1))
     maybe_topic_event = event_from_optional_string.(:topic, &topic(room_id, creator_id, &1))

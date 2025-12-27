@@ -102,7 +102,7 @@ defmodule RadioBeam.User do
   def put_account_data(_user, _scope, type, _content) when type in @invalid_types, do: {:error, :invalid_type}
 
   def put_account_data(%__MODULE__{} = user, scope, type, content) do
-    account_data = RadioBeam.put_nested(user.account_data, [scope, type], content)
+    account_data = RadioBeam.AccessExtras.put_nested(user.account_data, [scope, type], content)
     {:ok, %__MODULE__{user | account_data: account_data}}
   end
 

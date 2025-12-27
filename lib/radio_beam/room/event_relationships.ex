@@ -19,7 +19,7 @@ defmodule RadioBeam.Room.EventRelationships do
     for {{rel_type, aggregator, init_acc}, child_events} <- grouped_events, reduce: event do
       event ->
         aggregation = Enum.reduce(child_events, init_acc, aggregator)
-        RadioBeam.put_nested(event, [:unsigned, "m.relations", rel_type], aggregation)
+        RadioBeam.AccessExtras.put_nested(event, [:unsigned, "m.relations", rel_type], aggregation)
     end
   end
 

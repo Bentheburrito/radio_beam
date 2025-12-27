@@ -11,10 +11,19 @@ defmodule RadioBeam.MixProject do
       aliases: aliases(),
       deps: deps(),
       # compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      compilers: [:boundary] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
+      boundary: [
+        default: [
+          check: [
+            aliases: true,
+            apps: [:argon2_elixir, :ecto, :guardian, :hammer, :polyjuice_util, :phoenix, {:mix, :runtime}]
+          ]
+        ]
+      ],
       test_coverage: [
         ignore_modules: [
-          RadioBeam.Application,
+          RadioBeamApplication,
           RadioBeam.DataCase,
           RadioBeam.User.Authentication.OAuth2.Builtin.Guardian.Plug,
           RadioBeamWeb.Telemetry,
@@ -35,7 +44,7 @@ defmodule RadioBeam.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {RadioBeam.Application, []},
+      mod: {RadioBeamApplication, []},
       extra_applications: [:logger, :runtime_tools, :os_mon, :mnesia]
     ]
   end
@@ -82,7 +91,8 @@ defmodule RadioBeam.MixProject do
       {:hammer, "~> 7.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false}
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:boundary, "~> 0.10", runtime: false}
     ]
   end
 
@@ -117,7 +127,15 @@ defmodule RadioBeam.MixProject do
         "esbuild radio_beam --minify",
         "phx.digest"
       ],
-      lint: ["compile --warnings-as-errors", "deps.unlock --unused", "credo", "format --check-formatted", "test"]
+      lint: [
+        "compile --warnings-as-errors",
+        "deps.unlock --unused",
+        "credo",
+        "format --check-formatted",
+        # "cmd --shell './bin/xref_check.sh'",
+        "cmd --shell 'mix xref graph --format cycles --fail-above 3 > /dev/null'",
+        "test"
+      ]
     ]
   end
 end

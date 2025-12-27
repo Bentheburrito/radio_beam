@@ -3,6 +3,9 @@ defmodule RadioBeam.ContentRepo do
   The content/media repository. Manages user-uploaded files, authorizing based
   on configured limits.
   """
+
+  # use Boundary, deps: [], exports: []
+
   alias RadioBeam.ContentRepo.Database
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI

@@ -16,8 +16,8 @@ defmodule RadioBeamWeb.Schemas.Room do
   end
 
   def create do
-    %{available: available_room_versions, default: default_room_version} =
-      Application.get_env(:radio_beam, :capabilities)[:"m.room_versions"]
+    available_room_versions = RadioBeam.supported_room_versions()
+    default_room_version = RadioBeam.default_room_version()
 
     %{
       "creation_content" => optional(content_schema()),

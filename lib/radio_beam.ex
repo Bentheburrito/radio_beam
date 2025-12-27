@@ -6,36 +6,82 @@ defmodule RadioBeam do
   Contexts are also responsible for managing your data, regardless
   if it comes from the database, an external API or others.
   """
+  use Boundary,
+    deps: [Argon2, Ecto, Guardian, Hammer, Phoenix.PubSub, Polyjuice.Util],
+    exports: [
+      AccessExtras,
+      ContentRepo,
+      ContentRepo.MatrixContentURI,
+      Errors,
+      PubSub,
+      RateLimit,
+      Room,
+      Room.Alias,
+      Room.EphemeralState,
+      Room.Timeline,
+      Sync,
+      Transaction,
+      User,
+      User.Account,
+      User.Authentication.OAuth2,
+      User.Authentication.LegacyAPI,
+      User.EventFilter,
+      User.Keys,
+      ### temp / leaky
+      ContentRepo.Database,
+      ContentRepo.Thumbnail,
+      ContentRepo.Upload,
+      ContentRepo.Upload.FileInfo,
+      Room.Events.PaginationToken,
+      User.Authentication.OAuth2.UserDeviceSession,
+      User.CrossSigningKeyRing,
+      User.Device,
+      User.Device.Message,
+      User.Device.OneTimeKeyRing,
+      User.RoomKeys,
+      User.RoomKeys.Backup,
+      User.RoomKeys.Backup.KeyData
+    ]
 
-  def server_name, do: Application.fetch_env!(:radio_beam, :server_name)
+  alias RadioBeam.Config
+  alias RadioBeam.Room.Timeline.LazyLoadMembersCache
 
-  def admins, do: Application.fetch_env!(:radio_beam, :admins)
+  def application_children do
+    :ok = RadioBeam.Database.init()
 
-  def env, do: Application.fetch_env!(:radio_beam, :env)
-
-  def default_room_version, do: Application.fetch_env!(:radio_beam, :capabilities)[:"m.room_versions"].default
-
-  @cs_event_keys ["content", "event_id", "origin_server_ts", "room_id", "sender", "state_key", "type", "unsigned"]
-  @doc """
-  Strips an event/map of all keys that don't belong to a Client-Server
-  API-defined event. The map must use string keys (see PDU.to_event/2-4 for
-  converting a PDU struct to a similar object).
-  """
-  def client_event(event) when is_map(event) do
-    case Map.take(event, @cs_event_keys) do
-      %{"state_key" => nil} = event -> Map.delete(event, "state_key")
-      event -> event
-    end
+    [
+      {DNSCluster, query: Application.get_env(:radio_beam, :dns_cluster_query) || :ignore},
+      {Phoenix.PubSub, name: RadioBeam.PubSub},
+      # Start the Finch HTTP client for sending emails
+      {Finch, name: RadioBeam.Finch},
+      # Start the RoomRegistry
+      {Registry, keys: :unique, name: RadioBeam.RoomRegistry},
+      # Start the RoomEphemeralStateRegistry
+      {Registry, keys: :unique, name: RadioBeam.RoomEphemeralStateRegistry},
+      # Start the GenServer that handles transaction IDs
+      RadioBeam.Transaction,
+      # Start the Room.Server.Supervisor
+      RadioBeam.Room.Server.Supervisor,
+      # Start the Room.EphemeralState.Server Supervisor
+      RadioBeam.Room.EphemeralState.Server.Supervisor,
+      # Cache to reduce redundant membership events in /sync
+      LazyLoadMembersCache,
+      # Cache for authorization code grant flow state
+      RadioBeam.User.Authentication.OAuth2.Builtin.AuthzCodeCache,
+      # Start the Hammer rate limiter
+      RadioBeam.RateLimit
+    ]
   end
 
-  def max_timeline_events, do: Application.get_env(:radio_beam, :max_events)[:timeline]
-  def max_state_events, do: Application.get_env(:radio_beam, :max_events)[:state]
-
-  @doc """
-  Similar to `put_in/3`, but will create keys in `path` if they do not exist.
-  """
-  @spec put_nested(Access.t(), list(), any()) :: Access.t()
-  def put_nested(data, path, value) do
-    put_in(data, Enum.map(path, &Access.key(&1, %{})), value)
+  def config_change(_changed, _new, _removed) do
+    :ok
   end
+
+  def server_name, do: Config.server_name()
+  def admins, do: Config.admins()
+
+  def supported_room_versions, do: Config.supported_room_versions()
+  def default_room_version, do: Config.default_room_version()
+  def max_timeline_events, do: Config.max_timeline_events()
+  def max_state_events, do: Config.max_state_events()
 end

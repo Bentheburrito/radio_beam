@@ -89,7 +89,7 @@ defmodule RadioBeam.User.CrossSigningKey do
 
       JSON.signed?(csk_params_with_new_signature, signer_id, signer_key) ->
         signatures =
-          RadioBeam.put_nested(
+          RadioBeam.AccessExtras.put_nested(
             csk.signatures,
             [signer_id, VerifyKey.id(csk)],
             csk_params_with_new_signature["signatures"][signer_id][VerifyKey.id(csk)]

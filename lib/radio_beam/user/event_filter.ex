@@ -37,7 +37,7 @@ defmodule RadioBeam.User.EventFilter do
     event_fields
     |> Stream.map(&String.split(&1, "."))
     |> Enum.reduce(%{}, fn path, new_event ->
-      RadioBeam.put_nested(new_event, path, get_in(event, path))
+      RadioBeam.AccessExtras.put_nested(new_event, path, get_in(event, path))
     end)
   end
 
@@ -49,8 +49,8 @@ defmodule RadioBeam.User.EventFilter do
   """
   def new(%{} = definition) do
     room_def = Map.get(definition, "room", %{})
-    timeline = room_def |> Map.get("timeline", %{}) |> parse_event_filter(RadioBeam.max_timeline_events())
-    state = room_def |> Map.get("state", %{}) |> parse_event_filter(RadioBeam.max_state_events())
+    timeline = room_def |> Map.get("timeline", %{}) |> parse_event_filter(RadioBeam.Config.max_timeline_events())
+    state = room_def |> Map.get("state", %{}) |> parse_event_filter(RadioBeam.Config.max_state_events())
     format = Map.get(definition, "event_format", "client")
     format = if format in ["client", "federation"], do: format, else: "client"
     fields = Map.get(definition, "event_fields")
