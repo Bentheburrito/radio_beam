@@ -1,7 +1,6 @@
 defmodule RadioBeamWeb.Schemas.Sync do
   @moduledoc false
 
-  alias RadioBeam.Room.Events.PaginationToken
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.Filter
   alias RadioBeamWeb.Schemas
@@ -26,7 +25,7 @@ defmodule RadioBeamWeb.Schemas.Sync do
     }
   end
 
-  defp pagination_token(token), do: PaginationToken.parse(token)
+  defp pagination_token(token), do: RadioBeam.Sync.parse_pagination_token(token)
 
   defp filter_by_id("{" <> _), do: {:error, :invalid}
   defp filter_by_id(filter_id) when is_binary(filter_id), do: {:ok, filter_id}

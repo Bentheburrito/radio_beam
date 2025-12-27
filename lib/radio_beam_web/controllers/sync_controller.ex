@@ -5,7 +5,6 @@ defmodule RadioBeamWeb.SyncController do
 
   require Logger
 
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Sync
   alias RadioBeam.User
@@ -41,7 +40,7 @@ defmodule RadioBeamWeb.SyncController do
 
     from_and_dir =
       case Map.fetch(request, "from") do
-        {:ok, %PaginationToken{} = from} -> {from, dir}
+        {:ok, from} -> {from, dir}
         :error -> if dir == :forward, do: :root, else: :tip
       end
 

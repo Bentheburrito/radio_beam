@@ -6,7 +6,6 @@ defmodule RadioBeamWeb.RoomController do
   require Logger
 
   alias RadioBeam.Room.EphemeralState
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.{Errors, Room, Transaction, User}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
@@ -230,8 +229,7 @@ defmodule RadioBeamWeb.RoomController do
   def get_members(conn, %{"room_id" => room_id} = params) do
     at_event_id =
       with %{"at" => pagination_token_str} <- params,
-           {:ok, %PaginationToken{} = token} <- PaginationToken.parse(pagination_token_str),
-           {:ok, at_event_id} <- PaginationToken.room_last_seen_event_id(token, room_id) do
+           {:ok, at_event_id} <- RadioBeam.Sync.parse_event_id_at(pagination_token_str, room_id) do
         at_event_id
       else
         _ -> :latest_visible

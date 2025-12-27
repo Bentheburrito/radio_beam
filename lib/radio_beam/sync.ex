@@ -75,4 +75,12 @@ defmodule RadioBeam.Sync do
 
     put_in(sync.device_unused_fallback_key_types, unused_fallback_algos)
   end
+
+  def parse_pagination_token(maybe_encoded_pagination_token), do: PaginationToken.parse(maybe_encoded_pagination_token)
+
+  def parse_event_id_at(maybe_encoded_pagination_token, room_id) do
+    with {:ok, %PaginationToken{} = token} <- PaginationToken.parse(maybe_encoded_pagination_token) do
+      PaginationToken.room_last_seen_event_id(token, room_id)
+    end
+  end
 end

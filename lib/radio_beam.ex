@@ -32,7 +32,6 @@ defmodule RadioBeam do
       ContentRepo.Thumbnail,
       ContentRepo.Upload,
       ContentRepo.Upload.FileInfo,
-      Room.Events.PaginationToken,
       User.Authentication.OAuth2.UserDeviceSession,
       User.CrossSigningKeyRing,
       User.Device,
