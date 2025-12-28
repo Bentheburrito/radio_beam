@@ -15,38 +15,38 @@ defmodule RadioBeamWeb.ClientController do
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Client] when action in ~w|send_to_device|a
 
-  def get_device(%{assigns: %{session: %{user: user}}} = conn, params) do
+  def get_device(%{assigns: %{session: %{user: %{id: user_id}}}} = conn, params) do
     case Map.fetch(params, "device_id") do
       {:ok, device_id} ->
-        case User.get_device(user, device_id) do
-          {:ok, %Device{} = device} -> json(conn, get_device_response(device))
+        case User.get_device_info(user_id, device_id) do
+          {:ok, device_info} -> json(conn, get_device_response(device_info))
           {:error, :not_found} -> json_error(conn, 404, :not_found, "no device by that ID")
         end
 
       :error ->
-        devices = User.get_all_devices(user)
-        json(conn, %{devices: Enum.map(devices, &get_device_response/1)})
+        all_devices_info = User.get_all_device_info(user_id)
+        json(conn, %{devices: Enum.map(all_devices_info, &get_device_response/1)})
     end
   end
 
-  defp get_device_response(%Device{} = device) do
+  defp get_device_response(device_info) do
     response =
       %{
-        device_id: device.id,
-        display_name: device.display_name,
-        last_seen_ts: device.last_seen_at
+        device_id: device_info.id,
+        display_name: device_info.display_name,
+        last_seen_ts: device_info.last_seen_at
       }
 
-    if is_nil(device.last_seen_from_ip) do
+    if is_nil(device_info.last_seen_from_ip) do
       response
     else
-      Map.put(response, :last_seen_ip, ip_tuple_to_string(device.last_seen_from_ip))
+      Map.put(response, :last_seen_ip, ip_tuple_to_string(device_info.last_seen_from_ip))
     end
   end
 
   def put_device_display_name(conn, %{"device_id" => device_id, "display_name" => display_name}) do
     case User.Account.put_device_display_name(conn.assigns.session.user.id, device_id, display_name) do
-      {:ok, %User{}} -> json(conn, %{})
+      {:ok, _} -> json(conn, %{})
       {:error, :not_found} -> json_error(conn, 404, :not_found, "device not found")
       {:error, error} -> log_error(conn, error)
     end
@@ -68,7 +68,7 @@ defmodule RadioBeamWeb.ClientController do
 
     case Transaction.begin(txn_id, device.id, conn.request_path) do
       {:ok, handle} ->
-        case Device.Message.put_many(request["messages"], user.id, type) do
+        case User.send_to_devices(request["messages"], user.id, type) do
           :ok ->
             Transaction.done(handle, %{})
             json(conn, %{})

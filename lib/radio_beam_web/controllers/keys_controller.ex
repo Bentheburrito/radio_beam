@@ -10,7 +10,6 @@ defmodule RadioBeamWeb.KeysController do
   alias RadioBeam.User.Keys
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKeyRing
-  alias RadioBeam.User.Device.OneTimeKeyRing
   alias RadioBeamWeb.Schemas.Keys, as: KeysSchema
 
   require Logger
@@ -42,19 +41,10 @@ defmodule RadioBeamWeb.KeysController do
         {"fallback_keys", fallback_keys} -> {:fallback_keys, fallback_keys}
       end)
 
-    case Keys.put_device_keys(user.id, device_id, opts) do
-      {:ok, %User{device_map: %{^device_id => %{one_time_key_ring: otk_ring}}}} ->
-        json(conn, %{"one_time_key_counts" => OneTimeKeyRing.one_time_key_counts(otk_ring)})
-
-      {:error, :invalid_user_or_device_id} ->
-        json_error(conn, 400, :bad_json, @creds_dont_match_msg)
-
-      {:error, error} when error in ~w|not_found user_does_not_exist|a ->
-        Logger.error(
-          "Something has gone very wrong while #{inspect(device_id)} was uploading new keys: #{inspect(error)}"
-        )
-
-        json_error(conn, 500, :unknown)
+    case User.put_device_keys(user.id, device_id, opts) do
+      {:ok, otk_counts} -> json(conn, %{"one_time_key_counts" => otk_counts})
+      {:error, :invalid_user_or_device_id} -> json_error(conn, 400, :bad_json, @creds_dont_match_msg)
+      {:error, :not_found} -> json_error(conn, 404, :not_found)
     end
   end
 
@@ -86,7 +76,7 @@ defmodule RadioBeamWeb.KeysController do
       {:error, error} when error in ~w|missing_master_key missing_or_invalid_master_key_signatures|a ->
         json_error(conn, 400, :endpoint_error, [:invalid_signature, @bad_signature_msg])
 
-      {:error, error} when error in ~w|not_found user_does_not_exist|a ->
+      {:error, error} when error in ~w|not_found|a ->
         Logger.error(
           "Something has gone very wrong while #{inspect(device_id)} was uploading new keys: #{inspect(error)}"
         )

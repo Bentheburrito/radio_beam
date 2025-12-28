@@ -373,7 +373,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
 
         with {:ok, access_token, access_claims} <- new_access_token(session, scope, issuer, scope_to_urn),
              {:ok, refresh_token, refresh_claims} <- new_refresh_token(session, access_claims, issuer),
-             :ok <- rotate_device_ids(session, access_claims["jti"], refresh_claims["jti"]) do
+             {:ok, _device} <- rotate_device_ids(session, access_claims["jti"], refresh_claims["jti"]) do
           {:ok, access_token, refresh_token, access_claims["scope"], access_claims["exp"] - System.os_time(:second)}
         end
       end)
@@ -401,9 +401,11 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   end
 
   defp rotate_device_ids(session, access_token_id, refresh_token_id) do
-    device = Device.rotate_token_ids(session.device, access_token_id, refresh_token_id)
-    user = User.put_device(session.user, device)
-    Database.update_user(user)
+    Database.update_user_device_with(
+      session.user.id,
+      session.device.id,
+      &Device.rotate_token_ids(&1, access_token_id, refresh_token_id)
+    )
   end
 
   @impl RadioBeam.User.Authentication.OAuth2
@@ -421,11 +423,10 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   end
 
   defp perform_device_upkeep(%UserDeviceSession{} = session, device_ip) do
-    device = session.device |> Device.put_last_seen_at(device_ip) |> Device.put_retryable_refresh_token_id(nil)
-    user = User.put_device(session.user, device)
+    upkeep_fxn = &(&1 |> Device.put_last_seen_at(device_ip) |> Device.put_retryable_refresh_token_id(nil))
 
-    with :ok <- Database.update_user(user) do
-      UserDeviceSession.existing_from_user(user, device.id)
+    with {:ok, device} <- Database.update_user_device_with(session.user.id, session.device.id, upkeep_fxn) do
+      UserDeviceSession.existing_from_user(session.user, device.id)
     end
   end
 
@@ -448,12 +449,13 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
          {:ok, {^refresh_token, _}, {new_refresh_token, %{"jti" => new_refresh_token_id}}} <-
            exchange_for(refresh_token, "refresh", refresh_opts),
          {:ok, session} <- Guardian.resource_from_claims(new_claims) do
-      device =
-        session.device
+      updater = fn device ->
+        device
         |> Device.rotate_token_ids(new_claims["jti"], new_refresh_token_id)
         |> Device.put_retryable_refresh_token_id(old_claims["jti"])
+      end
 
-      session.user |> User.put_device(device) |> Database.update_user()
+      {:ok, _} = Database.update_user_device_with(session.user.id, session.device.id, updater)
 
       {:ok, new_access_token, new_refresh_token, new_claims["scope"], new_claims["exp"]}
     end
@@ -487,12 +489,13 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
     case Guardian.resource_from_token(token) do
       {:ok, %UserDeviceSession{} = session, claims} ->
         if claims["jti"] in Map.values(session.device.last_issued_token_ids) do
-          device =
-            session.device
+          updater = fn device ->
+            device
             |> Device.rotate_token_ids(nil, nil)
             |> Device.put_retryable_refresh_token_id(nil)
+          end
 
-          session.user |> User.put_device(device) |> Database.update_user()
+          {:ok, _} = Database.update_user_device_with(session.user.id, session.device.id, updater)
           :ok
         else
           :ok

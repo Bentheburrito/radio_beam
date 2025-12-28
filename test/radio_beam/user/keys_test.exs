@@ -4,6 +4,7 @@ defmodule RadioBeam.User.KeysTest do
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
+  alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.Keys
   alias RadioBeam.Room
@@ -40,64 +41,6 @@ defmodule RadioBeam.User.KeysTest do
       }
     }
   }
-  describe "put_device_keys/3" do
-    setup do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{user: user, device: device}
-    end
-
-    test "adds the given one-time keys to a device", %{user: user, device: device} do
-      {:ok, user} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys)
-      {:ok, device} = User.get_device(user, device.id)
-
-      assert %{"signed_curve25519" => 2} = Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)
-    end
-
-    @fallback_key %{
-      "signed_curve25519:AAAAGj" => %{
-        "fallback" => true,
-        "key" => "fallback1",
-        "signatures" => %{
-          "@alice:example.com" => %{
-            "ed25519:JLAFKJWSCS" =>
-              "FLWxXqGbwrb8SM3Y795eB6OA8bwBcoMZFXBqnTn58AYWZSqiD45tlBVcDa2L7RwdKXebW/VzDlnfVJ+9jok1Bw"
-          }
-        }
-      }
-    }
-    test "adds the given fallback key to a device", %{user: user, device: device} do
-      {:ok, user} = Keys.put_device_keys(user.id, device.id, fallback_keys: @fallback_key)
-      {:ok, device} = User.get_device(user, device.id)
-
-      assert {:ok, {"AAAAGj", %{"key" => "fallback1"}, _}} =
-               Device.OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
-    end
-
-    test "adds the given device identity keys to a device", %{user: user, device: device} do
-      {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
-
-      {:ok, user} = Keys.put_device_keys(user.id, device.id, identity_keys: device_key)
-
-      {:ok, device} = User.get_device(user, device.id)
-
-      expected_ed_key = "ed25519:#{device.id}"
-      expected_ed_value = device_key["keys"] |> Map.values() |> hd()
-
-      assert %{"keys" => %{^expected_ed_key => ^expected_ed_value}} = device.identity_keys
-    end
-
-    test "errors when the user or device ID on the given device identity keys map don't match the device's ID or its owner's user ID",
-         %{user: user, device: device} do
-      for device_id <- ["blah", device.id],
-          user_id <- ["blah", user.id],
-          device_id != device.id or user_id != user.id do
-        {device_key, _signingkey} = Fixtures.device_keys(device_id, user_id)
-
-        assert {:error, :invalid_identity_keys} =
-                 Keys.put_device_keys(user.id, device.id, identity_keys: device_key)
-      end
-    end
-  end
 
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
@@ -141,9 +84,11 @@ defmodule RadioBeam.User.KeysTest do
 
       assert map_size(Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)) == 0
 
-      {:ok, user} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
+      {:ok, _otk_counts} =
+        User.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
 
-      {:ok, device} = User.get_device(user, device.id)
+      {:ok, device} = Database.fetch_user_device(user.id, device.id)
+
       assert %{^algo => 2} = Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)
 
       task = Task.async(fn -> Keys.claim_otks(%{user.id => %{device.id => algo}}) end)
@@ -222,12 +167,19 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, _} = Room.join(room_id, user1.id)
       {:ok, event_id} = Room.join(room_id, user2.id)
 
+      Process.sleep(1)
+
       before_user1_change = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       Process.sleep(1)
 
       Fixtures.create_and_put_device_keys(user1, user1_device)
+
+      Process.sleep(1)
+
       after_user1_change = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+
+      Process.sleep(1)
 
       expected = MapSet.new([user1_id])
       assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_change)
@@ -411,7 +363,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, _device} = Keys.put_device_keys(user.id, device.id, identity_keys: device_key)
+      {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
       assert %{} = query_result = Keys.query_all(%{user.id => []}, user.id)
 
       assert %{
@@ -438,7 +390,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, user} = Keys.put_device_keys(user.id, device.id, identity_keys: device_key)
+      {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
       assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
 
       assert %{
@@ -463,9 +415,9 @@ defmodule RadioBeam.User.KeysTest do
       {device1_key, _signingkey} = Fixtures.device_keys(device1.id, user.id)
       {device2_key, _signingkey} = Fixtures.device_keys(device2.id, user.id)
       {device3_key, _signingkey} = Fixtures.device_keys(device3.id, user.id)
-      {:ok, user} = Keys.put_device_keys(user.id, device1.id, identity_keys: device1_key)
-      {:ok, user} = Keys.put_device_keys(user.id, device2.id, identity_keys: device2_key)
-      {:ok, user} = Keys.put_device_keys(user.id, device3.id, identity_keys: device3_key)
+      {:ok, _otk_counts} = User.put_device_keys(user.id, device1.id, identity_keys: device1_key)
+      {:ok, _otk_counts} = User.put_device_keys(user.id, device2.id, identity_keys: device2_key)
+      {:ok, _otk_counts} = User.put_device_keys(user.id, device3.id, identity_keys: device3_key)
       assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
 
       assert %{^user_id => device_keys_map} = query_result["device_keys"]
@@ -487,8 +439,8 @@ defmodule RadioBeam.User.KeysTest do
 
       {user, device} = Fixtures.device(user)
       {device_key, device_signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, user} = Keys.put_device_keys(user.id, device.id, identity_keys: device_key)
-      {:ok, device} = User.get_device(user, device.id)
+      {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
+      {:ok, device} = Database.fetch_user_device(user.id, device.id)
 
       %{user: user, device: device, user_priv_csks: privkeys, device_signingkey: device_signingkey}
     end

@@ -8,7 +8,6 @@ defmodule RadioBeam.User do
     cross_signing_key_ring: :map,
     last_cross_signing_change_at: :integer,
     room_keys: :map,
-    device_map: :map,
     filter_map: :map
   ]
   @attrs Keyword.keys(@types)
@@ -19,10 +18,11 @@ defmodule RadioBeam.User do
 
   import Ecto.Changeset
 
-  alias RadioBeam.User.RoomKeys
+  alias RadioBeam.User.Database
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.RoomKeys
 
   @type t() :: %__MODULE__{}
 
@@ -33,7 +33,6 @@ defmodule RadioBeam.User do
       cross_signing_key_ring: CrossSigningKeyRing.new(),
       last_cross_signing_change_at: 0,
       room_keys: RoomKeys.new!(),
-      device_map: %{},
       filter_map: %{}
     }
 
@@ -81,57 +80,59 @@ defmodule RadioBeam.User do
 
   ### DEVICE ###
 
-  @doc "Puts a device for the given User, overriding any existing entry."
-  @spec put_device(t(), Device.t()) :: t()
-  def put_device(%__MODULE__{} = user, %Device{identity_keys: identity_keys} = device) do
-    if match?(%{identity_keys: ^identity_keys}, user.device_map[device.id]) do
-      put_in(user.device_map[device.id], device)
-    else
-      struct!(user,
-        device_map: Map.put(user.device_map, device.id, device),
-        last_cross_signing_change_at: System.os_time(:millisecond)
-      )
+  @doc "Gets metadata about a user's device"
+  @spec get_device_info(id(), Device.id()) :: {:ok, map()} | {:error, :not_found}
+  def get_device_info(user_id, device_id) do
+    case Database.fetch_user_device(user_id, device_id) do
+      {:ok, %Device{id: ^device_id, user_id: ^user_id} = device} -> {:ok, device_info(device)}
+      _else -> {:error, :not_found}
     end
   end
 
-  @doc "Deletes a User's device by ID. No-op if the device doesn't exist."
-  @spec delete_device(t(), Device.id()) :: t()
-  def delete_device(%__MODULE__{} = user, device_id) when is_map_key(user.device_map, device_id) do
-    struct!(user,
-      device_map: Map.delete(user.device_map, device_id),
-      last_cross_signing_change_at: System.os_time(:millisecond)
-    )
+  @doc "Gets metadata about all of a user's devices"
+  @spec get_all_device_info(id()) :: [map()]
+  def get_all_device_info(user_id), do: user_id |> Database.get_all_devices_of_user() |> Enum.map(&device_info/1)
+
+  defp device_info(%Device{} = device), do: Map.take(device, ~w|id display_name last_seen_at last_seen_from_ip|a)
+
+  def put_device_keys(user_id, device_id, opts) do
+    case Database.update_user_device_with(user_id, device_id, &Device.put_keys(&1, user_id, opts)) do
+      {:ok, %Device{} = device} -> {:ok, Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)}
+      {:error, :invalid_identity_keys} -> {:error, :invalid_user_or_device_id}
+      {:error, :not_found} -> {:error, :not_found}
+    end
   end
 
-  def delete_device(%__MODULE__{} = user, _device_id), do: user
-
-  @doc "Gets a User's device"
-  @spec get_device(t(), Device.id()) :: {:ok, Device.t()} | {:error, :not_found}
-  def get_device(%__MODULE__{} = user, device_id) do
-    with :error <- Map.fetch(user.device_map, device_id), do: {:error, :not_found}
-  end
-
-  @doc "Gets all of a User's devices"
-  @spec get_all_devices(t()) :: [Device.t()]
-  def get_all_devices(%__MODULE__{} = user), do: Map.values(user.device_map)
-
-  @doc """
-  Claims one-time keys from a set of user's devices. This function expects a
-  map like `%{%User{} => %{device_id => algorithm_name}}`.
-  """
-  @spec claim_device_otks(%{required(t()) => %{required(Device.id()) => algorithm :: String.t()}}) :: map()
-  def claim_device_otks(user_device_algo_map) do
-    Map.new(user_device_algo_map, fn {%__MODULE__{} = user, device_algo_map} ->
-      Enum.reduce(device_algo_map, {user, %{}}, fn {device_id, algo}, {%__MODULE__{} = user, device_key_map} ->
-        with {:ok, %Device{} = device} <- get_device(user, device_id),
-             {:ok, {%Device{} = device, one_time_key}} <- Device.claim_otk(device, algo) do
-          {put_device(user, device), Map.put(device_key_map, device.id, one_time_key)}
-        else
-          _error -> {user, device_key_map}
-        end
-      end)
+  def get_undelivered_to_device_messages(user_id, device_id, since, mark_as_read \\ nil) do
+    Database.update_user_device_with(user_id, device_id, fn %Device{} = device ->
+      {messages_or_none, device} = Device.Message.pop_unsent(device, since, mark_as_read)
+      {:ok, device, messages_or_none}
     end)
   end
+
+  # TOIMPL: put device over federation
+  def send_to_devices(to_device_message_request, sender_id, message_type) do
+    to_device_message_request
+    |> parse_send_to_device_request()
+    |> Enum.each(fn {user_id, device_id, message} ->
+      Database.update_user_device_with(user_id, device_id, &Device.Message.put(&1, message, sender_id, message_type))
+    end)
+  end
+
+  defp parse_send_to_device_request(request) do
+    request
+    |> Stream.flat_map(fn {"@" <> _rest = user_id, %{} = device_map} ->
+      Stream.map(device_map, fn {device_id_or_glob, message_attrs} ->
+        {user_id, device_id_or_glob, message_attrs}
+      end)
+    end)
+    |> Stream.flat_map(fn
+      {user_id, "*", message} -> user_id |> Database.get_all_devices_of_user() |> Stream.map(&{user_id, &1.id, message})
+      tuple -> [tuple]
+    end)
+  end
+
+  ### ROOM KEYS ###
 
   def put_room_keys(%__MODULE__{} = user, %RoomKeys{} = room_keys), do: put_in(user.room_keys, room_keys)
 

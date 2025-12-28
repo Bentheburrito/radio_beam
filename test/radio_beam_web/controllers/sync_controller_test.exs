@@ -4,8 +4,6 @@ defmodule RadioBeamWeb.SyncControllerTest do
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User.Account
   alias RadioBeam.User
-  alias RadioBeam.User.Device
-  alias RadioBeam.User.Keys
   alias RadioBeam.Room
 
   setup do
@@ -60,10 +58,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
       {:ok, user} = Account.put(user.id, :global, "m.some_config", %{"hello" => "world"})
       {:ok, user} = Account.put(user.id, room_id1, "m.some_config", %{"hello" => "room"})
 
-      Device.Message.put(
-        user.id,
-        device.id,
-        %{"hello" => "world"},
+      User.send_to_devices(
+        %{user.id => %{device.id => %{"hello" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.new_release"
       )
@@ -103,23 +99,20 @@ defmodule RadioBeamWeb.SyncControllerTest do
       {:ok, _event_id} = Room.join(room_id1, user.id)
       {:ok, _event_id} = Room.set_name(room_id1, creator.id, "yo")
 
-      Device.Message.put(
-        user.id,
-        device.id,
-        %{"hello" => "world"},
+      User.send_to_devices(
+        %{user.id => %{device.id => %{"hello" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.new_release"
       )
 
-      Device.Message.put(
-        user.id,
-        device.id,
-        %{"hello2" => "world"},
+      User.send_to_devices(
+        %{user.id => %{device.id => %{"hello2" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.notification"
       )
 
-      {:ok, user} = Keys.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
+      {:ok, _otk_counts} =
+        User.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
 
       filter = JSON.encode!(%{"room" => %{"timeline" => %{"limit" => 3}}})
 

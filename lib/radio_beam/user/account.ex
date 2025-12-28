@@ -32,13 +32,7 @@ defmodule RadioBeam.User.Account do
   defp put_filter_if_id_present(prefs, _user, %{} = inline_filter), do: Map.put(prefs, :filter, inline_filter)
 
   def put_device_display_name(user_id, device_id, display_name) do
-    Database.with_user(user_id, fn %User{} = user ->
-      with {:ok, %Device{} = device} <- User.get_device(user, device_id) do
-        device = Device.put_display_name!(device, display_name)
-        user = User.put_device(user, device)
-        with :ok <- Database.update_user(user), do: {:ok, user}
-      end
-    end)
+    Database.update_user_device_with(user_id, device_id, &Device.put_display_name!(&1, display_name))
   end
 
   @doc """

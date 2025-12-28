@@ -214,8 +214,10 @@ defmodule Fixtures do
 
   def create_and_put_device_keys(user, device) do
     {key, _} = device_keys(device.id, user.id)
-    {:ok, device} = Device.put_keys(device, user.id, identity_keys: key)
-    :ok = user |> User.put_device(device) |> Database.update_user()
+
+    {:ok, device} =
+      Database.update_user_device_with(user.id, device.id, &Device.put_keys(&1, user.id, identity_keys: key))
+
     {user, device}
   end
 

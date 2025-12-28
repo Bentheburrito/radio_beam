@@ -6,14 +6,16 @@ defmodule RadioBeam.User.Device do
   defstruct [
     :id,
     :display_name,
-    :messages,
     :identity_keys,
-    :one_time_key_ring,
+    :identity_keys_last_updated_at,
     :last_issued_token_ids,
+    :last_seen_at,
+    :last_seen_from_ip,
+    :messages,
+    :one_time_key_ring,
     :retryable_refresh_token_id,
     :revoked_unexpired_token_ids,
-    :last_seen_at,
-    :last_seen_from_ip
+    :user_id
   ]
 
   alias RadioBeam.User
@@ -22,19 +24,21 @@ defmodule RadioBeam.User.Device do
   @type t() :: %__MODULE__{}
   @type id() :: term()
 
-  @spec new(String.t(), Keyword.t()) :: t()
-  def new(device_id, opts) do
+  @spec new(User.id(), id(), Keyword.t()) :: t()
+  def new(user_id, device_id, opts) do
     %__MODULE__{
       id: device_id,
       display_name: Keyword.get(opts, :display_name, default_device_name()),
-      messages: %{},
       identity_keys: nil,
-      one_time_key_ring: OneTimeKeyRing.new(),
+      identity_keys_last_updated_at: 0,
       last_issued_token_ids: %{access: nil, refresh: nil},
+      last_seen_at: Keyword.get(opts, :last_seen_at, System.os_time(:millisecond)),
+      last_seen_from_ip: nil,
+      messages: %{},
+      one_time_key_ring: OneTimeKeyRing.new(),
       retryable_refresh_token_id: nil,
       revoked_unexpired_token_ids: MapSet.new(),
-      last_seen_at: Keyword.get(opts, :last_seen_at, System.os_time(:millisecond)),
-      last_seen_from_ip: nil
+      user_id: user_id
     }
   end
 
@@ -48,6 +52,11 @@ defmodule RadioBeam.User.Device do
   def put_keys(%__MODULE__{} = device, user_id, opts) do
     identity_keys = Keyword.get(opts, :identity_keys, device.identity_keys)
 
+    id_keys_last_updated_at =
+      if identity_keys != device.identity_keys,
+        do: System.os_time(:millisecond),
+        else: device.identity_keys_last_updated_at
+
     if valid_identity_keys?(identity_keys, user_id, device.id) do
       one_time_keys = Keyword.get(opts, :one_time_keys, %{})
       fallback_keys = Keyword.get(opts, :fallback_keys, %{})
@@ -57,7 +66,12 @@ defmodule RadioBeam.User.Device do
         |> OneTimeKeyRing.put_otks(one_time_keys)
         |> OneTimeKeyRing.put_fallback_keys(fallback_keys)
 
-      {:ok, %__MODULE__{device | one_time_key_ring: otk_ring, identity_keys: identity_keys}}
+      {:ok,
+       struct!(device,
+         one_time_key_ring: otk_ring,
+         identity_keys: identity_keys,
+         identity_keys_last_updated_at: id_keys_last_updated_at
+       )}
     else
       {:error, :invalid_identity_keys}
     end
@@ -97,7 +111,7 @@ defmodule RadioBeam.User.Device do
   def claim_otk(%__MODULE__{} = device, algorithm) do
     with {:ok, {key_id, key, otk_ring}} <- OneTimeKeyRing.claim_otk(device.one_time_key_ring, algorithm) do
       device = put_in(device.one_time_key_ring, otk_ring)
-      {:ok, {device, %{"#{algorithm}:#{key_id}" => key}}}
+      {:ok, device, %{"#{algorithm}:#{key_id}" => key}}
     end
   end
 

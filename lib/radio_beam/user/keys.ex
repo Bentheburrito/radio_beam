@@ -7,6 +7,8 @@ defmodule RadioBeam.User.Keys do
   device keys)
 
   """
+  import RadioBeam.AccessExtras, only: [put_nested: 3]
+
   alias RadioBeam.User.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.Events.PaginationToken
@@ -20,32 +22,16 @@ defmodule RadioBeam.User.Keys do
 
   @type put_signatures_error() :: :unknown_key | :disallowed_key_type | :no_master_csk | :user_not_found
 
-  def put_device_keys(user_id, device_id, opts) do
-    Database.with_user(user_id, fn %User{} = user ->
-      with {:ok, %Device{} = device} <- User.get_device(user, device_id),
-           {:ok, %Device{} = device} <- Device.put_keys(device, user.id, opts) do
-        user = User.put_device(user, device)
-        :ok = Database.update_user(user)
-        {:ok, user}
-      end
-    end)
-  end
-
   def claim_otks(user_device_algo_map) do
-    user_ids = Map.keys(user_device_algo_map)
-
-    Database.with_all_users(user_ids, fn user_list ->
-      user_map = Map.new(user_list, &{&1.id, &1})
-
-      user_device_key_map =
-        user_device_algo_map
-        |> Map.new(fn {user_id, device_algo_map} -> {Map.fetch!(user_map, user_id), device_algo_map} end)
-        |> User.claim_device_otks()
-
-      Map.new(user_device_key_map, fn {%User{} = updated_user, device_key_map} ->
-        :ok = Database.update_user(updated_user)
-        {updated_user.id, device_key_map}
-      end)
+    user_device_algo_map
+    |> Stream.flat_map(fn {user_id, device_algo_map} ->
+      Stream.map(device_algo_map, fn {device_id, algo} -> {user_id, device_id, algo} end)
+    end)
+    |> Enum.reduce(%{}, fn {user_id, device_id, algo}, acc ->
+      case Database.update_user_device_with(user_id, device_id, &Device.claim_otk(&1, algo)) do
+        {:ok, one_time_key} -> put_nested(acc, [user_id, device_id], one_time_key)
+        {:error, :not_found} -> acc
+      end
     end)
   end
 
@@ -65,9 +51,12 @@ defmodule RadioBeam.User.Keys do
             end
           end)
           |> Stream.reject(&(&1.state_key == user.id))
-          |> Stream.map(&zip_with_user/1)
-          |> Stream.reject(fn {maybe_user, _} -> is_nil(maybe_user) end)
-          |> Enum.group_by(fn {user, _} -> user end, fn {_, member_event} -> member_event end)
+          |> Stream.map(&zip_with_user_and_latest_id_key_change_at/1)
+          |> Stream.reject(fn {maybe_user, _, _} -> is_nil(maybe_user) end)
+          |> Enum.group_by(
+            fn {user, last_device_id_key_change_at, _} -> {user, last_device_id_key_change_at} end,
+            fn {_, _, member_event} -> member_event end
+          )
 
         since_event_map =
           Map.new(room_ids, fn room_id ->
@@ -82,10 +71,11 @@ defmodule RadioBeam.User.Keys do
       end)
 
     Enum.reduce(shared_memberships_by_user, %{changed: MapSet.new(), left: MapSet.new()}, fn
-      {%{id: user_id, last_cross_signing_change_at: lcsca}, _}, acc when lcsca > since_created_at ->
+      {{%{id: user_id, last_cross_signing_change_at: lcsca}, ldikca}, _}, acc
+      when lcsca > since_created_at or ldikca > since_created_at ->
         Map.update!(acc, :changed, &MapSet.put(&1, user_id))
 
-      {user, member_events}, acc ->
+      {{user, _}, member_events}, acc ->
         join_events = Stream.filter(member_events, &(&1.content["membership"] == "join"))
         leave_events = Stream.filter(member_events, &(&1.content["membership"] == "leave"))
 
@@ -106,11 +96,18 @@ defmodule RadioBeam.User.Keys do
     end)
   end
 
-  defp zip_with_user(member_event) do
+  defp zip_with_user_and_latest_id_key_change_at(member_event) do
     case Database.fetch_user(member_event.state_key) do
-      {:ok, user} -> {user, member_event}
-      {:error, :not_found} -> {nil, member_event}
+      {:ok, user} -> {user, max_device_id_key_change_at(user.id), member_event}
+      {:error, :not_found} -> {nil, nil, member_event}
     end
+  end
+
+  defp max_device_id_key_change_at(user_id) do
+    user_id
+    |> Database.get_all_devices_of_user()
+    |> Stream.map(& &1.identity_keys_last_updated_at)
+    |> Enum.max()
   end
 
   defp event_occurred_later?(_event, nil), do: false
@@ -156,7 +153,7 @@ defmodule RadioBeam.User.Keys do
   end
 
   defp add_device_keys(key_results, user, device_ids) do
-    devices = User.get_all_devices(user)
+    devices = Database.get_all_devices_of_user(user.id)
 
     for %{id: device_id} = device <- devices, Enum.empty?(device_ids) or device_id in device_ids, reduce: key_results do
       key_results ->
@@ -190,18 +187,21 @@ defmodule RadioBeam.User.Keys do
   defp put_self_signatures(nil, %User{}), do: %{}
 
   defp put_self_signatures(self_signatures, %User{id: user_id} = user) do
-    devices = User.get_all_devices(user)
-
     Enum.reduce(self_signatures, _failures = %{}, fn {key_or_device_id, key_params}, failures ->
       key_params["signatures"][user_id]
       |> Stream.map(fn {keyb64, _signature} ->
-        with {:ok, verify_key} <- make_verify_key(user.cross_signing_key_ring, keyb64, devices) do
-          put_self_signature(user, devices, key_or_device_id, key_params, verify_key)
+        with {:ok, verify_key} <- make_verify_key(user.cross_signing_key_ring, keyb64, user_id) do
+          put_self_signature(user, key_or_device_id, key_params, verify_key)
         end
       end)
       |> Enum.reduce(failures, fn
         {:ok, %User{} = user}, failures ->
           Database.update_user(user)
+          failures
+
+        {:ok, %Device{} = device}, failures ->
+          # TOFIX: not atomic....
+          Database.update_user_device_with(device.user_id, device.id, fn _old_device -> device end)
           failures
 
         {:error, error}, failures ->
@@ -210,25 +210,25 @@ defmodule RadioBeam.User.Keys do
     end)
   end
 
-  defp make_verify_key(key_ring, "ed25519:" <> id = keyb64, devices) do
-    case get_csk_or_device_by_id(key_ring, id, devices) do
+  defp make_verify_key(key_ring, "ed25519:" <> id = keyb64, user_id) do
+    case get_csk_or_device_by_id(key_ring, id, user_id) do
       %CrossSigningKey{} = csk -> {:ok, csk}
       %Device{identity_keys: %{"keys" => %{^keyb64 => key}}} -> {:ok, Polyjuice.Util.make_verify_key(key, keyb64)}
       nil -> {:error, :unknown_key}
     end
   end
 
-  defp put_self_signature(user, devices, key_or_device_id, key_params, verify_key) do
-    case get_csk_or_device_by_id(user.cross_signing_key_ring, key_or_device_id, devices) do
+  defp put_self_signature(user, key_or_device_id, key_params, verify_key) do
+    case get_csk_or_device_by_id(user.cross_signing_key_ring, key_or_device_id, user.id) do
       %CrossSigningKey{} = csk ->
         with {:ok, new_master_csk} <- CrossSigningKey.put_signature(csk, user.id, key_params, user.id, verify_key) do
           {:ok, put_in(user.cross_signing_key_ring.master, new_master_csk)}
         end
 
       %Device{} = device ->
-        with {:ok, device} <- Device.put_identity_keys_signature(device, user.id, key_params, verify_key) do
-          {:ok, User.put_device(user, device)}
-        end
+        updater = &Device.put_identity_keys_signature(&1, user.id, key_params, verify_key)
+
+        Database.update_user_device_with(user.id, device.id, updater)
     end
   end
 
@@ -282,10 +282,13 @@ defmodule RadioBeam.User.Keys do
     end
   end
 
-  defp get_csk_or_device_by_id(key_ring, key_or_device_id, devices) do
+  defp get_csk_or_device_by_id(key_ring, key_or_device_id, user_id) do
     case CrossSigningKeyRing.get_key_by_id(key_ring, key_or_device_id) do
       %CrossSigningKey{} = csk -> csk
-      nil -> Enum.find(devices, &(&1.id == key_or_device_id))
+      nil -> user_id |> Database.fetch_user_device(key_or_device_id) |> with_default(nil)
     end
   end
+
+  defp with_default({:ok, value}, _default), do: value
+  defp with_default(_non_ok_val, default), do: default
 end

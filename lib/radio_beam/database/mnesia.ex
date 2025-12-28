@@ -3,35 +3,39 @@ defmodule RadioBeam.Database.Mnesia do
   A database backend for `:mnesia`
   """
   @behaviour RadioBeam.Database
+
   @behaviour RadioBeam.ContentRepo.Database
   @behaviour RadioBeam.Room.Database
   @behaviour RadioBeam.User.Database
 
-  import RadioBeam.Database.Mnesia.Tables.User
+  import RadioBeam.Database.Mnesia.Tables.Device
+  import RadioBeam.Database.Mnesia.Tables.DynamicOAuth2Client
   import RadioBeam.Database.Mnesia.Tables.LocalAccount
   import RadioBeam.Database.Mnesia.Tables.Room
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
-  import RadioBeam.Database.Mnesia.Tables.Upload
   import RadioBeam.Database.Mnesia.Tables.RoomView
-  import RadioBeam.Database.Mnesia.Tables.DynamicOAuth2Client
+  import RadioBeam.Database.Mnesia.Tables.Upload
+  import RadioBeam.Database.Mnesia.Tables.User
 
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Database.Mnesia.Tables
   alias RadioBeam.Room
   alias RadioBeam.User
-  alias RadioBeam.User.LocalAccount
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
+  alias RadioBeam.User.Device
+  alias RadioBeam.User.LocalAccount
 
   require Logger
 
   @tables [
-    Tables.User,
+    Tables.Device,
+    Tables.DynamicOAuth2Client,
     Tables.LocalAccount,
     Tables.Room,
     Tables.RoomAlias,
-    Tables.Upload,
     Tables.RoomView,
-    Tables.DynamicOAuth2Client
+    Tables.Upload,
+    Tables.User
   ]
 
   @impl RadioBeam.Database
@@ -232,6 +236,71 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
+  def insert_new_device(%Device{} = device) do
+    device_record = device(user_device_id_tuple: {device.user_id, device.id}, device: device)
+
+    transaction(fn ->
+      if device_exists?(device.user_id, device.id),
+        do: {:error, :already_exists},
+        else: :mnesia.write(Tables.Device, device_record, :write)
+    end)
+  end
+
+  defp device_exists?(user_id, device_id),
+    do: Tables.Device |> :mnesia.read({user_id, device_id}, :write) |> Enum.empty?() |> Kernel.not()
+
+  @impl RadioBeam.User.Database
+  def update_user_device_with(user_id, device_id, callback) do
+    transaction(fn ->
+      case :mnesia.read(Tables.Device, {user_id, device_id}, :write) do
+        [device(user_device_id_tuple: {^user_id, ^device_id}) = device_record] ->
+          device_record |> record_to_domain_struct() |> callback.() |> map_update_result()
+
+        [] ->
+          {:error, :not_found}
+      end
+    end)
+  end
+
+  defp map_update_result({:ok, %Device{} = device, return_value}) do
+    write_device(device)
+    {:ok, return_value}
+  end
+
+  defp map_update_result(%Device{} = device), do: {:ok, write_device(device)}
+  defp map_update_result({:ok, %Device{} = device}), do: {:ok, write_device(device)}
+  defp map_update_result({:error, error}), do: {:error, error}
+
+  defp write_device(device) do
+    :ok =
+      :mnesia.write(Tables.Device, device(user_device_id_tuple: {device.user_id, device.id}, device: device), :write)
+
+    device
+  end
+
+  @impl RadioBeam.User.Database
+  def fetch_user_device(user_id, device_id) do
+    transaction(fn ->
+      case :mnesia.read(Tables.Device, {user_id, device_id}, :read) do
+        [] -> {:error, :not_found}
+        [device(user_device_id_tuple: {^user_id, _}) = record] -> {:ok, record_to_domain_struct(record)}
+        [_record] -> {:error, :not_found}
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
+  def get_all_devices_of_user(user_id) do
+    match_spec = [{device(user_device_id_tuple: {user_id, :_}, device: :_), [], [:"$_"]}]
+
+    transaction(fn ->
+      case :mnesia.select(Tables.Device, match_spec, :write) do
+        matched_records when is_list(matched_records) -> Enum.map(matched_records, &record_to_domain_struct/1)
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
   def upsert_oauth2_client(%DynamicOAuth2Client{client_id: client_id} = client) do
     data_record = dynamic_oauth2_client(id: client_id, dynamic_oauth2_client: client)
 
@@ -298,6 +367,7 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   defp record_to_domain_struct(user(user: %User{} = user)), do: user
+  defp record_to_domain_struct(device(device: %Device{} = device)), do: device
   defp record_to_domain_struct(local_account(local_account: %LocalAccount{} = account)), do: account
   defp record_to_domain_struct(room(room: %Room{} = room)), do: room
   defp record_to_domain_struct(room_alias(alias_struct: %Room.Alias{} = room_alias)), do: room_alias

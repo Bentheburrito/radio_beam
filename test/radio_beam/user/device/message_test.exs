@@ -2,64 +2,53 @@ defmodule RadioBeam.User.Device.MessageTest do
   use ExUnit.Case, async: true
   doctest RadioBeam.User.Device.Message
 
-  alias RadioBeam.User
-  alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.Device.Message
 
   setup do
-    {user, device} = Fixtures.device(Fixtures.user())
-    %{user: user, device: device}
+    {_user, device} = Fixtures.device(Fixtures.user())
+    %{device: device}
   end
 
-  describe "put_many/3" do
-    test "adds an unsent message to a user's devices", %{user: user, device: device1} do
-      {user, device2} = Fixtures.device(user)
-
+  describe "put/4" do
+    test "adds an unsent message to a user's devices", %{device: device1} do
       message = %{"hello" => "world"}
-      entries = %{user.id => %{device1.id => message, device2.id => message}}
 
-      assert :ok = Message.put_many(entries, "@someone:somewhere", "org.msg.type")
-      {:ok, user} = Database.fetch_user(user.id)
-      assert {:ok, %Device{messages: %{unsent: [%Message{type: "org.msg.type"}]}}} = User.get_device(user, device1.id)
+      device1 = Message.put(device1, message, "@someone:somewhere", "org.msg.type")
+
+      assert %Device{messages: %{unsent: [%Message{type: "org.msg.type"}]}} = device1
     end
   end
 
-  describe "take_unsent/3,4" do
-    test "returns :none when there are no unsent messages", %{user: user, device: device} do
-      assert :none = Message.take_unsent(user.id, device.id, "abc")
+  describe "pop_unsent/2,3" do
+    test "returns :none when there are no unsent messages", %{device: device} do
+      assert {:none, ^device} = Message.pop_unsent(device, "abc")
     end
 
-    test "returns unsent messages, marking them as sent with the given since_token", %{user: user, device: device} do
+    test "returns unsent messages, marking them as sent with the given since_token", %{device: device} do
       message1 = %{"hola" => "mundo"}
-      Message.put(user.id, device.id, message1, "@yo:hello", "org.msg.type")
+      device = Message.put(device, message1, "@yo:hello", "org.msg.type")
       message2 = %{"hola" => "mundo"}
-      Message.put(user.id, device.id, message2, "@yo:hello", "com.msg.type")
-      {:ok, user} = Database.fetch_user(user.id)
+      device = Message.put(device, message2, "@yo:hello", "com.msg.type")
 
-      assert {:ok, [%Message{content: ^message1}, %Message{content: ^message2}]} =
-               Message.take_unsent(user.id, device.id, "abc")
+      assert {[%Message{content: ^message1}, %Message{content: ^message2}], device} = Message.pop_unsent(device, "abc")
 
-      {:ok, user} = Database.fetch_user(user.id)
-
-      assert {:ok, %Device{messages: %{"abc" => [%Message{content: ^message2}, %Message{content: ^message1}]}}} =
-               User.get_device(user, device.id)
+      assert %Device{messages: %{"abc" => [%Message{content: ^message2}, %Message{content: ^message1}]}} =
+               device
     end
 
-    test "marks messages as read (deletes them)", %{user: user, device: device} do
+    test "marks messages as read (deletes them)", %{device: device} do
       message1 = %{"hola" => "mundo"}
-      Message.put(user.id, device.id, message1, "@yo:hello", "org.msg.type")
+      device = Message.put(device, message1, "@yo:hello", "org.msg.type")
       message2 = %{"hola" => "mundo"}
-      Message.put(user.id, device.id, message2, "@yo:hello", "com.msg.type")
+      device = Message.put(device, message2, "@yo:hello", "com.msg.type")
 
-      Message.take_unsent(user.id, device.id, "abc")
+      {_messages, device} = Message.pop_unsent(device, "abc")
 
       message3 = %{"hola" => "mundo"}
-      Message.put(user.id, device.id, message3, "@yo:hello", "com2.msg.type")
+      device = Message.put(device, message3, "@yo:hello", "com2.msg.type")
 
-      assert {:ok, [%Message{content: ^message3}]} = Message.take_unsent(user.id, device.id, "xyz", "abc")
-      {:ok, user} = Database.fetch_user(user.id)
-      assert {:ok, %Device{messages: messages}} = User.get_device(user, device.id)
+      assert {[%Message{content: ^message3}], %Device{messages: messages}} = Message.pop_unsent(device, "xyz", "abc")
       refute is_map_key(messages, "abc")
       assert %{"xyz" => [%Message{content: ^message3}]} = messages
     end

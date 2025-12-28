@@ -74,7 +74,7 @@ defmodule RadioBeamWeb.ClientControllerTest do
     end
 
     @tag :capture_log
-    test "returns M_BAD_JSON (400) and cleanly aborts the transaction when a device is not found", %{
+    test "returns an empty object (200) and even when a message coudn't be delivered because a device is not found", %{
       conn: conn,
       user: user,
       device: device
@@ -90,8 +90,9 @@ defmodule RadioBeamWeb.ClientControllerTest do
 
       conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/xyz123", %{"messages" => messages})
 
-      assert %{"errcode" => "M_BAD_JSON"} = json_response(conn, 400)
-      # if this doesn't hang, the txn must have been aborted
+      assert response = json_response(conn, 200)
+      assert 0 = map_size(response)
+      # if this doesn't hang, the txn must have been aborted/completed
       assert {:ok, _handle} =
                RadioBeam.Transaction.begin("xyz123", "idontexist", "/_matrix/client/v3/sendToDevice/m.what/xyz123")
     end

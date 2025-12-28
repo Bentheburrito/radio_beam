@@ -29,19 +29,19 @@ defmodule RadioBeam.Sync do
       |> put_account_data(user)
       |> put_to_device_messages(user.id, device_id, since_or_nil)
       |> put_device_key_changes(user, since_or_nil)
-      |> put_device_otk_usages(user, device_id)
+      |> put_device_otk_usages(user.id, device_id)
     end
   end
 
   defp put_account_data(sync, user), do: put_in(sync.account_data, Map.get(user.account_data, :global, %{}))
 
   defp put_to_device_messages(sync, user_id, device_id, mark_as_read) do
-    case Device.Message.take_unsent(user_id, device_id, sync.next_batch, mark_as_read) do
+    case User.get_undelivered_to_device_messages(user_id, device_id, sync.next_batch, mark_as_read) do
+      {:ok, :none} ->
+        sync
+
       {:ok, unsent_messages} ->
         put_in(sync.to_device[:events], unsent_messages)
-
-      :none ->
-        sync
 
       error ->
         Logger.error("error when fetching unsent device messages: #{inspect(error)}")
@@ -61,8 +61,8 @@ defmodule RadioBeam.Sync do
     put_in(sync.device_lists, changed_map)
   end
 
-  defp put_device_otk_usages(sync, user, device_id) do
-    {:ok, device} = User.get_device(user, device_id)
+  defp put_device_otk_usages(sync, user_id, device_id) do
+    {:ok, device} = Database.fetch_user_device(user_id, device_id)
 
     sync =
       case Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring) do
