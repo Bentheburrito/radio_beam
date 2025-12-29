@@ -125,18 +125,18 @@ defmodule RadioBeam.ContentRepo do
 
   TODO: a periodic job should clean up expired reserved URIs
   """
-  @spec create(User.t()) :: {:ok, Upload.t()} | {:error, {:quota_reached, :max_reserved | :max_files} | any()}
-  def create(%User{} = reserver) do
+  @spec create(User.id()) :: {:ok, Upload.t()} | {:error, {:quota_reached, :max_reserved | :max_files} | any()}
+  def create(reserver_id) do
     %{max_reserved: max_reserved, max_files: max_files} = user_upload_limits()
 
-    Database.with_user_upload_counts(reserver.id, fn user_upload_counts ->
+    Database.with_user_upload_counts(reserver_id, fn user_upload_counts ->
       reserved_count = Map.get(user_upload_counts, :reserved, 0)
       total_count = Map.get(user_upload_counts, :uploaded, 0) + reserved_count
 
       cond do
         reserved_count >= max_reserved -> {:error, {:quota_reached, :max_reserved}}
         total_count >= max_files -> {:error, {:quota_reached, :max_files}}
-        :else -> reserver |> Upload.new() |> upsert_upload()
+        :else -> reserver_id |> Upload.new() |> upsert_upload()
       end
     end)
   end

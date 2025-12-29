@@ -7,14 +7,12 @@ defmodule RadioBeamWeb.SyncController do
 
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Sync
-  alias RadioBeam.User
-  alias RadioBeam.User.Device
 
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: RadioBeamWeb.Schemas.Sync
 
   def sync(conn, _params) do
-    %User{id: user_id} = conn.assigns.session.user
-    %Device{id: device_id} = conn.assigns.session.device
+    user_id = conn.assigns.user_id
+    device_id = conn.assigns.device_id
     request = conn.assigns.request
 
     opts =
@@ -32,8 +30,8 @@ defmodule RadioBeamWeb.SyncController do
   end
 
   def get_messages(conn, %{"room_id" => room_id}) do
-    %User{} = user = conn.assigns.session.user
-    %Device{} = device = conn.assigns.session.device
+    user_id = conn.assigns.user_id
+    device_id = conn.assigns.device_id
     request = conn.assigns.request
 
     dir = Map.fetch!(request, "dir")
@@ -52,7 +50,7 @@ defmodule RadioBeamWeb.SyncController do
         {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
       end)
 
-    case Timeline.get_messages(room_id, user.id, device.id, from_and_dir, opts) do
+    case Timeline.get_messages(room_id, user_id, device_id, from_and_dir, opts) do
       {:ok, response} -> json(conn, response)
       {:error, :not_found} -> handle_common_error(conn, :unauthorized)
       {:error, error} -> handle_common_error(conn, error)

@@ -145,8 +145,9 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   defp get_user_timeline_preferences(user_id, opts) do
-    maybe_filter_id = Keyword.get(opts, :filter, :none)
-    {:ok, user_tl_prefs} = User.Account.get_timeline_preferences(user_id, maybe_filter_id)
+    maybe_filter_or_filter_id = Keyword.get(opts, :filter, :none)
+
+    user_tl_prefs = User.get_timeline_preferences(user_id, maybe_filter_or_filter_id)
 
     if is_map_key(user_tl_prefs, :filter) do
       user_tl_prefs

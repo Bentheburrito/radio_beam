@@ -2,7 +2,6 @@ defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room.Events.PaginationToken
-  alias RadioBeam.User.Account
   alias RadioBeam.User
   alias RadioBeam.Room
 
@@ -55,8 +54,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       {:ok, room_id1} = Room.create(creator, name: "name one")
       {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, user} = Account.put(user.id, :global, "m.some_config", %{"hello" => "world"})
-      {:ok, user} = Account.put(user.id, room_id1, "m.some_config", %{"hello" => "room"})
+      :ok = User.put_account_data(user.id, :global, "m.some_config", %{"hello" => "world"})
+      :ok = User.put_account_data(user.id, room_id1, "m.some_config", %{"hello" => "room"})
 
       User.send_to_devices(
         %{user.id => %{device.id => %{"hello" => "world"}}},
@@ -169,7 +168,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
         Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "this place is so cool"})
 
       filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
-      {:ok, filter_id} = User.Account.upload_filter(creator.id, filter)
+      {:ok, filter_id} = User.put_event_filter(creator.id, filter)
 
       query_params = %{
         filter: filter_id,

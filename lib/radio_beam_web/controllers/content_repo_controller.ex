@@ -11,7 +11,6 @@ defmodule RadioBeamWeb.ContentRepoController do
   alias RadioBeam.ContentRepo.MatrixContentURI
   alias RadioBeam.ContentRepo.Thumbnail
   alias RadioBeam.ContentRepo
-  alias RadioBeam.User
   alias RadioBeamWeb.Schemas.ContentRepo, as: ContentRepoSchema
 
   require Logger
@@ -76,7 +75,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   def upload(conn, _params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
     %Upload{} = upload = conn.assigns.upload
     %FileInfo{} = file_info = conn.assigns.file_info
     tmp_path = conn.assigns.tmp_upload_path
@@ -89,7 +88,7 @@ defmodule RadioBeamWeb.ContentRepoController do
         json_error(conn, 409, :endpoint_error, [:cannot_overwrite_media, @overwrite_error_msg])
 
       {:error, {:quota_reached, quota_kind}} ->
-        quota_reached_error(conn, quota_kind, user)
+        quota_reached_error(conn, quota_kind, user_id)
 
       {:error, posix} ->
         Logger.error("Error saving upload to file: #{inspect(posix)}")
@@ -99,9 +98,9 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   def create(conn, _params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
 
-    case ContentRepo.create(user) do
+    case ContentRepo.create(user_id) do
       {:ok, upload} ->
         json(conn, %{
           content_uri: upload.id,
@@ -110,7 +109,7 @@ defmodule RadioBeamWeb.ContentRepoController do
         })
 
       {:error, {:quota_reached, :max_reserved}} ->
-        Logger.info("MEDIA QUOTA REACHED max_reserved: #{user.id} tried to upload a file after reaching a limit")
+        Logger.info("MEDIA QUOTA REACHED max_reserved: #{user_id} tried to upload a file after reaching a limit")
 
         json_error(conn, 429, :limit_exceeded, [
           ContentRepo.unused_mxc_uris_expire_in_ms(),
@@ -118,7 +117,7 @@ defmodule RadioBeamWeb.ContentRepoController do
         ])
 
       {:error, {:quota_reached, quota_kind}} ->
-        quota_reached_error(conn, quota_kind, user)
+        quota_reached_error(conn, quota_kind, user_id)
     end
   end
 
@@ -142,7 +141,7 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   defp get_or_reserve_upload(%{params: %{"server_name" => server_name, "media_id" => media_id}} = conn, _) do
-    %User{id: uploader_id} = conn.assigns.session.user
+    uploader_id = conn.assigns.user_id
 
     with {:ok, %MatrixContentURI{} = mxc} <- MatrixContentURI.new(server_name, media_id),
          {:ok, %Upload{id: ^mxc, file: :reserved, uploaded_by_id: ^uploader_id} = upload} <-
@@ -170,11 +169,11 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   defp get_or_reserve_upload(conn, _opts) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
 
-    case ContentRepo.create(user) do
+    case ContentRepo.create(user_id) do
       {:ok, upload} -> assign(conn, :upload, upload)
-      {:error, {:quota_reached, quota_kind}} -> conn |> quota_reached_error(quota_kind, user) |> halt()
+      {:error, {:quota_reached, quota_kind}} -> conn |> quota_reached_error(quota_kind, user_id) |> halt()
     end
   end
 
@@ -234,8 +233,8 @@ defmodule RadioBeamWeb.ContentRepoController do
   end
 
   @quota_reached_error_msg "You have uploaded too many files. Contact the server admin if you believe this is a mistake."
-  defp quota_reached_error(conn, quota_kind, user) do
-    Logger.info("MEDIA QUOTA REACHED #{quota_kind}: #{user} tried to upload a file after reaching a limit")
+  defp quota_reached_error(conn, quota_kind, user_id) do
+    Logger.info("MEDIA QUOTA REACHED #{quota_kind}: #{user_id} tried to upload a file after reaching a limit")
 
     json_error(conn, 403, :forbidden, @quota_reached_error_msg)
   end

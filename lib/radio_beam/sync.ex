@@ -26,14 +26,19 @@ defmodule RadioBeam.Sync do
       next_batch = PaginationToken.new(room_sync_result.next_batch_map, :forward, System.os_time(:millisecond))
 
       %__MODULE__{rooms: room_sync_result, next_batch: next_batch, to_device: %{}}
-      |> put_account_data(user)
+      |> put_account_data(user.id)
       |> put_to_device_messages(user.id, device_id, since_or_nil)
       |> put_device_key_changes(user, since_or_nil)
       |> put_device_otk_usages(user.id, device_id)
     end
   end
 
-  defp put_account_data(sync, user), do: put_in(sync.account_data, Map.get(user.account_data, :global, %{}))
+  defp put_account_data(sync, user_id) do
+    case User.get_account_data(user_id) do
+      {:ok, account_data} -> put_in(sync.account_data, Map.get(account_data, :global, %{}))
+      {:error, :not_found} -> put_in(sync.account_data, %{})
+    end
+  end
 
   defp put_to_device_messages(sync, user_id, device_id, mark_as_read) do
     case User.get_undelivered_to_device_messages(user_id, device_id, sync.next_batch, mark_as_read) do
@@ -53,7 +58,7 @@ defmodule RadioBeam.Sync do
 
   defp put_device_key_changes(sync, user, since) do
     changed_map =
-      user
+      user.id
       |> Keys.all_changed_since(since)
       |> Map.update!(:changed, &MapSet.to_list/1)
       |> Map.update!(:left, &MapSet.to_list/1)

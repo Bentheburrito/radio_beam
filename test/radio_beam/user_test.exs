@@ -33,32 +33,6 @@ defmodule RadioBeam.UserTest do
     end
   end
 
-  describe "put_account_data" do
-    setup do
-      %{user: Fixtures.user()}
-    end
-
-    test "successfully puts global account data", %{user: user} do
-      assert {:ok, %User{account_data: %{global: %{"m.some_config" => %{"key" => "value"}}}}} =
-               User.put_account_data(user, :global, "m.some_config", %{"key" => "value"})
-    end
-
-    test "successfully puts room account data", %{user: user} do
-      room_id = Room.generate_id()
-
-      assert {:ok, %User{account_data: %{^room_id => %{"m.some_config" => %{"other" => "value"}}}}} =
-               User.put_account_data(user, room_id, "m.some_config", %{"other" => "value"})
-    end
-
-    test "cannot put m.fully_read or m.push_rules for any scope", %{user: user} do
-      assert {:error, :invalid_type} = User.put_account_data(user, :global, "m.fully_read", %{"key" => "value"})
-      assert {:error, :invalid_type} = User.put_account_data(user, :global, "m.push_rules", %{"key" => "value"})
-      room_id = Room.generate_id()
-      assert {:error, :invalid_type} = User.put_account_data(user, room_id, "m.fully_read", %{"other" => "value"})
-      assert {:error, :invalid_type} = User.put_account_data(user, room_id, "m.push_rules", %{"other" => "value"})
-    end
-  end
-
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
       "key" => "key1",
@@ -134,6 +108,47 @@ defmodule RadioBeam.UserTest do
         assert {:error, :invalid_user_or_device_id} =
                  User.put_device_keys(user.id, device.id, identity_keys: device_key)
       end
+    end
+  end
+
+  describe "put_account_data/4" do
+    setup do
+      %{user: Fixtures.user()}
+    end
+
+    test "successfully puts global account data", %{user: user} do
+      assert :ok = User.put_account_data(user.id, :global, "m.some_config", %{"key" => "value"})
+
+      assert {:ok, %{global: %{"m.some_config" => %{"key" => "value"}}}} = User.get_account_data(user.id)
+    end
+
+    test "successfully puts room account data", %{user: user} do
+      {:ok, room_id} = Room.create(user)
+
+      assert :ok = User.put_account_data(user.id, room_id, "m.some_config", %{"other" => "value"})
+    end
+
+    test "cannot put m.fully_read or m.push_rules for any scope", %{user: user} do
+      assert {:error, :invalid_type} = User.put_account_data(user.id, :global, "m.fully_read", %{"key" => "value"})
+      assert {:error, :invalid_type} = User.put_account_data(user.id, :global, "m.push_rules", %{"key" => "value"})
+      {:ok, room_id} = Room.create(user)
+      assert {:error, :invalid_type} = User.put_account_data(user.id, room_id, "m.fully_read", %{"other" => "value"})
+      assert {:error, :invalid_type} = User.put_account_data(user.id, room_id, "m.push_rules", %{"other" => "value"})
+    end
+
+    test "cannot put room account data under a room that doesn't exist", %{user: user} do
+      assert {:error, :invalid_room_id} =
+               User.put_account_data(user.id, "!huh@localhost", "m.some_config", %{"other" => "value"})
+    end
+
+    test "cannot put any account data for an unknown user", %{user: user} do
+      assert {:error, :not_found} =
+               User.put_account_data("@hellooo:localhost", :global, "m.some_config", %{"key" => "value"})
+
+      {:ok, room_id} = Room.create(user)
+
+      assert {:error, :not_found} =
+               User.put_account_data("@hellooo:localhost", room_id, "m.some_config", %{"other" => "value"})
     end
   end
 

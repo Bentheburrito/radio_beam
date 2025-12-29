@@ -2,7 +2,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.User.Account
+  alias RadioBeam.User
 
   describe "put_config/2" do
     test "successfully puts global account data", %{conn: conn, user: %{id: user_id}} do
@@ -85,9 +85,9 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
   describe "get_config/2" do
     setup %{user: %{id: user_id} = user} do
-      Account.put(user_id, :global, "m.some_config", %{"key" => "value"})
+      User.put_account_data(user_id, :global, "m.some_config", %{"key" => "value"})
       {:ok, room_id} = Room.create(user)
-      Account.put(user_id, room_id, "m.some_config", %{"other" => "value"})
+      User.put_account_data(user_id, room_id, "m.some_config", %{"other" => "value"})
 
       %{room_id: room_id}
     end
@@ -132,7 +132,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
     test "cannot get room account config for a room that doesn't exist", %{conn: conn, user: %{id: user_id}} do
       conn = get(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!what:localhost/account_data/m.some_config", %{})
 
-      assert %{"errcode" => "M_INVALID_PARAM"} = json_response(conn, 400)
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
 end

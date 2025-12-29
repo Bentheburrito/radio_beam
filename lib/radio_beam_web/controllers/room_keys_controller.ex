@@ -8,8 +8,6 @@ defmodule RadioBeamWeb.RoomKeysController do
 
   alias RadioBeam.Errors
   alias RadioBeam.User
-  alias RadioBeam.User.RoomKeys
-  alias RadioBeam.User.RoomKeys.Backup
   alias RadioBeamWeb.Schemas.RoomKeys, as: RoomKeysSchema
 
   require Logger
@@ -19,6 +17,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomKeysSchema] when action not in @no_schemas
 
   @unknown_backup "Unknown backup version"
+  @no_key_msg "Key not found"
 
   def get_keys(conn, %{"version" => version} = params) when is_binary(version) do
     case Integer.parse(version) do
@@ -28,34 +27,21 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def get_keys(conn, %{"version" => version} = params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
+    room_id = Map.get(params, "room_id", :all)
+    session_id = Map.get(params, "session_id", :all)
 
-    case RoomKeys.fetch_backup(user.room_keys, version) do
-      {:ok, %Backup{} = backup} -> get_keys_response(conn, params, backup)
+    case User.fetch_room_keys_backup(user_id, version, room_id, session_id) do
+      {:error, :not_found} when room_id != :all and session_id == :all -> json(conn, %{"sessions" => %{}})
+      {:error, :not_found} when room_id != :all and session_id != :all -> json_error(conn, 404, :not_found, @no_key_msg)
       {:error, :not_found} -> json_error(conn, 404, :not_found, @unknown_backup)
+      {:error, :bad_request} -> json_error(conn, 400, :bad_json)
+      {:ok, backup_data} when room_id != :all and session_id == :all -> json(conn, %{"sessions" => backup_data})
+      {:ok, backup_data} -> json(conn, backup_data)
     end
   end
 
   def get_keys(conn, _params), do: json_error(conn, 400, :bad_json, "'version' is required")
-
-  defp get_keys_response(conn, params, %Backup{} = backup) do
-    case params do
-      %{"room_id" => room_id, "session_id" => session_id} ->
-        case Backup.get(backup, room_id, session_id) do
-          {:error, :not_found} -> json_error(conn, 404, :not_found, "Key not found")
-          %Backup.KeyData{} = key_data -> json(conn, key_data)
-        end
-
-      %{"room_id" => room_id} ->
-        case Backup.get(backup, room_id) do
-          {:error, :not_found} -> json(conn, %{"sessions" => %{}})
-          %{} = session_map -> json(conn, %{"sessions" => session_map})
-        end
-
-      _else ->
-        json(conn, backup)
-    end
-  end
 
   def put_keys(conn, %{"version" => version} = params) when is_binary(version) do
     case Integer.parse(version) do
@@ -65,7 +51,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def put_keys(conn, %{"version" => version} = params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
 
     new_room_session_backups =
       case params do
@@ -81,11 +67,10 @@ defmodule RadioBeamWeb.RoomKeysController do
           |> Map.new(fn {room_id, %{"sessions" => session_map}} -> {room_id, session_map} end)
       end
 
-    with %RoomKeys{} = room_keys <- RoomKeys.put_backup_keys(user.room_keys, version, new_room_session_backups),
-         {:ok, %User{}} <- RoomKeys.insert_user_room_keys(user, room_keys),
-         {:ok, %Backup{} = backup} <- RoomKeys.fetch_backup(room_keys, version) do
-      json(conn, backup |> Backup.info_map() |> Map.take(~w|count etag|a))
-    else
+    case User.put_room_keys_backup(user_id, version, new_room_session_backups) do
+      {:ok, backup_info} ->
+        json(conn, backup_info)
+
       {:error, :not_found} ->
         json_error(conn, 404, :not_found, @unknown_backup)
 
@@ -113,7 +98,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def delete_keys(conn, %{"version" => version} = params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
 
     path_or_all =
       case params do
@@ -122,10 +107,8 @@ defmodule RadioBeamWeb.RoomKeysController do
         _else -> :all
       end
 
-    with %RoomKeys{} = room_keys <- RoomKeys.delete_backup_keys(user.room_keys, version, path_or_all),
-         {:ok, %Backup{} = backup} <- RoomKeys.fetch_backup(room_keys, version) do
-      json(conn, backup |> Backup.info_map() |> Map.take(~w|count etag|a))
-    else
+    case User.delete_room_keys_backup(user_id, version, path_or_all) do
+      {:ok, backup_info} -> json(conn, backup_info)
       {:error, :not_found} -> json_error(conn, 404, :not_found, @unknown_backup)
     end
   end
@@ -133,14 +116,13 @@ defmodule RadioBeamWeb.RoomKeysController do
   def delete_keys(conn, _params), do: json_error(conn, 400, :bad_json, "'version' is required")
 
   def create_backup(conn, _params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
     %{"algorithm" => algorithm, "auth_data" => auth_data} = conn.assigns.request
 
-    with %RoomKeys{} = room_keys <- RoomKeys.new_backup(user.room_keys, algorithm, auth_data),
-         {:ok, %User{}} <- RoomKeys.insert_user_room_keys(user, room_keys),
-         {:ok, %Backup{} = backup} <- RoomKeys.fetch_latest_backup(room_keys) do
-      json(conn, %{version: backup |> Backup.version() |> Integer.to_string()})
-    else
+    case User.create_room_keys_backup(user_id, algorithm, auth_data) do
+      {:ok, version} ->
+        json(conn, %{version: version})
+
       {:error, :unsupported_algorithm} ->
         json_error(conn, 400, :bad_json, "Unsupported algorithm")
 
@@ -151,22 +133,24 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def get_backup_info(conn, params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
 
-    backup_result =
+    version_result =
       case Map.fetch(params, "version") do
         {:ok, version} ->
           case Integer.parse(version) do
-            {version, ""} -> RoomKeys.fetch_backup(user.room_keys, version)
+            {version, ""} -> {:ok, version}
             :error -> {:error, :not_found}
           end
 
         :error ->
-          RoomKeys.fetch_latest_backup(user.room_keys)
+          {:ok, :latest}
       end
 
-    case backup_result do
-      {:ok, %Backup{} = backup} -> json(conn, Backup.info_map(backup))
+    with {:ok, version} <- version_result,
+         {:ok, backup_info} <- User.fetch_backup_info(user_id, version) do
+      json(conn, backup_info)
+    else
       {:error, :not_found} -> json_error(conn, 404, :not_found, "Backup not found")
     end
   end
@@ -183,13 +167,13 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def put_backup_auth_data(conn, version) when is_integer(version) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
     %{"algorithm" => algorithm, "auth_data" => auth_data} = conn.assigns.request
 
-    with {:ok, %RoomKeys{} = room_keys} <- RoomKeys.update_backup(user.room_keys, version, algorithm, auth_data),
-         {:ok, %User{}} <- RoomKeys.insert_user_room_keys(user, room_keys) do
-      json(conn, %{})
-    else
+    case User.update_room_keys_backup_auth_data(user_id, version, algorithm, auth_data) do
+      :ok ->
+        json(conn, %{})
+
       {:error, :algorithm_mismatch} ->
         json_error(conn, 400, :endpoint_error, [:invalid_param, "algorithm does not match"])
 
@@ -212,12 +196,10 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def delete_backup(conn, %{"version" => version}) do
-    %User{} = user = conn.assigns.session.user
+    case User.delete_room_keys_backup(conn.assigns.user_id, version) do
+      :ok ->
+        json(conn, %{})
 
-    with %RoomKeys{} = room_keys <- RoomKeys.delete_backup(user.room_keys, version),
-         {:ok, %User{}} <- RoomKeys.insert_user_room_keys(user, room_keys) do
-      json(conn, %{})
-    else
       {:error, :not_found} ->
         json_error(conn, 404, :not_found, @unknown_backup)
 

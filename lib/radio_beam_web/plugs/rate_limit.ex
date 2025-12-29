@@ -15,7 +15,7 @@ defmodule RadioBeamWeb.Plugs.RateLimit do
   def call(%{assigns: %{rate_limit: %RateLimit{} = rate_limit}} = conn, _opts) do
     auth_info =
       case conn.assigns do
-        %{session: %{user: %{id: user_id}, device: %{id: device_id}}} -> {user_id, device_id}
+        %{user_id: user_id, device_id: device_id} -> {user_id, device_id}
         %{} -> :not_authenticated
       end
 

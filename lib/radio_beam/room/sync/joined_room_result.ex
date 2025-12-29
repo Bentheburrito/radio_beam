@@ -24,7 +24,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
   @spec new(Room.t(), User.t(), Enumerable.t(Event.t()), get_events_for_user(), user_membership(), opts()) ::
           t() | :no_update
-  def new(room, user, timeline_events, get_events_for_user, membership, opts \\ []) do
+  def new(room, user_id, account_data, timeline_events, get_events_for_user, membership, opts \\ []) do
     filter = Keyword.get_lazy(opts, :filter, fn -> EventFilter.new(%{}) end)
     maybe_last_sync_room_state_pdus = Keyword.get(opts, :maybe_last_sync_room_state_pdus, :initial)
     full_state? = Keyword.get(opts, :full_state?, false)
@@ -33,7 +33,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
     sender_ids =
       if filter.state.memberships == :all, do: MapSet.new(), else: MapSet.new(timeline_events, & &1.sender)
 
-    sender_ids = MapSet.put(sender_ids, user.id)
+    sender_ids = MapSet.put(sender_ids, user_id)
 
     state_events =
       if EventFilter.allow_state_in_room?(filter, room.id) do
@@ -75,13 +75,13 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         sender_ids: sender_ids,
         filter: filter,
         current_membership: membership,
-        account_data: Map.get(user.account_data, room.id, %{}),
+        account_data: Map.get(account_data, room.id, %{}),
         typing: Keyword.get(opts, :typing, [])
       }
     end
   end
 
-  def new_ephemeral(room_id, user, membership, typing_user_ids) do
+  def new_ephemeral(room_id, account_data, membership, typing_user_ids) do
     %__MODULE__{
       room_id: room_id,
       timeline_events: [],
@@ -91,7 +91,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
       sender_ids: MapSet.new(),
       filter: EventFilter.new(%{}),
       current_membership: membership,
-      account_data: Map.get(user.account_data, room_id, %{}),
+      account_data: Map.get(account_data, room_id, %{}),
       typing: typing_user_ids
     }
   end

@@ -16,11 +16,13 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.RoomView
   import RadioBeam.Database.Mnesia.Tables.Upload
   import RadioBeam.Database.Mnesia.Tables.User
+  import RadioBeam.Database.Mnesia.Tables.UserClientConfig
 
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Database.Mnesia.Tables
   alias RadioBeam.Room
   alias RadioBeam.User
+  alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.Device
   alias RadioBeam.User.LocalAccount
@@ -35,7 +37,8 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.RoomAlias,
     Tables.RoomView,
     Tables.Upload,
-    Tables.User
+    Tables.User,
+    Tables.UserClientConfig
   ]
 
   @impl RadioBeam.Database
@@ -301,6 +304,39 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
+  def upsert_user_client_config_with(user_id, callback) do
+    transaction(fn ->
+      current_client_config =
+        case :mnesia.read(Tables.UserClientConfig, user_id, :write) do
+          [] -> ClientConfig.new!(user_id)
+          [user_client_config(user_id: ^user_id) = data_record] -> record_to_domain_struct(data_record)
+        end
+
+      case callback.(current_client_config) do
+        {:ok, %ClientConfig{} = new_client_config} -> write_client_config(new_client_config, user_id)
+        %ClientConfig{} = new_client_config -> write_client_config(new_client_config, user_id)
+        error -> error
+      end
+    end)
+  end
+
+  defp write_client_config(%ClientConfig{} = config, user_id) do
+    data_record = user_client_config(user_id: user_id, client_config: config)
+    :mnesia.write(Tables.UserClientConfig, data_record, :write)
+    {:ok, config}
+  end
+
+  @impl RadioBeam.User.Database
+  def fetch_user_client_config(user_id) do
+    transaction(fn ->
+      case :mnesia.read(Tables.UserClientConfig, user_id, :read) do
+        [] -> {:error, :not_found}
+        [record] -> {:ok, record_to_domain_struct(record)}
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
   def upsert_oauth2_client(%DynamicOAuth2Client{client_id: client_id} = client) do
     data_record = dynamic_oauth2_client(id: client_id, dynamic_oauth2_client: client)
 
@@ -367,6 +403,7 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   defp record_to_domain_struct(user(user: %User{} = user)), do: user
+  defp record_to_domain_struct(user_client_config(client_config: %ClientConfig{} = config)), do: config
   defp record_to_domain_struct(device(device: %Device{} = device)), do: device
   defp record_to_domain_struct(local_account(local_account: %LocalAccount{} = account)), do: account
   defp record_to_domain_struct(room(room: %Room{} = room)), do: room

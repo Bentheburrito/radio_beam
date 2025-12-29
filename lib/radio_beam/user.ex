@@ -4,11 +4,9 @@ defmodule RadioBeam.User do
   """
   @types [
     id: :string,
-    account_data: :map,
     cross_signing_key_ring: :map,
     last_cross_signing_change_at: :integer,
-    room_keys: :map,
-    filter_map: :map
+    room_keys: :map
   ]
   @attrs Keyword.keys(@types)
 
@@ -18,10 +16,12 @@ defmodule RadioBeam.User do
 
   import Ecto.Changeset
 
+  alias RadioBeam.Room
+  alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Database
+  alias RadioBeam.User.EventFilter
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
-  alias RadioBeam.User.EventFilter
   alias RadioBeam.User.RoomKeys
 
   @type t() :: %__MODULE__{}
@@ -29,11 +29,9 @@ defmodule RadioBeam.User do
   def new(id) do
     params = %{
       id: id,
-      account_data: %{},
       cross_signing_key_ring: CrossSigningKeyRing.new(),
       last_cross_signing_change_at: 0,
-      room_keys: RoomKeys.new!(),
-      filter_map: %{}
+      room_keys: RoomKeys.new!()
     }
 
     {%__MODULE__{}, Map.new(@types)}
@@ -63,19 +61,11 @@ defmodule RadioBeam.User do
     end
   end
 
-  @doc """
-  Puts global or room account data for a user. Any existing content for a
-  scope + key is overwritten (not merged). Returns `:ok`
-  if the account data was successfully written, and an error tuple otherwise.
-  """
-  def put_account_data(user, scope \\ :global, type, content)
-
-  @invalid_types ~w|m.fully_read m.push_rules|
-  def put_account_data(_user, _scope, type, _content) when type in @invalid_types, do: {:error, :invalid_type}
-
-  def put_account_data(%__MODULE__{} = user, scope, type, content) do
-    account_data = RadioBeam.AccessExtras.put_nested(user.account_data, [scope, type], content)
-    {:ok, %__MODULE__{user | account_data: account_data}}
+  def exists?(user_id) do
+    case Database.fetch_user_account(user_id) do
+      {:ok, _} -> true
+      _else -> false
+    end
   end
 
   ### DEVICE ###
@@ -132,21 +122,135 @@ defmodule RadioBeam.User do
     end)
   end
 
+  def put_device_display_name(user_id, device_id, display_name) do
+    Database.update_user_device_with(user_id, device_id, &Device.put_display_name!(&1, display_name))
+  end
+
   ### ROOM KEYS ###
 
+  def create_room_keys_backup(user_id, algorithm, auth_data) do
+    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
+         %RoomKeys{} = room_keys <- RoomKeys.new_backup(user.room_keys, algorithm, auth_data),
+         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys),
+         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_latest_backup(room_keys) do
+      {:ok, backup |> RoomKeys.Backup.version() |> Integer.to_string()}
+    end
+  end
+
+  def update_room_keys_backup_auth_data(user_id, version, algorithm, auth_data) do
+    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
+         {:ok, %RoomKeys{} = room_keys} <- RoomKeys.update_backup(user.room_keys, version, algorithm, auth_data),
+         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys) do
+      :ok
+    end
+  end
+
+  def fetch_backup_info(user_id, version_or_latest) do
+    fetch_fxn =
+      case version_or_latest do
+        :latest -> &RoomKeys.fetch_latest_backup/1
+        version -> &RoomKeys.fetch_backup(&1, version)
+      end
+
+    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
+         {:ok, %RoomKeys.Backup{} = backup} <- fetch_fxn.(user.room_keys) do
+      {:ok, RoomKeys.Backup.info_map(backup)}
+    end
+  end
+
+  def fetch_room_keys_backup(user_id, version, room_id_or_all, session_id_or_all) do
+    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
+         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_backup(user.room_keys, version) do
+      case {room_id_or_all, session_id_or_all} do
+        {:all, :all} -> {:ok, backup}
+        {room_id, :all} -> backup |> RoomKeys.Backup.get(room_id) |> wrap_ok_if_not_error()
+        {:all, _session_id} -> {:error, :bad_request}
+        {room_id, session_id} -> backup |> RoomKeys.Backup.get(room_id, session_id) |> wrap_ok_if_not_error()
+      end
+    end
+  end
+
+  defp wrap_ok_if_not_error({:error, _} = error), do: error
+  defp wrap_ok_if_not_error(value), do: {:ok, value}
+
+  def put_room_keys_backup(user_id, version, backup_data) do
+    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
+         %RoomKeys{} = room_keys <- RoomKeys.put_backup_keys(user.room_keys, version, backup_data),
+         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys),
+         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_backup(room_keys, version) do
+      {:ok, backup |> RoomKeys.Backup.info_map() |> Map.take(~w|count etag|a)}
+    end
+  end
+
+  def delete_room_keys_backup(user_id, version) do
+    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
+         %RoomKeys{} = room_keys <- RoomKeys.delete_backup(user.room_keys, version),
+         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys) do
+      :ok
+    end
+  end
+
+  def delete_room_keys_backup(user_id, version, path_or_all) do
+    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
+         %RoomKeys{} = room_keys <- RoomKeys.delete_backup_keys(user.room_keys, version, path_or_all),
+         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_backup(room_keys, version) do
+      {:ok, backup |> RoomKeys.Backup.info_map() |> Map.take(~w|count etag|a)}
+    end
+  end
+
+  @spec put_account_data(id(), Room.id() | :global, String.t(), any()) ::
+          {:ok, User.t()} | {:error, :invalid_room_id | :invalid_type | :not_found}
+  def put_account_data(user_id, scope, type, content) do
+    if exists?(user_id) do
+      with {:ok, scope} <- verify_scope(scope),
+           {:ok, _config} <-
+             Database.upsert_user_client_config_with(user_id, &ClientConfig.put_account_data(&1, scope, type, content)) do
+        :ok
+      end
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp verify_scope(:global), do: {:ok, :global}
+
+  defp verify_scope("!" <> _rest = room_id) do
+    if Room.exists?(room_id), do: {:ok, room_id}, else: {:error, :invalid_room_id}
+  end
+
+  def get_account_data(user_id) do
+    with {:ok, %ClientConfig{} = config} <- Database.fetch_user_client_config(user_id) do
+      {:ok, config.account_data}
+    end
+  end
+
+  def get_timeline_preferences(user_id, filter_or_filter_id \\ :none) do
+    case Database.fetch_user_client_config(user_id) do
+      {:ok, config} ->
+        ClientConfig.get_timeline_preferences(config, filter_or_filter_id)
+
+      {:error, :not_found} ->
+        user_id |> ClientConfig.new!() |> ClientConfig.get_timeline_preferences(filter_or_filter_id)
+    end
+  end
+
+  @doc """
+  Create and save a new event filter for the given user.
+  """
+  @spec put_event_filter(__MODULE__.id(), raw_filter_definition :: map()) ::
+          {:ok, EventFilter.id()} | {:error, :not_found}
+  def put_event_filter(user_id, raw_definition) do
+    filter = EventFilter.new(raw_definition)
+
+    with {:ok, _config} <- Database.upsert_user_client_config_with(user_id, &ClientConfig.put_event_filter(&1, filter)),
+         do: {:ok, filter.id}
+  end
+
+  def get_event_filter(user_id, filter_id) do
+    with {:ok, config} <- Database.fetch_user_client_config(user_id) do
+      ClientConfig.get_event_filter(config, filter_id)
+    end
+  end
+
   def put_room_keys(%__MODULE__{} = user, %RoomKeys{} = room_keys), do: put_in(user.room_keys, room_keys)
-
-  ### FILTER ###
-
-  @doc "Saves an event filter for the given User, overriding any existing entry."
-  @spec put_event_filter(t(), EventFilter.t()) :: t()
-  def put_event_filter(%__MODULE__{} = user, %EventFilter{} = filter) do
-    put_in(user.filter_map[filter.id], filter)
-  end
-
-  @doc "Gets an event filter previously uploaded by the given User"
-  @spec get_event_filter(t(), EventFilter.id()) :: {:ok, EventFilter.t()} | {:error, :not_found}
-  def get_event_filter(%__MODULE__{} = user, filter_id) do
-    with :error <- Map.fetch(user.filter_map, filter_id), do: {:error, :not_found}
-  end
 end

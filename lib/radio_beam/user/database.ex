@@ -6,6 +6,7 @@ defmodule RadioBeam.User.Database do
   alias RadioBeam.User
   alias RadioBeam.User.Authentication.OAuth2
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
+  alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Device
 
   @type return_value() :: term()
@@ -20,6 +21,10 @@ defmodule RadioBeam.User.Database do
               {:ok, Device.t()} | {:ok, return_value()} | {:error, term()}
   @callback fetch_user_device(User.id(), Device.id()) :: {:ok, Device.t()} | {:error, :not_found}
   @callback get_all_devices_of_user(User.id()) :: [Device.t()]
+  @callback upsert_user_client_config_with(User.id(), (ClientConfig.t() | nil ->
+                                                         {:ok, ClientConfig.t()} | {:error, term()})) ::
+              {:ok, ClientConfig.t()} | {:error, term()}
+  @callback fetch_user_client_config(User.id()) :: {:ok, ClientConfig.t()} | {:error, :not_found}
   @callback upsert_oauth2_client(DynamicOAuth2Client.t()) :: :ok
   @callback fetch_oauth2_client(OAuth2.client_id()) :: {:ok, DynamicOAuth2Client.t()} | {:error, :not_found}
 
@@ -40,6 +45,8 @@ defmodule RadioBeam.User.Database do
   defdelegate update_user_device_with(user_id, device_id, callback), to: @database_backend
   defdelegate fetch_user_device(user_id, device_id), to: @database_backend
   defdelegate get_all_devices_of_user(user_id), to: @database_backend
+  defdelegate upsert_user_client_config_with(user_id, callback), to: @database_backend
+  defdelegate fetch_user_client_config(user_id), to: @database_backend
   defdelegate upsert_oauth2_client(oauth2_client_metadata), to: @database_backend
   defdelegate fetch_oauth2_client(client_id), to: @database_backend
 

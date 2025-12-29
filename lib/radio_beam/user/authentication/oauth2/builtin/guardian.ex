@@ -2,20 +2,17 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin.Guardian do
   @moduledoc false
   use Guardian, otp_app: :radio_beam
 
-  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
-  alias RadioBeam.User
+  alias RadioBeam.User.Device
 
-  def subject_for_token(%UserDeviceSession{user: user, device: device}, _claims), do: {:ok, device.id <> user.id}
+  def subject_for_token(%Device{user_id: user_id} = device, _claims), do: {:ok, device.id <> user_id}
   def subject_for_token(_, _), do: {:error, :not_a_user}
 
   def resource_from_claims(%{"sub" => composite_id}), do: lookup_user(composite_id)
   def resource_from_claims(_claims), do: {:error, :not_found}
 
   defp lookup_user(composite_id) do
-    with [device_id, user_id] <- String.split(composite_id, "@", parts: 2),
-         {:ok, %User{} = user} <- RadioBeam.User.Database.fetch_user("@" <> user_id) do
-      UserDeviceSession.existing_from_user(user, device_id)
-    else
+    case String.split(composite_id, "@", parts: 2) do
+      [device_id, user_id] -> RadioBeam.User.Database.fetch_user_device("@" <> user_id, device_id)
       _ -> {:error, :not_found}
     end
   end

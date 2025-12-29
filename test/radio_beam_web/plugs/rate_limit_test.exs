@@ -7,19 +7,20 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
   import RadioBeam.RateLimit, only: [/: 2]
 
   alias RadioBeamWeb.Plugs.RateLimit
-  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
 
   describe "call/2" do
     setup do
       {user, device} = Fixtures.device(Fixtures.user())
 
-      {:ok, session} = UserDeviceSession.existing_from_user(user, device.id)
-      %{session: session}
+      %{user: user, user_id: user.id, device_id: device.id}
     end
 
     @high_limit 1000 / :timer.minutes(1)
 
-    test "returns the conn unmodified, until the user endpoint rate limit is hit", %{session: session} do
+    test "returns the conn unmodified, until the user endpoint rate limit is hit", %{
+      user_id: user_id,
+      device_id: device_id
+    } do
       user_endpoint_limit = 3
 
       rate_limit =
@@ -30,7 +31,8 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
           :post
           |> conn("/_matrix/v3/some_endpoint")
           |> assign(:rate_limit, rate_limit)
-          |> assign(:session, session)
+          |> assign(:user_id, user_id)
+          |> assign(:device_id, device_id)
 
         assert ^conn = RateLimit.call(conn, [])
       end)
@@ -39,7 +41,8 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
         :post
         |> conn("/_matrix/v3/some_endpoint")
         |> assign(:rate_limit, rate_limit)
-        |> assign(:session, session)
+        |> assign(:user_id, user_id)
+        |> assign(:device_id, device_id)
         |> RateLimit.call([])
 
       assert {429, headers_kwlist, body} = sent_resp(conn)
@@ -50,13 +53,18 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
         :post
         |> conn("/_matrix/v3/some_other_endpoint")
         |> assign(:rate_limit, rate_limit)
-        |> assign(:session, session)
+        |> assign(:user_id, user_id)
+        |> assign(:device_id, device_id)
         |> RateLimit.call([])
 
       refute conn.halted
     end
 
-    test "returns the conn unmodified, until the user device rate limit is hit", %{session: session} do
+    test "returns the conn unmodified, until the user device rate limit is hit", %{
+      user: user,
+      user_id: user_id,
+      device_id: device_id
+    } do
       user_endpoint_limit = 5
       user_device_limit = 3
 
@@ -73,7 +81,8 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
           :post
           |> conn("/_matrix/v3/another_endpoint")
           |> assign(:rate_limit, rate_limit)
-          |> assign(:session, session)
+          |> assign(:user_id, user_id)
+          |> assign(:device_id, device_id)
 
         assert ^conn = RateLimit.call(conn, [])
       end)
@@ -82,21 +91,22 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
         :post
         |> conn("/_matrix/v3/another_endpoint")
         |> assign(:rate_limit, rate_limit)
-        |> assign(:session, session)
+        |> assign(:user_id, user_id)
+        |> assign(:device_id, device_id)
         |> RateLimit.call([])
 
       assert {429, headers_kwlist, body} = sent_resp(conn)
       assert Enum.any?(headers_kwlist, fn {header, _} -> header == "retry-after" end)
       assert body =~ "M_LIMIT_EXCEEDED"
 
-      {user, device} = Fixtures.device(session.user)
-      {:ok, session} = UserDeviceSession.existing_from_user(user, device.id)
+      {user, device} = Fixtures.device(user)
 
       conn =
         :post
         |> conn("/_matrix/v3/cool_stuff")
         |> assign(:rate_limit, rate_limit)
-        |> assign(:session, session)
+        |> assign(:user_id, user.id)
+        |> assign(:device_id, device.id)
         |> RateLimit.call([])
 
       refute conn.halted

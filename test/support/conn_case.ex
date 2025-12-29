@@ -77,8 +77,7 @@ defmodule RadioBeamWeb.ConnCase do
         device_opts
       )
 
-    {:ok, %{user: user, device: device}} =
-      RadioBeam.User.Authentication.OAuth2.authenticate_user_by_access_token(access_token, {127, 0, 0, 1})
+    {:ok, device} = RadioBeam.User.Authentication.OAuth2.authenticate_user_by_access_token(access_token, {127, 0, 0, 1})
 
     %{
       conn: Plug.Conn.put_req_header(conn, "authorization", "Bearer #{access_token}"),

@@ -4,7 +4,6 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
   import Plug.Conn
 
   alias RadioBeam.User.Authentication.OAuth2
-  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
   alias RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken
 
   describe "call/2" do
@@ -14,12 +13,11 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
       %{user: user, device: device}
     end
 
-    test "returns the conn with a :session assign when given a valid access token", %{
+    test "returns the conn with a :user_id and :device_id assign when given a valid access token", %{
       device: %{id: device_id} = device,
-      user: %{id: user_id} = user
+      user: %{id: user_id}
     } do
-      {:ok, session} = UserDeviceSession.existing_from_user(user, device.id)
-      {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(session)
+      {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(device)
 
       conn =
         :post
@@ -27,7 +25,8 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
         |> put_req_header("authorization", "Bearer #{access_token}")
         |> VerifyAccessToken.call([])
 
-      assert %UserDeviceSession{user: %{id: ^user_id}, device: %{id: ^device_id}} = conn.assigns.session
+      assert ^user_id = conn.assigns.user_id
+      assert ^device_id = conn.assigns.device_id
     end
 
     test "returns a missing token (401) error when a token isn't given" do
@@ -51,9 +50,8 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
       assert body =~ "M_UNKNOWN_TOKEN"
     end
 
-    test "returns an unknown token (401) error when an otherwise valid token has expired", %{user: user, device: device} do
-      {:ok, session} = UserDeviceSession.existing_from_user(user, device.id)
-      {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(session, %{}, ttl: {1, :second})
+    test "returns an unknown token (401) error when an otherwise valid token has expired", %{device: device} do
+      {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(device, %{}, ttl: {1, :second})
 
       Process.sleep(2001)
 

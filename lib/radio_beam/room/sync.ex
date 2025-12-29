@@ -14,7 +14,7 @@ defmodule RadioBeam.Room.Sync do
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
-  defstruct ~w|user device_id filter start room_ids known_memberships full_state? timeout functions|a
+  defstruct ~w|user account_data ignored_user_ids device_id filter start room_ids known_memberships full_state? timeout functions|a
 
   @opaque t() :: %__MODULE__{}
 
@@ -48,6 +48,14 @@ defmodule RadioBeam.Room.Sync do
           end
       end
 
+    account_data =
+      case User.get_account_data(user.id) do
+        {:ok, data} -> data
+        _else -> %{}
+      end
+
+    %{ignored_user_ids: ignored_user_ids} = User.get_timeline_preferences(user.id)
+
     sync_room_id? =
       case filter.rooms do
         {:allowlist, allowlist} -> &(&1 in allowlist)
@@ -66,6 +74,8 @@ defmodule RadioBeam.Room.Sync do
 
     %__MODULE__{
       user: user,
+      account_data: account_data,
+      ignored_user_ids: ignored_user_ids,
       device_id: device_id,
       filter: filter,
       start: since,
@@ -166,7 +176,12 @@ defmodule RadioBeam.Room.Sync do
               room_sync_result =
                 case Room.State.fetch(room.state, "m.room.member", sync.user.id) do
                   {:ok, %{event: %{content: %{"membership" => "join"}}}} ->
-                    JoinedRoomResult.new_ephemeral(room_id, sync.user, "join", EphemeralState.Core.all_typing(state))
+                    JoinedRoomResult.new_ephemeral(
+                      room_id,
+                      sync.account_data,
+                      "join",
+                      EphemeralState.Core.all_typing(state)
+                    )
 
                   _else ->
                     :no_update

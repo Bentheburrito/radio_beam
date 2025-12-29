@@ -35,65 +35,67 @@ defmodule RadioBeam.User.Keys do
     end)
   end
 
-  def all_changed_since(%User{} = user, %PaginationToken{} = since) do
-    since_created_at = PaginationToken.created_at(since)
+  def all_changed_since("@" <> _ = user_id, %PaginationToken{} = since) do
+    with {:ok, %User{} = user} <- Database.fetch_user(user_id) do
+      since_created_at = PaginationToken.created_at(since)
 
-    {shared_memberships_by_user, since_event_map} =
-      Database.txn(fn ->
-        room_ids = Room.joined(user.id)
+      {shared_memberships_by_user, since_event_map} =
+        Database.txn(fn ->
+          room_ids = Room.joined(user.id)
 
-        shared_memberships_by_user =
-          room_ids
-          |> Stream.flat_map(fn room_id ->
-            case Room.get_members(room_id, user.id, :latest_visible, &(&1 in ~w|join leave|)) do
-              {:ok, member_events} -> Stream.map(member_events, &Map.put(&1, :room_id, room_id))
-              _ -> []
-            end
-          end)
-          |> Stream.reject(&(&1.state_key == user.id))
-          |> Stream.map(&zip_with_user_and_latest_id_key_change_at/1)
-          |> Stream.reject(fn {maybe_user, _, _} -> is_nil(maybe_user) end)
-          |> Enum.group_by(
-            fn {user, last_device_id_key_change_at, _} -> {user, last_device_id_key_change_at} end,
-            fn {_, _, member_event} -> member_event end
-          )
+          shared_memberships_by_user =
+            room_ids
+            |> Stream.flat_map(fn room_id ->
+              case Room.get_members(room_id, user.id, :latest_visible, &(&1 in ~w|join leave|)) do
+                {:ok, member_events} -> Stream.map(member_events, &Map.put(&1, :room_id, room_id))
+                _ -> []
+              end
+            end)
+            |> Stream.reject(&(&1.state_key == user.id))
+            |> Stream.map(&zip_with_user_and_latest_id_key_change_at/1)
+            |> Stream.reject(fn {maybe_user, _, _} -> is_nil(maybe_user) end)
+            |> Enum.group_by(
+              fn {user, last_device_id_key_change_at, _} -> {user, last_device_id_key_change_at} end,
+              fn {_, _, member_event} -> member_event end
+            )
 
-        since_event_map =
-          Map.new(room_ids, fn room_id ->
-            with {:ok, since_event_id} <- PaginationToken.room_last_seen_event_id(since, room_id),
-                 {:ok, event_stream} <- Room.View.get_events(room_id, user.id, [since_event_id]),
-                 [since_event] <- Enum.take(event_stream, 1) do
-              {room_id, since_event}
-            end
-          end)
+          since_event_map =
+            Map.new(room_ids, fn room_id ->
+              with {:ok, since_event_id} <- PaginationToken.room_last_seen_event_id(since, room_id),
+                   {:ok, event_stream} <- Room.View.get_events(room_id, user.id, [since_event_id]),
+                   [since_event] <- Enum.take(event_stream, 1) do
+                {room_id, since_event}
+              end
+            end)
 
-        {shared_memberships_by_user, since_event_map}
+          {shared_memberships_by_user, since_event_map}
+        end)
+
+      Enum.reduce(shared_memberships_by_user, %{changed: MapSet.new(), left: MapSet.new()}, fn
+        {{%{id: user_id, last_cross_signing_change_at: lcsca}, ldikca}, _}, acc
+        when lcsca > since_created_at or ldikca > since_created_at ->
+          Map.update!(acc, :changed, &MapSet.put(&1, user_id))
+
+        {{user, _}, member_events}, acc ->
+          join_events = Stream.filter(member_events, &(&1.content["membership"] == "join"))
+          leave_events = Stream.filter(member_events, &(&1.content["membership"] == "leave"))
+
+          cond do
+            # check for any joined members in any room that we did not share before the last sync
+            not Enum.empty?(join_events) and
+                Enum.all?(join_events, &event_occurred_later?(&1, Map.get(since_event_map, &1.room_id))) ->
+              Map.update!(acc, :changed, &MapSet.put(&1, user.id))
+
+            # check for any user we no longer share a room with, who left since the last sync
+            Enum.empty?(join_events) and
+                Enum.any?(leave_events, &event_occurred_later?(&1, Map.get(since_event_map, &1.room_id))) ->
+              Map.update!(acc, :left, &MapSet.put(&1, user.id))
+
+            :else ->
+              acc
+          end
       end)
-
-    Enum.reduce(shared_memberships_by_user, %{changed: MapSet.new(), left: MapSet.new()}, fn
-      {{%{id: user_id, last_cross_signing_change_at: lcsca}, ldikca}, _}, acc
-      when lcsca > since_created_at or ldikca > since_created_at ->
-        Map.update!(acc, :changed, &MapSet.put(&1, user_id))
-
-      {{user, _}, member_events}, acc ->
-        join_events = Stream.filter(member_events, &(&1.content["membership"] == "join"))
-        leave_events = Stream.filter(member_events, &(&1.content["membership"] == "leave"))
-
-        cond do
-          # check for any joined members in any room that we did not share before the last sync
-          not Enum.empty?(join_events) and
-              Enum.all?(join_events, &event_occurred_later?(&1, Map.get(since_event_map, &1.room_id))) ->
-            Map.update!(acc, :changed, &MapSet.put(&1, user.id))
-
-          # check for any user we no longer share a room with, who left since the last sync
-          Enum.empty?(join_events) and
-              Enum.any?(leave_events, &event_occurred_later?(&1, Map.get(since_event_map, &1.room_id))) ->
-            Map.update!(acc, :left, &MapSet.put(&1, user.id))
-
-          :else ->
-            acc
-        end
-    end)
+    end
   end
 
   defp zip_with_user_and_latest_id_key_change_at(member_event) do

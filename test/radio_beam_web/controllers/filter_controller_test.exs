@@ -41,7 +41,7 @@ defmodule RadioBeamWeb.FilterControllerTest do
   describe "get/1" do
     setup %{user: %{id: user_id}} do
       {:ok, filter_id} =
-        User.Account.upload_filter(user_id, %{
+        User.put_event_filter(user_id, %{
           "event_fields" => ["type", "content", "sender"],
           "event_format" => "client",
           "room" => %{"timeline" => %{"not_senders" => ["@spam:localhost"]}}

@@ -19,10 +19,10 @@ defmodule RadioBeamWeb.KeysController do
   @creds_dont_match_msg "The user/device ID specified in 'device_keys' do not match your session."
 
   def changes(conn, _params) do
-    %{session: %{user: user}, request: request} = conn.assigns
+    %{user_id: user_id, request: request} = conn.assigns
 
     changed_map =
-      user
+      user_id
       |> Keys.all_changed_since(request["from"])
       |> Map.update!(:changed, &MapSet.to_list/1)
       |> Map.update!(:left, &MapSet.to_list/1)
@@ -31,8 +31,8 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def upload(conn, _params) do
-    user = conn.assigns.session.user
-    device_id = conn.assigns.session.device.id
+    user_id = conn.assigns.user_id
+    device_id = conn.assigns.device_id
 
     opts =
       Keyword.new(conn.assigns.request, fn
@@ -41,7 +41,7 @@ defmodule RadioBeamWeb.KeysController do
         {"fallback_keys", fallback_keys} -> {:fallback_keys, fallback_keys}
       end)
 
-    case User.put_device_keys(user.id, device_id, opts) do
+    case User.put_device_keys(user_id, device_id, opts) do
       {:ok, otk_counts} -> json(conn, %{"one_time_key_counts" => otk_counts})
       {:error, :invalid_user_or_device_id} -> json_error(conn, 400, :bad_json, @creds_dont_match_msg)
       {:error, :not_found} -> json_error(conn, 404, :not_found)
@@ -51,8 +51,8 @@ defmodule RadioBeamWeb.KeysController do
   @user_id_mismatch_msg "The user_id specified on one or more of the supplied keys do not match the owner of the device."
   @bad_signature_msg "When uploading self-/user-cross-signing keys, they must be signed by an accompanying (or previously uploaded) master key."
   def upload_cross_signing(conn, _params) do
-    user_id = conn.assigns.session.user.id
-    device_id = conn.assigns.session.device.id
+    user_id = conn.assigns.user_id
+    device_id = conn.assigns.device_id
 
     opts =
       conn.assigns.request
@@ -87,7 +87,7 @@ defmodule RadioBeamWeb.KeysController do
 
   @set_up_csk_msg "You must upload Cross-Signing Keys before you can upload signatures of other user's keys"
   def upload_signatures(conn, _params) do
-    case Keys.put_signatures(conn.assigns.session.user.id, conn.assigns.request) do
+    case Keys.put_signatures(conn.assigns.user_id, conn.assigns.request) do
       :ok -> json(conn, %{})
       {:error, :signer_has_no_user_csk} -> json_error(conn, 400, :bad_json, [@set_up_csk_msg])
       {:error, %{} = failures} -> json(conn, %{"failures" => map_nested_errors(failures)})
@@ -134,7 +134,7 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def query(conn, _params) do
-    case Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.session.user.id) do
+    case Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.user_id) do
       %{} = user_key_map ->
         json(conn, user_key_map)
 

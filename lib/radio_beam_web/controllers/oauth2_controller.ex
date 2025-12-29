@@ -225,7 +225,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
 
   # TOIMPL: application service users
   def whoami(conn, _params) do
-    json(conn, %{device_id: conn.assigns.session.device.id, is_guest: false, user_id: conn.assigns.session.user.id})
+    json(conn, %{device_id: conn.assigns.device_id, is_guest: false, user_id: conn.assigns.user_id})
   end
 
   defp get_auth_params_from_session(conn) do

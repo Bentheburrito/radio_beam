@@ -14,9 +14,6 @@ defmodule RadioBeam.Room.Sync.Core do
     {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", sync.user.id)
     user_membership = user_membership_pdu.event.content["membership"]
 
-    ignored_user_ids =
-      MapSet.new(sync.user.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))
-
     maybe_last_sync_room_state_pdus =
       with %PaginationToken{} = since <- sync.start,
            {:ok, event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
@@ -43,14 +40,14 @@ defmodule RadioBeam.Room.Sync.Core do
             room,
             membership,
             event_stream,
-            ignored_user_ids,
+            sync.ignored_user_ids,
             maybe_last_sync_room_state_pdus,
             typing_user_ids
           )
         end
 
       "invite" when maybe_last_sync_room_state_pdus == :initial ->
-        if user_membership_pdu.event.sender in ignored_user_ids do
+        if user_membership_pdu.event.sender in sync.ignored_user_ids do
           :no_update
         else
           InvitedRoomResult.new!(room, sync.user.id, user_membership_pdu.event.id)
@@ -113,6 +110,14 @@ defmodule RadioBeam.Room.Sync.Core do
       typing: typing_user_ids
     ]
 
-    JoinedRoomResult.new(room, sync.user, timeline_events, sync.functions.get_events_for_user, membership, opts)
+    JoinedRoomResult.new(
+      room,
+      sync.user.id,
+      sync.account_data,
+      timeline_events,
+      sync.functions.get_events_for_user,
+      membership,
+      opts
+    )
   end
 end

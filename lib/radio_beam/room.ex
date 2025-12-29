@@ -33,10 +33,18 @@ defmodule RadioBeam.Room do
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
   room was successfully started.
   """
-  @spec create(User.t(), [Room.Core.create_opt() | {:version, String.t()}]) :: {:ok, id()} | {:error, any()}
-  def create(%User{} = creator, opts \\ []) do
+  @spec create(User.id() | User.t(), [Room.Core.create_opt() | {:version, String.t()}]) :: {:ok, id()} | {:error, any()}
+  def create(creator_id, opts \\ [])
+  def create(%User{id: creator_id}, opts), do: create(creator_id, opts)
+
+  def create(creator_id, opts) do
     room_version = Keyword.get(opts, :version, RadioBeam.Config.default_room_version())
-    Room.Server.create(room_version, creator.id, opts)
+
+    if User.exists?(creator_id) do
+      Room.Server.create(room_version, creator_id, opts)
+    else
+      {:error, :unknown_user}
+    end
   end
 
   def exists?(room_id) do

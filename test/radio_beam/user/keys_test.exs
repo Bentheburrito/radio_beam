@@ -136,12 +136,12 @@ defmodule RadioBeam.User.KeysTest do
     test "returns an empty changed/left lists if the user is in no/empty rooms" do
       user = Fixtures.user()
       since_now = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user, since_now)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user.id, since_now)
 
       {:ok, room_id} = Room.create(user)
       :pong = Room.Server.ping(room_id)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user, since_now)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user.id, since_now)
     end
 
     test "does not include user's own key updates in changed" do
@@ -153,7 +153,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {user, _device} = Fixtures.create_and_put_device_keys(user, device)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user, before_update)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user.id, before_update)
     end
 
     test "returns changed users who have added device identity keys since the given timestamp", %{
@@ -182,8 +182,8 @@ defmodule RadioBeam.User.KeysTest do
       Process.sleep(1)
 
       expected = MapSet.new([user1_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_change)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_change)
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_change)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_change)
 
       Process.sleep(1)
 
@@ -191,10 +191,10 @@ defmodule RadioBeam.User.KeysTest do
       after_user2_change = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id, user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_change)
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_change)
       expected = MapSet.new([user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, after_user1_change)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user2_change)
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, after_user1_change)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user2_change)
     end
 
     test "returns changed users who have joined the room since the given timestamp", %{
@@ -216,18 +216,18 @@ defmodule RadioBeam.User.KeysTest do
       after_user1_join = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_join)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_join)
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_join)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_join)
 
       {:ok, event_id} = Room.join(room_id, user2.id)
 
       after_user2_join = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id, user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, before_user1_join)
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_join)
       expected = MapSet.new([user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator, after_user1_join)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user2_join)
+      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, after_user1_join)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user2_join)
     end
 
     test "does not return users for which we do not share a room", %{
@@ -245,11 +245,11 @@ defmodule RadioBeam.User.KeysTest do
 
       Fixtures.create_and_put_device_keys(user1, user1_device)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2, before_user1_change)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2.id, before_user1_change)
 
       {:ok, _} = Room.leave(room_id, user1.id)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2, before_user1_change)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2.id, before_user1_change)
     end
 
     test "includes users in :left when they leave the last shared room", %{
@@ -273,18 +273,18 @@ defmodule RadioBeam.User.KeysTest do
       after_user1_leave = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_user1_leave)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_leave)
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_user1_leave)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_leave)
 
       {:ok, event_id} = Room.leave(room_id, user2.id)
 
       after_user2_leave = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id, user2_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_user1_leave)
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_user1_leave)
       expected = MapSet.new([user2_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, after_user1_leave)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user2_leave)
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, after_user1_leave)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user2_leave)
     end
 
     test "does not include a user in :left if they still share other rooms", %{
@@ -315,8 +315,8 @@ defmodule RadioBeam.User.KeysTest do
         PaginationToken.new(%{room_id => event_id, room_id2 => event_id2}, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user2_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_leave)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_leave)
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_leave)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_leave)
 
       before_leave2 =
         PaginationToken.new(%{room_id => event_id, room_id2 => event_id2}, :forward, System.os_time(:millisecond))
@@ -324,7 +324,7 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, _event_id} = Room.leave(room_id2, user1.id)
 
       expected = MapSet.new([user1_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator, before_leave2)
+      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_leave2)
     end
 
     test "does not include a user in :changed if joined a room but previously shared another room", %{
@@ -345,8 +345,8 @@ defmodule RadioBeam.User.KeysTest do
 
       after_user1_join = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, before_user1_join)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator, after_user1_join)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, before_user1_join)
+      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_join)
     end
   end
 

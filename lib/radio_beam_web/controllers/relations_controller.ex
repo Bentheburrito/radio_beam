@@ -4,7 +4,6 @@ defmodule RadioBeamWeb.RelationsController do
   import RadioBeamWeb.Utils, only: [handle_common_error: 2]
 
   alias RadioBeam.Room
-  alias RadioBeam.User
   alias RadioBeamWeb.Schemas.Relations, as: RelationsSchema
 
   require Logger
@@ -12,7 +11,7 @@ defmodule RadioBeamWeb.RelationsController do
   plug RadioBeamWeb.Plugs.EnforceSchema, mod: RelationsSchema
 
   def get_children(conn, %{"event_id" => event_id, "room_id" => room_id} = params) do
-    %User{} = user = conn.assigns.session.user
+    user_id = conn.assigns.user_id
     %{"dir" => order, "recurse" => recurse?} = _request = conn.assigns.request
 
     opts = [
@@ -22,7 +21,7 @@ defmodule RadioBeamWeb.RelationsController do
       rel_type: Map.get(params, "rel_type")
     ]
 
-    case Room.get_children(room_id, user.id, event_id, opts) do
+    case Room.get_children(room_id, user_id, event_id, opts) do
       {:ok, child_events, recurse_depth} ->
         # TOIMPL: this endpoint can take a from/to token returned from /messages
         # and /sync (so a PaginationToken). Room.get_children does not currently

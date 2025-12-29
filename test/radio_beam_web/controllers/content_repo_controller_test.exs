@@ -12,7 +12,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     @describetag :tmp_dir
     setup %{tmp_dir: tmp_dir} do
       user = Fixtures.user()
-      {:ok, %Upload{} = upload} = ContentRepo.create(user)
+      {:ok, %Upload{} = upload} = ContentRepo.create(user.id)
 
       content = "A,B,C\nval1,val2,val2"
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
@@ -50,7 +50,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     end
 
     test "returns M_NOT_YET_UPLOADED (504) when content is missing after waiting a bit", %{conn: conn, user: user} do
-      {:ok, %{id: mxc}} = ContentRepo.create(user)
+      {:ok, %{id: mxc}} = ContentRepo.create(user.id)
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout_ms=200", %{})
       assert %{"errcode" => "M_NOT_YET_UPLOADED"} = json_response(conn, 504)
     end
@@ -61,7 +61,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       content: content,
       tmp_dir: tmp_dir
     } do
-      {:ok, %{id: mxc} = upload} = ContentRepo.create(user)
+      {:ok, %{id: mxc} = upload} = ContentRepo.create(user.id)
 
       timeout = :timer.seconds(2)
 
@@ -88,7 +88,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     test "returns M_TOO_LARGE (502) when content too large to serve", %{conn: conn, user: user, tmp_dir: tmp_dir} do
       max_upload_size = ContentRepo.max_upload_size_bytes()
       content = Fixtures.random_string(max_upload_size)
-      {:ok, %{id: mxc} = upload} = ContentRepo.create(user)
+      {:ok, %{id: mxc} = upload} = ContentRepo.create(user.id)
 
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
@@ -160,7 +160,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
     test "will not thumbnail txt files (400)", %{conn: conn, tmp_dir: tmp_dir, user: user} do
       iodata = "this is not a picture !!!!!!"
-      {:ok, %Upload{id: mxc} = upload} = ContentRepo.create(user)
+      {:ok, %Upload{id: mxc} = upload} = ContentRepo.create(user.id)
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, iodata)
       ContentRepo.upload(upload, Fixtures.file_info(iodata, "txt"), tmp_upload_path)
@@ -184,7 +184,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       conn: conn,
       user: user
     } do
-      {:ok, %{id: mxc}} = ContentRepo.create(user)
+      {:ok, %{id: mxc}} = ContentRepo.create(user.id)
       params = %{"width" => @width, "height" => @height, "method" => @method, "timeout_ms" => 5}
 
       conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
@@ -271,7 +271,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       iodata = Fixtures.random_string(max_upload_bytes)
 
       for _i <- 1..num_to_upload do
-        {:ok, %Upload{} = upload} = ContentRepo.create(user)
+        {:ok, %Upload{} = upload} = ContentRepo.create(user.id)
         tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
         File.write!(tmp_upload_path, iodata)
         ContentRepo.upload(upload, Fixtures.file_info(iodata, "jpg"), tmp_upload_path)
@@ -290,7 +290,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
   describe "upload/2 (PUT, MXC URI reserved previously)" do
     @describetag :tmp_dir
     setup %{user: user} do
-      {:ok, upload} = ContentRepo.create(user)
+      {:ok, upload} = ContentRepo.create(user.id)
       %{upload: upload}
     end
 
@@ -309,7 +309,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
     test "will not use a supplied mxc that was reserved by someone else", %{conn: conn} do
       user = Fixtures.user()
-      {:ok, %{id: mxc}} = ContentRepo.create(user)
+      {:ok, %{id: mxc}} = ContentRepo.create(user.id)
 
       conn = put(conn, ~p"/_matrix/media/v3/upload/#{mxc.server_name}/#{mxc.id}", nil)
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
@@ -353,7 +353,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
     test "returns M_LIMIT_EXCEEDED (429) when the user has too many pending uploads", %{conn: conn, user: user} do
       %{max_reserved: max_reserved} = ContentRepo.user_upload_limits()
-      for _i <- 1..max_reserved, do: ContentRepo.create(user)
+      for _i <- 1..max_reserved, do: ContentRepo.create(user.id)
 
       conn = post(conn, ~p"/_matrix/media/v1/create", %{})
 

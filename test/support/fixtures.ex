@@ -99,10 +99,8 @@ defmodule Fixtures do
   end
 
   def device(user, display_name) do
-    device_id = device_id()
-
-    %{user: user, device: device} =
-      RadioBeam.User.Authentication.OAuth2.UserDeviceSession.new_from_user!(user, device_id, display_name: display_name)
+    device = Device.new(user.id, device_id(), display_name: display_name)
+    :ok = Database.insert_new_device(device)
 
     {user, device}
   end
@@ -116,7 +114,7 @@ defmodule Fixtures do
   end
 
   def jpg_upload(user, width, height, tmp_dir, repo_dir \\ ContentRepo.path()) do
-    {:ok, upload} = ContentRepo.create(user)
+    {:ok, upload} = ContentRepo.create(user.id)
 
     tmp_upload_path = Path.join([tmp_dir, "tmp_jpg_upload_#{width}_#{height}"])
 

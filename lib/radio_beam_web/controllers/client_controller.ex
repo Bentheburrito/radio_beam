@@ -9,13 +9,12 @@ defmodule RadioBeamWeb.ClientController do
   alias RadioBeam.Transaction
   alias RadioBeam.Errors
   alias RadioBeam.User
-  alias RadioBeam.User.Device
 
   require Logger
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Client] when action in ~w|send_to_device|a
 
-  def get_device(%{assigns: %{session: %{user: %{id: user_id}}}} = conn, params) do
+  def get_device(%{assigns: %{user_id: user_id}} = conn, params) do
     case Map.fetch(params, "device_id") do
       {:ok, device_id} ->
         case User.get_device_info(user_id, device_id) do
@@ -45,7 +44,7 @@ defmodule RadioBeamWeb.ClientController do
   end
 
   def put_device_display_name(conn, %{"device_id" => device_id, "display_name" => display_name}) do
-    case User.Account.put_device_display_name(conn.assigns.session.user.id, device_id, display_name) do
+    case User.put_device_display_name(conn.assigns.user_id, device_id, display_name) do
       {:ok, _} -> json(conn, %{})
       {:error, :not_found} -> json_error(conn, 404, :not_found, "device not found")
       {:error, error} -> log_error(conn, error)
@@ -62,13 +61,13 @@ defmodule RadioBeamWeb.ClientController do
   defp ip_tuple_to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
 
   def send_to_device(conn, %{"type" => type, "transaction_id" => txn_id}) do
-    %User{} = user = conn.assigns.session.user
-    %Device{} = device = conn.assigns.session.device
+    user_id = conn.assigns.user_id
+    device_id = conn.assigns.device_id
     request = conn.assigns.request
 
-    case Transaction.begin(txn_id, device.id, conn.request_path) do
+    case Transaction.begin(txn_id, device_id, conn.request_path) do
       {:ok, handle} ->
-        case User.send_to_devices(request["messages"], user.id, type) do
+        case User.send_to_devices(request["messages"], user_id, type) do
           :ok ->
             Transaction.done(handle, %{})
             json(conn, %{})

@@ -6,6 +6,7 @@ defmodule RadioBeam.Room.SyncTest do
   alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
+  alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
   setup do
@@ -206,8 +207,8 @@ defmodule RadioBeam.Room.SyncTest do
     } do
       annoying_user = Fixtures.user()
 
-      {:ok, user} =
-        RadioBeam.User.Account.put(user.id, :global, "m.ignored_user_list", %{
+      :ok =
+        User.put_account_data(user.id, :global, "m.ignored_user_list", %{
           "ignored_users" => %{annoying_user.id => %{}}
         })
 
@@ -249,8 +250,8 @@ defmodule RadioBeam.Room.SyncTest do
     test "successfully syncs, filtering out invites from ignored users", %{user: user, device: device} do
       annoying_user = Fixtures.user()
 
-      {:ok, user} =
-        RadioBeam.User.Account.put(user.id, :global, "m.ignored_user_list", %{
+      :ok =
+        User.put_account_data(user.id, :global, "m.ignored_user_list", %{
           "ignored_users" => %{annoying_user.id => %{}}
         })
 
@@ -260,7 +261,7 @@ defmodule RadioBeam.Room.SyncTest do
       assert %Sync.Result{data: [], next_batch_map: next_batch_map} =
                user |> Sync.init(device.id) |> Sync.perform()
 
-      {:ok, user} = RadioBeam.User.Account.put(user.id, :global, "m.ignored_user_list", %{"ignored_users" => %{}})
+      :ok = User.put_account_data(user.id, :global, "m.ignored_user_list", %{"ignored_users" => %{}})
 
       assert %Sync.Result{data: [%InvitedRoomResult{room_id: ^room_id}]} =
                user

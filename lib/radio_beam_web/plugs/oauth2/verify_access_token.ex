@@ -5,8 +5,8 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken do
   import Plug.Conn
   import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4]
 
+  alias RadioBeam.User.Device
   alias RadioBeam.User.Authentication.OAuth2
-  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
 
   require Logger
 
@@ -14,8 +14,10 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken do
 
   def call(%{assigns: %{access_token: access_token}} = conn, _opts) do
     case OAuth2.authenticate_user_by_access_token(access_token, conn.remote_ip) do
-      {:ok, %UserDeviceSession{} = session} ->
-        assign(conn, :session, session)
+      {:ok, %Device{} = device} ->
+        conn
+        |> assign(:user_id, device.user_id)
+        |> assign(:device_id, device.id)
 
       {:error, :token_expired} ->
         conn |> json_error(401, :unknown_token, ["Unknown token", true]) |> halt()

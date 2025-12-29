@@ -7,7 +7,6 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   alias RadioBeam.User.Authentication.OAuth2.Builtin.AuthzCodeCache
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.Authentication.OAuth2.Builtin.Guardian
-  alias RadioBeam.User.Authentication.OAuth2.UserDeviceSession
   alias RadioBeam.User
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
@@ -367,67 +366,68 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
       ) do
     {scope_to_urn, device_opts} = Keyword.pop!(opts, :scope_to_urn)
 
-    with {:ok, user_id, scope} <- AuthzCodeCache.pop(code, code_verifier, client_id, redirect_uri) do
-      Database.with_user(user_id, fn user ->
-        session = UserDeviceSession.new_from_user!(user, scope.device_id, device_opts)
-
-        with {:ok, access_token, access_claims} <- new_access_token(session, scope, issuer, scope_to_urn),
-             {:ok, refresh_token, refresh_claims} <- new_refresh_token(session, access_claims, issuer),
-             {:ok, _device} <- rotate_device_ids(session, access_claims["jti"], refresh_claims["jti"]) do
-          {:ok, access_token, refresh_token, access_claims["scope"], access_claims["exp"] - System.os_time(:second)}
-        end
-      end)
+    with {:ok, user_id, scope} <- AuthzCodeCache.pop(code, code_verifier, client_id, redirect_uri),
+         :ok <- create_device_if_not_exists(user_id, scope.device_id, device_opts),
+         {:ok, result} <-
+           Database.update_user_device_with(user_id, scope.device_id, &new_tokens(&1, scope, issuer, scope_to_urn)) do
+      {access_token, refresh_token, scope, expires_in} = result
+      {:ok, access_token, refresh_token, scope, expires_in}
     end
   end
 
-  defp new_access_token(session, scope, issuer, scope_to_urn) do
+  defp create_device_if_not_exists(user_id, device_id, on_new_opts) do
+    user_id |> Device.new(device_id, on_new_opts) |> Database.insert_new_device()
+    :ok
+  end
+
+  defp new_tokens(device, scope, issuer, scope_to_urn) do
+    with {:ok, access_token, access_claims} <- new_access_token(device, scope, issuer, scope_to_urn),
+         {:ok, refresh_token, refresh_claims} <- new_refresh_token(device, access_claims, issuer) do
+      device = Device.rotate_token_ids(device, access_claims["jti"], refresh_claims["jti"])
+
+      {:ok, device,
+       {access_token, refresh_token, access_claims["scope"], access_claims["exp"] - System.os_time(:second)}}
+    end
+  end
+
+  defp new_access_token(device, scope, issuer, scope_to_urn) do
     claims = %{scope: scope_to_urn.(scope)}
     opts = [token_type: "access", ttl: Application.fetch_env!(:radio_beam, :access_token_lifetime), issuer: issuer]
 
-    with {:ok, access_token, claims} <- Guardian.encode_and_sign(session, claims, opts) do
+    with {:ok, access_token, claims} <- Guardian.encode_and_sign(device, claims, opts) do
       "access" = claims["typ"]
       {:ok, access_token, claims}
     end
   end
 
-  defp new_refresh_token(session, %{"jti" => access_token_id, "scope" => scope}, issuer) do
+  defp new_refresh_token(device, %{"jti" => access_token_id, "scope" => scope}, issuer) do
     claims = %{scope: scope, access_token_id: access_token_id}
     opts = [token_type: "refresh", ttl: Application.fetch_env!(:radio_beam, :refresh_token_lifetime), issuer: issuer]
 
-    with {:ok, refresh_token, claims} <- Guardian.encode_and_sign(session, claims, opts) do
+    with {:ok, refresh_token, claims} <- Guardian.encode_and_sign(device, claims, opts) do
       "refresh" = claims["typ"]
       {:ok, refresh_token, claims}
     end
-  end
-
-  defp rotate_device_ids(session, access_token_id, refresh_token_id) do
-    Database.update_user_device_with(
-      session.user.id,
-      session.device.id,
-      &Device.rotate_token_ids(&1, access_token_id, refresh_token_id)
-    )
   end
 
   @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_access_token(token, device_ip) do
     Database.txn(fn ->
       with {:ok, claims} <- Guardian.decode_and_verify(token),
-           {:ok, session} <- Guardian.resource_from_claims(claims) do
-        if claims["typ"] != "access" or claims["jti"] in session.device.revoked_unexpired_token_ids do
+           {:ok, device} <- Guardian.resource_from_claims(claims) do
+        if claims["typ"] != "access" or claims["jti"] in device.revoked_unexpired_token_ids do
           {:error, :invalid_token}
         else
-          perform_device_upkeep(session, device_ip)
+          perform_device_upkeep(device, device_ip)
         end
       end
     end)
   end
 
-  defp perform_device_upkeep(%UserDeviceSession{} = session, device_ip) do
+  defp perform_device_upkeep(%Device{} = device, device_ip) do
     upkeep_fxn = &(&1 |> Device.put_last_seen_at(device_ip) |> Device.put_retryable_refresh_token_id(nil))
 
-    with {:ok, device} <- Database.update_user_device_with(session.user.id, session.device.id, upkeep_fxn) do
-      UserDeviceSession.existing_from_user(session.user, device.id)
-    end
+    Database.update_user_device_with(device.user_id, device.id, upkeep_fxn)
   end
 
   @impl RadioBeam.User.Authentication.OAuth2
@@ -448,14 +448,14 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
          :ok <- validate_unrevoked_or_retryable(old_claims),
          {:ok, {^refresh_token, _}, {new_refresh_token, %{"jti" => new_refresh_token_id}}} <-
            exchange_for(refresh_token, "refresh", refresh_opts),
-         {:ok, session} <- Guardian.resource_from_claims(new_claims) do
+         {:ok, device} <- Guardian.resource_from_claims(new_claims) do
       updater = fn device ->
         device
         |> Device.rotate_token_ids(new_claims["jti"], new_refresh_token_id)
         |> Device.put_retryable_refresh_token_id(old_claims["jti"])
       end
 
-      {:ok, _} = Database.update_user_device_with(session.user.id, session.device.id, updater)
+      {:ok, _} = Database.update_user_device_with(device.user_id, device.id, updater)
 
       {:ok, new_access_token, new_refresh_token, new_claims["scope"], new_claims["exp"]}
     end
@@ -467,7 +467,7 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
 
   defp validate_unrevoked_or_retryable(claims) do
     case Guardian.resource_from_claims(claims) do
-      {:ok, %{device: %Device{} = device}} ->
+      {:ok, %Device{} = device} ->
         cond do
           claims["typ"] != "refresh" ->
             {:error, :invalid_token}
@@ -487,15 +487,15 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   @impl RadioBeam.User.Authentication.OAuth2
   def revoke_token(token) do
     case Guardian.resource_from_token(token) do
-      {:ok, %UserDeviceSession{} = session, claims} ->
-        if claims["jti"] in Map.values(session.device.last_issued_token_ids) do
+      {:ok, %Device{} = device, claims} ->
+        if claims["jti"] in Map.values(device.last_issued_token_ids) do
           updater = fn device ->
             device
             |> Device.rotate_token_ids(nil, nil)
             |> Device.put_retryable_refresh_token_id(nil)
           end
 
-          {:ok, _} = Database.update_user_device_with(session.user.id, session.device.id, updater)
+          {:ok, _} = Database.update_user_device_with(device.user_id, device.id, updater)
           :ok
         else
           :ok
