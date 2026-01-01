@@ -175,11 +175,11 @@ defmodule RadioBeam.User.Keys do
 
   @spec put_signatures(User.id(), User.Device.id(), map()) ::
           :ok | {:error, %{String.t() => %{String.t() => put_signatures_error()}}}
-  def put_signatures(signer_user_id, signer_device_id, user_key_map) do
+  def put_signatures(signer_user_id, signer_device_id, user_key_map, deps \\ deps()) do
     {self_signatures, others_msk_signatures} = Map.pop(user_key_map, signer_user_id, :none)
 
-    self_failures = try_put_self_signatures(self_signatures, signer_user_id, signer_device_id)
-    others_failures = try_put_others_msk_signatures(others_msk_signatures, signer_user_id)
+    self_failures = try_put_self_signatures(self_signatures, signer_user_id, signer_device_id, deps)
+    others_failures = try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps)
 
     case Map.merge(self_failures, others_failures) do
       failures when map_size(failures) == 0 -> :ok
@@ -187,15 +187,15 @@ defmodule RadioBeam.User.Keys do
     end
   end
 
-  defp try_put_self_signatures(:none, _signer_user_id, _signer_device_id), do: %{}
+  defp try_put_self_signatures(:none, _signer_user_id, _signer_device_id, _deps), do: %{}
 
-  defp try_put_self_signatures(self_signatures, signer_user_id, signer_device_id) do
+  defp try_put_self_signatures(self_signatures, signer_user_id, signer_device_id, deps) do
     self_signatures
     |> Stream.map(fn {key_id_or_device_id, key_params} ->
-      case try_update_device_with_signatures(signer_user_id, key_id_or_device_id, key_params) do
+      case try_update_device_with_signatures(signer_user_id, key_id_or_device_id, key_params, deps) do
         # it's either a CSK key ID or an unknown key ID
         {:error, :not_found} ->
-          case try_update_csk_with_signatures(signer_user_id, signer_device_id, key_id_or_device_id, key_params) do
+          case try_update_csk_with_signatures(signer_user_id, signer_device_id, key_id_or_device_id, key_params, deps) do
             {:error, error} -> {:error, key_id_or_device_id, error}
             {:ok, _updated_keys} -> :ok
           end
@@ -216,9 +216,9 @@ defmodule RadioBeam.User.Keys do
     end)
   end
 
-  defp try_update_device_with_signatures(user_id, maybe_device_id, key_params) do
-    Database.update_user_device_with(user_id, maybe_device_id, fn %Device{} = device ->
-      case Database.fetch_keys(user_id) do
+  defp try_update_device_with_signatures(user_id, maybe_device_id, key_params, deps) do
+    deps.update_user_device_with.(user_id, maybe_device_id, fn %Device{} = device ->
+      case deps.fetch_keys.(user_id) do
         {:ok, %__MODULE__{cross_signing_key_ring: %{self: %CrossSigningKey{id: ssk_id} = self_signing_key}}} ->
           with :ok <- assert_signature_present(key_params, user_id, "ed25519:#{ssk_id}") do
             Device.put_identity_keys_signature(device, user_id, key_params, self_signing_key)
@@ -230,8 +230,8 @@ defmodule RadioBeam.User.Keys do
     end)
   end
 
-  defp try_update_csk_with_signatures(signer_user_id, signer_device_id, maybe_key_id, key_params) do
-    Database.update_keys(signer_user_id, fn %__MODULE__{} = keys ->
+  defp try_update_csk_with_signatures(signer_user_id, signer_device_id, maybe_key_id, key_params, deps) do
+    deps.update_keys.(signer_user_id, fn %__MODULE__{} = keys ->
       case keys.cross_signing_key_ring do
         # MSK must be signed by a device...
         %{master: %CrossSigningKey{id: ^maybe_key_id} = msk} ->
@@ -240,7 +240,7 @@ defmodule RadioBeam.User.Keys do
 
           with :ok <- assert_signature_present(key_params, signer_user_id, algo_and_device_id),
                {:ok, verify_key} <-
-                 make_verify_key_from_device_id_key(signer_user_id, signer_device_id, algo_and_device_id),
+                 make_verify_key_from_device_id_key(signer_user_id, signer_device_id, algo_and_device_id, deps),
                {:ok, new_msk} <-
                  CrossSigningKey.put_signature(msk, signer_user_id, key_params, signer_user_id, verify_key) do
             {:ok, put_in(keys.cross_signing_key_ring.master, new_msk)}
@@ -265,8 +265,8 @@ defmodule RadioBeam.User.Keys do
       else: {:error, :missing_signature}
   end
 
-  defp try_put_others_msk_signatures(others_msk_signatures, signer_user_id) do
-    case Database.fetch_keys(signer_user_id) do
+  defp try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps) do
+    case deps.fetch_keys.(signer_user_id) do
       {:ok, %__MODULE__{cross_signing_key_ring: %{user: %CrossSigningKey{} = signer_usk}}} ->
         others_msk_signatures
         |> Stream.flat_map(fn {user_id, key_map} ->
@@ -276,7 +276,7 @@ defmodule RadioBeam.User.Keys do
         end)
         |> Enum.reduce(_failures = %{}, fn {user_id, keyb64, key_params}, failures ->
           result =
-            Database.update_keys(user_id, fn
+            deps.update_keys.(user_id, fn
               %__MODULE__{cross_signing_key_ring: %{master: %CrossSigningKey{id: ^keyb64} = user_msk}} = user_keys ->
                 case CrossSigningKey.put_signature(user_msk, user_id, key_params, signer_user_id, signer_usk) do
                   {:ok, new_user_msk} -> {:ok, put_in(user_keys.cross_signing_key_ring.master, new_user_msk)}
@@ -301,8 +301,8 @@ defmodule RadioBeam.User.Keys do
     end
   end
 
-  defp make_verify_key_from_device_id_key(user_id, device_id, algo_and_device_id) do
-    with {:ok, device} <- Database.fetch_user_device(user_id, device_id),
+  defp make_verify_key_from_device_id_key(user_id, device_id, algo_and_device_id, deps) do
+    with {:ok, device} <- deps.fetch_user_device.(user_id, device_id),
          %Device{identity_keys: %{"keys" => %{^algo_and_device_id => key}}} <- device do
       {:ok, Polyjuice.Util.make_verify_key(key, algo_and_device_id)}
     else
@@ -323,5 +323,14 @@ defmodule RadioBeam.User.Keys do
       _else ->
         {:error, :signature_key_not_known}
     end
+  end
+
+  defp deps do
+    %{
+      fetch_keys: &Database.fetch_keys/1,
+      fetch_user_device: &Database.fetch_user_device/2,
+      update_keys: &Database.update_keys/2,
+      update_user_device_with: &Database.update_user_device_with/3
+    }
   end
 end
