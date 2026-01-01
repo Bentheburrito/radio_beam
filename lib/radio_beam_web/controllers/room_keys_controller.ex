@@ -7,7 +7,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4]
 
   alias RadioBeam.Errors
-  alias RadioBeam.User
+  alias RadioBeam.User.Keys
   alias RadioBeamWeb.Schemas.RoomKeys, as: RoomKeysSchema
 
   require Logger
@@ -31,7 +31,7 @@ defmodule RadioBeamWeb.RoomKeysController do
     room_id = Map.get(params, "room_id", :all)
     session_id = Map.get(params, "session_id", :all)
 
-    case User.fetch_room_keys_backup(user_id, version, room_id, session_id) do
+    case Keys.fetch_room_keys_backup(user_id, version, room_id, session_id) do
       {:error, :not_found} when room_id != :all and session_id == :all -> json(conn, %{"sessions" => %{}})
       {:error, :not_found} when room_id != :all and session_id != :all -> json_error(conn, 404, :not_found, @no_key_msg)
       {:error, :not_found} -> json_error(conn, 404, :not_found, @unknown_backup)
@@ -67,7 +67,7 @@ defmodule RadioBeamWeb.RoomKeysController do
           |> Map.new(fn {room_id, %{"sessions" => session_map}} -> {room_id, session_map} end)
       end
 
-    case User.put_room_keys_backup(user_id, version, new_room_session_backups) do
+    case Keys.put_room_keys_backup(user_id, version, new_room_session_backups) do
       {:ok, backup_info} ->
         json(conn, backup_info)
 
@@ -107,7 +107,7 @@ defmodule RadioBeamWeb.RoomKeysController do
         _else -> :all
       end
 
-    case User.delete_room_keys_backup(user_id, version, path_or_all) do
+    case Keys.delete_room_keys_backup(user_id, version, path_or_all) do
       {:ok, backup_info} -> json(conn, backup_info)
       {:error, :not_found} -> json_error(conn, 404, :not_found, @unknown_backup)
     end
@@ -119,7 +119,7 @@ defmodule RadioBeamWeb.RoomKeysController do
     user_id = conn.assigns.user_id
     %{"algorithm" => algorithm, "auth_data" => auth_data} = conn.assigns.request
 
-    case User.create_room_keys_backup(user_id, algorithm, auth_data) do
+    case Keys.create_room_keys_backup(user_id, algorithm, auth_data) do
       {:ok, version} ->
         json(conn, %{version: version})
 
@@ -148,7 +148,7 @@ defmodule RadioBeamWeb.RoomKeysController do
       end
 
     with {:ok, version} <- version_result,
-         {:ok, backup_info} <- User.fetch_backup_info(user_id, version) do
+         {:ok, backup_info} <- Keys.fetch_backup_info(user_id, version) do
       json(conn, backup_info)
     else
       {:error, :not_found} -> json_error(conn, 404, :not_found, "Backup not found")
@@ -170,7 +170,7 @@ defmodule RadioBeamWeb.RoomKeysController do
     user_id = conn.assigns.user_id
     %{"algorithm" => algorithm, "auth_data" => auth_data} = conn.assigns.request
 
-    case User.update_room_keys_backup_auth_data(user_id, version, algorithm, auth_data) do
+    case Keys.update_room_keys_backup_auth_data(user_id, version, algorithm, auth_data) do
       :ok ->
         json(conn, %{})
 
@@ -196,7 +196,7 @@ defmodule RadioBeamWeb.RoomKeysController do
   end
 
   def delete_backup(conn, %{"version" => version}) do
-    case User.delete_room_keys_backup(conn.assigns.user_id, version) do
+    case Keys.delete_room_keys_backup(conn.assigns.user_id, version) do
       :ok ->
         json(conn, %{})
 

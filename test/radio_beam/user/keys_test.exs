@@ -354,7 +354,7 @@ defmodule RadioBeam.User.KeysTest do
     test "returns all cross-signing and device identity keys if the user is querying their own keys" do
       %{id: user_id} = user = Fixtures.user()
       {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(user.id)
-      {:ok, user} = User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
+      {:ok, _keys} = User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
 
       assert %{} = query_result = Keys.query_all(%{user.id => []}, user.id)
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["master"]}} = query_result["master_keys"]
@@ -381,7 +381,7 @@ defmodule RadioBeam.User.KeysTest do
       querying = Fixtures.user()
       %{id: user_id} = user = Fixtures.user()
       {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(user.id)
-      {:ok, user} = User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
+      {:ok, _user} = User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
 
       assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["master"]}} = query_result["master_keys"]
@@ -431,34 +431,41 @@ defmodule RadioBeam.User.KeysTest do
     end
   end
 
-  describe "put_signatures/2" do
+  describe "put_signatures/3" do
     setup do
       user = Fixtures.user()
       {csks, privkeys} = Fixtures.create_cross_signing_keys(user.id)
-      {:ok, user} = User.CrossSigningKeyRing.put(user.id, csks)
+      {:ok, keys} = User.CrossSigningKeyRing.put(user.id, csks)
 
       {user, device} = Fixtures.device(user)
       {device_key, device_signingkey} = Fixtures.device_keys(device.id, user.id)
       {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
       {:ok, device} = Database.fetch_user_device(user.id, device.id)
 
-      %{user: user, device: device, user_priv_csks: privkeys, device_signingkey: device_signingkey}
+      %{user: user, keys: keys, device: device, user_priv_csks: privkeys, device_signingkey: device_signingkey}
     end
 
     test "puts signatures for the user's MSK made by the user's devices", %{
       user: user,
+      keys: keys,
+      device: device,
       device_signingkey: device_signingkey
     } do
-      master_key = CrossSigningKey.to_map(user.cross_signing_key_ring.master, user.id)
+      master_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.master, user.id)
       master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
 
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
 
-      assert :ok = Keys.put_signatures(user.id, %{user.id => %{master_pubkeyb64 => master_key}})
+      assert :ok = Keys.put_signatures(user.id, device.id, %{user.id => %{master_pubkeyb64 => master_key}})
     end
 
-    test "puts signatures for the user's own device keys", %{user: user, device: device, user_priv_csks: privkeys} do
-      self_key = CrossSigningKey.to_map(user.cross_signing_key_ring.self, user.id)
+    test "puts signatures for the user's own device keys", %{
+      user: user,
+      device: device,
+      keys: keys,
+      user_priv_csks: privkeys
+    } do
+      self_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.self, user.id)
       self_pubkeyb64 = self_key["keys"] |> Map.values() |> hd()
 
       self_signingkey =
@@ -466,15 +473,20 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, device_key} = Polyjuice.Util.JSON.sign(device.identity_keys, user.id, self_signingkey)
 
-      assert :ok = Keys.put_signatures(user.id, %{user.id => %{device.id => device_key}})
+      assert :ok = Keys.put_signatures(user.id, device.id, %{user.id => %{device.id => device_key}})
     end
 
-    test "puts signatures for another user's master CSK", %{user: user, user_priv_csks: privkeys} do
+    test "puts signatures for another user's master CSK", %{
+      user: user,
+      keys: keys,
+      device: device,
+      user_priv_csks: privkeys
+    } do
       glerp = Fixtures.user()
       {glerp_csks, _privkeys} = Fixtures.create_cross_signing_keys(glerp.id)
-      {:ok, glerp} = User.CrossSigningKeyRing.put(glerp.id, glerp_csks)
+      {:ok, _glerp_keys} = User.CrossSigningKeyRing.put(glerp.id, glerp_csks)
 
-      user_key = CrossSigningKey.to_map(user.cross_signing_key_ring.user, user.id)
+      user_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.user, user.id)
       user_pubkeyb64 = user_key["keys"] |> Map.values() |> hd()
 
       glerp_master_key = Keyword.fetch!(glerp_csks, :master_key)
@@ -485,7 +497,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
-      assert :ok = Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+      assert :ok = Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
     end
 
     test "errors with user_ids_do_not_match if CSKs do not belong to the given user" do
@@ -498,6 +510,7 @@ defmodule RadioBeam.User.KeysTest do
 
     test "errors with invalid_signature if the signature is bad (device key -> master key)", %{
       user: user,
+      keys: keys,
       device: device
     } do
       {_random, random_privkey} = :crypto.generate_key(:eddsa, :ed25519)
@@ -505,21 +518,24 @@ defmodule RadioBeam.User.KeysTest do
       device_signingkey =
         Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(random_privkey, padding: false), device.id)
 
-      master_key = CrossSigningKey.to_map(user.cross_signing_key_ring.master, user.id)
+      master_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.master, user.id)
       master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
 
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
 
-      assert {:error, failures} = Keys.put_signatures(user.id, %{user.id => %{master_pubkeyb64 => master_key}})
+      assert {:error, failures} =
+               Keys.put_signatures(user.id, device.id, %{user.id => %{master_pubkeyb64 => master_key}})
+
       assert 1 = map_size(failures)
       assert failures[user.id][master_pubkeyb64] == :invalid_signature
     end
 
     test "errors with invalid_signature if the signature is bad (self-signing key -> device key)", %{
       user: user,
+      keys: keys,
       device: device
     } do
-      self_key = CrossSigningKey.to_map(user.cross_signing_key_ring.self, user.id)
+      self_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.self, user.id)
       self_pubkeyb64 = self_key["keys"] |> Map.values() |> hd()
 
       {_random, random_privkey} = :crypto.generate_key(:eddsa, :ed25519)
@@ -529,20 +545,22 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, device_key} = Polyjuice.Util.JSON.sign(device.identity_keys, user.id, self_signingkey)
 
-      assert {:error, failures} = Keys.put_signatures(user.id, %{user.id => %{device.id => device_key}})
+      assert {:error, failures} = Keys.put_signatures(user.id, device.id, %{user.id => %{device.id => device_key}})
       assert 1 = map_size(failures)
       assert failures[user.id][device.id] == :invalid_signature
     end
 
-    test "errors with :disallowed_key_type when a user tries to put a signature on another user's non-MSK key", %{
+    test "errors with :signature_key_not_known when a user tries to put a signature on another user's non-MSK key", %{
       user: user,
+      keys: keys,
+      device: device,
       user_priv_csks: privkeys
     } do
       glerp = Fixtures.user()
       {glerp_csks, _privkeys} = Fixtures.create_cross_signing_keys(glerp.id)
-      {:ok, glerp} = User.CrossSigningKeyRing.put(glerp.id, glerp_csks)
+      {:ok, _glerp_keys} = User.CrossSigningKeyRing.put(glerp.id, glerp_csks)
 
-      user_key = CrossSigningKey.to_map(user.cross_signing_key_ring.user, user.id)
+      user_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.user, user.id)
       user_pubkeyb64 = user_key["keys"] |> Map.values() |> hd()
 
       glerp_self_key = Keyword.fetch!(glerp_csks, :self_signing_key)
@@ -553,16 +571,23 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, glerp_self_key} = Polyjuice.Util.JSON.sign(glerp_self_key, user.id, user_signingkey)
 
-      assert {:error, failures} = Keys.put_signatures(user.id, %{glerp.id => %{glerp_self_pubkeyb64 => glerp_self_key}})
+      assert {:error, failures} =
+               Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_self_pubkeyb64 => glerp_self_key}})
+
       assert 1 = map_size(failures)
-      assert failures[glerp.id][glerp_self_pubkeyb64] == :disallowed_key_type
+      assert failures[glerp.id][glerp_self_pubkeyb64] == :signature_key_not_known
     end
 
-    test "errors with :no_master_csk if the user does not have a MSK", %{user: user, user_priv_csks: privkeys} do
+    test "errors with :signature_key_not_known if the user does not have a MSK", %{
+      user: user,
+      keys: keys,
+      device: device,
+      user_priv_csks: privkeys
+    } do
       glerp = Fixtures.user()
       {glerp_csks, _privkeys} = Fixtures.create_cross_signing_keys(glerp.id)
 
-      user_key = CrossSigningKey.to_map(user.cross_signing_key_ring.user, user.id)
+      user_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.user, user.id)
       user_pubkeyb64 = user_key["keys"] |> Map.values() |> hd()
 
       glerp_master_key = Keyword.fetch!(glerp_csks, :master_key)
@@ -574,29 +599,33 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
       assert {:error, failures} =
-               Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+               Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
 
       assert 1 = map_size(failures)
-      assert failures[glerp.id][glerp_master_pubkeyb64] == :no_master_csk
+      assert failures[glerp.id][glerp_master_pubkeyb64] == :signature_key_not_known
     end
 
-    test "errors with :user_not_found when the user does not exist", %{user: user} do
-      assert {:error, failures} = Keys.put_signatures(user.id, %{"@whateverman:localhost" => %{"asdf" => %{}}})
+    test "errors with :user_not_found when the user does not exist", %{user: user, device: device} do
+      assert {:error, failures} =
+               Keys.put_signatures(user.id, device.id, %{"@whateverman:localhost" => %{"asdf" => %{}}})
+
       assert 1 = map_size(failures)
       assert failures["@whateverman:localhost"]["asdf"] == :user_not_found
     end
 
     test "errors with :different_keys if the key included with the new signatures does not match the current key", %{
       user: user,
+      keys: keys,
+      device: device,
       user_priv_csks: privkeys
     } do
       glerp = Fixtures.user()
       {glerp_csks, _privkeys} = Fixtures.create_cross_signing_keys(glerp.id)
       # persist with a different `usage` value
       new_glerp_csks = put_in(glerp_csks[:master_key]["usage"], ["master", "something else"])
-      {:ok, glerp} = User.CrossSigningKeyRing.put(glerp.id, new_glerp_csks)
+      {:ok, _glerp_keys} = User.CrossSigningKeyRing.put(glerp.id, new_glerp_csks)
 
-      user_key = CrossSigningKey.to_map(user.cross_signing_key_ring.user, user.id)
+      user_key = CrossSigningKey.to_map(keys.cross_signing_key_ring.user, user.id)
       user_pubkeyb64 = user_key["keys"] |> Map.values() |> hd()
 
       glerp_master_key = Keyword.fetch!(glerp_csks, :master_key)
@@ -608,7 +637,7 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
       assert {:error, failures} =
-               Keys.put_signatures(user.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+               Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
 
       assert 1 = map_size(failures)
       assert failures[glerp.id][glerp_master_pubkeyb64] == :different_keys

@@ -10,6 +10,7 @@ defmodule RadioBeam.Database.Mnesia do
 
   import RadioBeam.Database.Mnesia.Tables.Device
   import RadioBeam.Database.Mnesia.Tables.DynamicOAuth2Client
+  import RadioBeam.Database.Mnesia.Tables.Keys
   import RadioBeam.Database.Mnesia.Tables.LocalAccount
   import RadioBeam.Database.Mnesia.Tables.Room
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
@@ -22,9 +23,10 @@ defmodule RadioBeam.Database.Mnesia do
   alias RadioBeam.Database.Mnesia.Tables
   alias RadioBeam.Room
   alias RadioBeam.User
-  alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
+  alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Device
+  alias RadioBeam.User.Keys
   alias RadioBeam.User.LocalAccount
 
   require Logger
@@ -32,6 +34,7 @@ defmodule RadioBeam.Database.Mnesia do
   @tables [
     Tables.Device,
     Tables.DynamicOAuth2Client,
+    Tables.Keys,
     Tables.LocalAccount,
     Tables.Room,
     Tables.RoomAlias,
@@ -374,25 +377,48 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def with_user(user_id, callback) do
+  def fetch_keys(user_id) do
     transaction(fn ->
-      case :mnesia.read(Tables.User, user_id, :write) do
+      case :mnesia.read(Tables.Keys, user_id, :read) do
         [] -> {:error, :not_found}
-        [record] -> record |> record_to_domain_struct() |> callback.()
+        [record] -> {:ok, record_to_domain_struct(record)}
       end
     end)
   end
 
   @impl RadioBeam.User.Database
-  def with_all_users([], callback), do: callback.([])
-
-  def with_all_users(user_ids, callback) when is_list(user_ids) do
-    match_spec = for id <- user_ids, do: {user(id: id, user: :_), [], [:"$_"]}
+  def insert_new_keys(user_id, %Keys{} = keys) do
+    keys_record = keys(user_id: user_id, keys: keys)
 
     transaction(fn ->
-      case :mnesia.select(Tables.User, match_spec, :write) do
-        matched_records when is_list(matched_records) ->
-          callback.(Enum.map(matched_records, &record_to_domain_struct/1))
+      if user_keys_exists?(user_id),
+        do: {:error, :already_exists},
+        else: :mnesia.write(Tables.Keys, keys_record, :write)
+    end)
+  end
+
+  defp user_keys_exists?(id), do: Tables.Keys |> :mnesia.read(id, :write) |> Enum.empty?() |> Kernel.not()
+
+  @impl RadioBeam.User.Database
+  def update_keys(user_id, callback) do
+    transaction(fn ->
+      case :mnesia.read(Tables.Keys, user_id, :write) do
+        [] ->
+          {:error, :not_found}
+
+        [keys(user_id: ^user_id) = record] ->
+          case record |> record_to_domain_struct() |> callback.() do
+            %Keys{} = keys ->
+              :mnesia.write(Tables.Keys, keys(user_id: user_id, keys: keys), :write)
+              {:ok, keys}
+
+            {:ok, %Keys{} = keys} ->
+              :mnesia.write(Tables.Keys, keys(user_id: user_id, keys: keys), :write)
+              {:ok, keys}
+
+            error ->
+              error
+          end
       end
     end)
   end
@@ -403,6 +429,7 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   defp record_to_domain_struct(user(user: %User{} = user)), do: user
+  defp record_to_domain_struct(keys(keys: %Keys{} = keys)), do: keys
   defp record_to_domain_struct(user_client_config(client_config: %ClientConfig{} = config)), do: config
   defp record_to_domain_struct(device(device: %Device{} = device)), do: device
   defp record_to_domain_struct(local_account(local_account: %LocalAccount{} = account)), do: account

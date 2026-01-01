@@ -8,11 +8,13 @@ defmodule RadioBeam.User.Database do
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Device
+  alias RadioBeam.User.Keys
 
   @type return_value() :: term()
 
   @callback insert_new_user_account(LocalAccount.t()) :: :ok | {:error, :already_exists}
   @callback fetch_user_account(User.id()) :: {:ok, LocalAccount.t()} | {:error, :not_found}
+
   @callback insert_new_device(Device.t()) :: :ok | {:error, :already_exists}
   @callback update_user_device_with(User.id(), Device.id(), (Device.t() ->
                                                                {:ok, Device.t()}
@@ -21,12 +23,19 @@ defmodule RadioBeam.User.Database do
               {:ok, Device.t()} | {:ok, return_value()} | {:error, term()}
   @callback fetch_user_device(User.id(), Device.id()) :: {:ok, Device.t()} | {:error, :not_found}
   @callback get_all_devices_of_user(User.id()) :: [Device.t()]
+
   @callback upsert_user_client_config_with(User.id(), (ClientConfig.t() | nil ->
                                                          {:ok, ClientConfig.t()} | {:error, term()})) ::
               {:ok, ClientConfig.t()} | {:error, term()}
   @callback fetch_user_client_config(User.id()) :: {:ok, ClientConfig.t()} | {:error, :not_found}
+
   @callback upsert_oauth2_client(DynamicOAuth2Client.t()) :: :ok
   @callback fetch_oauth2_client(OAuth2.client_id()) :: {:ok, DynamicOAuth2Client.t()} | {:error, :not_found}
+
+  @callback fetch_keys(User.id()) :: {:ok, Keys.t()} | {:error, :not_found}
+  @callback insert_new_keys(User.id(), Keys.t()) :: :ok | {:error, :already_exists}
+  @callback update_keys(User.id(), (Keys.t() -> {:ok, Keys.t()} | {:error, term()})) ::
+              {:ok, Keys.t()} | {:error, :not_found | term()}
 
   # deprecated
   @callback insert_new_user(User.t()) :: :ok | {:error, :already_exists}
@@ -34,8 +43,6 @@ defmodule RadioBeam.User.Database do
   @callback update_user(User.t()) :: :ok | {:error, :not_found}
 
   # temp, should be able to update devices and things directly
-  @callback with_user(User.id(), (User.t() -> term())) :: term()
-  @callback with_all_users([User.id()], ([User.t()] -> term())) :: term()
   @callback txn((-> term())) :: term()
 
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.User.Database, :backend])
@@ -49,6 +56,9 @@ defmodule RadioBeam.User.Database do
   defdelegate fetch_user_client_config(user_id), to: @database_backend
   defdelegate upsert_oauth2_client(oauth2_client_metadata), to: @database_backend
   defdelegate fetch_oauth2_client(client_id), to: @database_backend
+  defdelegate fetch_keys(user_id), to: @database_backend
+  defdelegate insert_new_keys(user_id, keys), to: @database_backend
+  defdelegate update_keys(user_id, callback), to: @database_backend
 
   # deprecated
   defdelegate insert_new_user(user), to: @database_backend
@@ -56,7 +66,5 @@ defmodule RadioBeam.User.Database do
   defdelegate fetch_user(user_id), to: @database_backend
 
   # temp, should be able to update devices and things directly
-  defdelegate with_user(user_id, callback), to: @database_backend
-  defdelegate with_all_users(user_ids, callback), to: @database_backend
   defdelegate txn(callback), to: @database_backend
 end

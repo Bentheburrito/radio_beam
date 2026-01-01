@@ -19,19 +19,14 @@ defmodule RadioBeam.User do
   alias RadioBeam.Room
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Database
-  alias RadioBeam.User.EventFilter
-  alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
-  alias RadioBeam.User.RoomKeys
+  alias RadioBeam.User.EventFilter
 
   @type t() :: %__MODULE__{}
 
   def new(id) do
     params = %{
-      id: id,
-      cross_signing_key_ring: CrossSigningKeyRing.new(),
-      last_cross_signing_change_at: 0,
-      room_keys: RoomKeys.new!()
+      id: id
     }
 
     {%__MODULE__{}, Map.new(@types)}
@@ -126,78 +121,6 @@ defmodule RadioBeam.User do
     Database.update_user_device_with(user_id, device_id, &Device.put_display_name!(&1, display_name))
   end
 
-  ### ROOM KEYS ###
-
-  def create_room_keys_backup(user_id, algorithm, auth_data) do
-    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
-         %RoomKeys{} = room_keys <- RoomKeys.new_backup(user.room_keys, algorithm, auth_data),
-         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys),
-         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_latest_backup(room_keys) do
-      {:ok, backup |> RoomKeys.Backup.version() |> Integer.to_string()}
-    end
-  end
-
-  def update_room_keys_backup_auth_data(user_id, version, algorithm, auth_data) do
-    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
-         {:ok, %RoomKeys{} = room_keys} <- RoomKeys.update_backup(user.room_keys, version, algorithm, auth_data),
-         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys) do
-      :ok
-    end
-  end
-
-  def fetch_backup_info(user_id, version_or_latest) do
-    fetch_fxn =
-      case version_or_latest do
-        :latest -> &RoomKeys.fetch_latest_backup/1
-        version -> &RoomKeys.fetch_backup(&1, version)
-      end
-
-    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
-         {:ok, %RoomKeys.Backup{} = backup} <- fetch_fxn.(user.room_keys) do
-      {:ok, RoomKeys.Backup.info_map(backup)}
-    end
-  end
-
-  def fetch_room_keys_backup(user_id, version, room_id_or_all, session_id_or_all) do
-    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
-         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_backup(user.room_keys, version) do
-      case {room_id_or_all, session_id_or_all} do
-        {:all, :all} -> {:ok, backup}
-        {room_id, :all} -> backup |> RoomKeys.Backup.get(room_id) |> wrap_ok_if_not_error()
-        {:all, _session_id} -> {:error, :bad_request}
-        {room_id, session_id} -> backup |> RoomKeys.Backup.get(room_id, session_id) |> wrap_ok_if_not_error()
-      end
-    end
-  end
-
-  defp wrap_ok_if_not_error({:error, _} = error), do: error
-  defp wrap_ok_if_not_error(value), do: {:ok, value}
-
-  def put_room_keys_backup(user_id, version, backup_data) do
-    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
-         %RoomKeys{} = room_keys <- RoomKeys.put_backup_keys(user.room_keys, version, backup_data),
-         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys),
-         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_backup(room_keys, version) do
-      {:ok, backup |> RoomKeys.Backup.info_map() |> Map.take(~w|count etag|a)}
-    end
-  end
-
-  def delete_room_keys_backup(user_id, version) do
-    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
-         %RoomKeys{} = room_keys <- RoomKeys.delete_backup(user.room_keys, version),
-         {:ok, %__MODULE__{}} <- RoomKeys.insert_user_room_keys(user, room_keys) do
-      :ok
-    end
-  end
-
-  def delete_room_keys_backup(user_id, version, path_or_all) do
-    with {:ok, %__MODULE__{} = user} <- Database.fetch_user(user_id),
-         %RoomKeys{} = room_keys <- RoomKeys.delete_backup_keys(user.room_keys, version, path_or_all),
-         {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_backup(room_keys, version) do
-      {:ok, backup |> RoomKeys.Backup.info_map() |> Map.take(~w|count etag|a)}
-    end
-  end
-
   @spec put_account_data(id(), Room.id() | :global, String.t(), any()) ::
           {:ok, User.t()} | {:error, :invalid_room_id | :invalid_type | :not_found}
   def put_account_data(user_id, scope, type, content) do
@@ -234,10 +157,12 @@ defmodule RadioBeam.User do
     end
   end
 
+  ### CLIENT CONFIG ###
+
   @doc """
   Create and save a new event filter for the given user.
   """
-  @spec put_event_filter(__MODULE__.id(), raw_filter_definition :: map()) ::
+  @spec put_event_filter(id(), raw_filter_definition :: map()) ::
           {:ok, EventFilter.id()} | {:error, :not_found}
   def put_event_filter(user_id, raw_definition) do
     filter = EventFilter.new(raw_definition)
@@ -251,6 +176,4 @@ defmodule RadioBeam.User do
       ClientConfig.get_event_filter(config, filter_id)
     end
   end
-
-  def put_room_keys(%__MODULE__{} = user, %RoomKeys{} = room_keys), do: put_in(user.room_keys, room_keys)
 end

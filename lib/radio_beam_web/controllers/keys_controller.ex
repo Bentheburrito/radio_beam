@@ -64,7 +64,7 @@ defmodule RadioBeamWeb.KeysController do
       end)
 
     case CrossSigningKeyRing.put(user_id, opts) do
-      {:ok, %User{}} ->
+      {:ok, %User.Keys{}} ->
         json(conn, %{})
 
       {:error, error} when error in ~w|too_many_keys no_key_provided malformed_key|a ->
@@ -87,7 +87,7 @@ defmodule RadioBeamWeb.KeysController do
 
   @set_up_csk_msg "You must upload Cross-Signing Keys before you can upload signatures of other user's keys"
   def upload_signatures(conn, _params) do
-    case Keys.put_signatures(conn.assigns.user_id, conn.assigns.request) do
+    case Keys.put_signatures(conn.assigns.user_id, conn.assigns.device_id, conn.assigns.request) do
       :ok -> json(conn, %{})
       {:error, :signer_has_no_user_csk} -> json_error(conn, 400, :bad_json, [@set_up_csk_msg])
       {:error, %{} = failures} -> json(conn, %{"failures" => map_nested_errors(failures)})

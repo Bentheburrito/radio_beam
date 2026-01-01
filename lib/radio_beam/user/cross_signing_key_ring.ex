@@ -24,14 +24,14 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
 
   @doc "Put cross-signing keys for a user"
   @spec put(User.id(), put_opts()) ::
-          {:ok, User.t()}
+          {:ok, User.Keys.t()}
           | {:error, :not_found | :missing_master_key | :missing_or_invalid_master_key_signatures}
           | CrossSigningKey.parse_error()
   def put(user_id, opts) do
-    Database.with_user(user_id, fn %User{} = user ->
-      master_key = Keyword.get(opts, :master_key, user.cross_signing_key_ring.master)
-      self_signing_key = Keyword.get(opts, :self_signing_key, user.cross_signing_key_ring.self)
-      user_signing_key = Keyword.get(opts, :user_signing_key, user.cross_signing_key_ring.user)
+    Database.update_keys(user_id, fn %User.Keys{} = keys ->
+      master_key = Keyword.get(opts, :master_key, keys.cross_signing_key_ring.master)
+      self_signing_key = Keyword.get(opts, :self_signing_key, keys.cross_signing_key_ring.self)
+      user_signing_key = Keyword.get(opts, :user_signing_key, keys.cross_signing_key_ring.user)
 
       with {:ok, master_key} <- parse_signing_key(master_key, user_id),
            {:ok, self_signing_key} <- parse_signing_key(self_signing_key, user_id),
@@ -51,13 +51,8 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
               user: user_signing_key
             }
 
-            user =
-              struct!(user,
-                cross_signing_key_ring: key_ring,
-                last_cross_signing_change_at: System.os_time(:millisecond)
-              )
-
-            with :ok <- Database.update_user(user), do: {:ok, user}
+            {:ok,
+             struct!(keys, cross_signing_key_ring: key_ring, last_cross_signing_change_at: System.os_time(:millisecond))}
         end
       end
     end)

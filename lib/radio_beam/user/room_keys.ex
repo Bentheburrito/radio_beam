@@ -4,7 +4,6 @@ defmodule RadioBeam.User.RoomKeys do
   their devices, as described in [the
   spec](https://spec.matrix.org/latest/client-server-api/#server-side-key-backups).
   """
-  alias RadioBeam.User
   alias RadioBeam.User.RoomKeys.Backup
 
   @allowed_algos ["m.megolm_backup.v1.curve25519-aes-sha2"]
@@ -61,13 +60,11 @@ defmodule RadioBeam.User.RoomKeys do
 
   def delete_backup_keys(%__MODULE__{} = room_keys, version, path_or_all \\ :all) do
     case Map.fetch(room_keys.backups, version) do
-      {:ok, %Backup{} = backup} -> put_in(room_keys.backups[version], Backup.delete_keys_under(backup, path_or_all))
-      :error -> {:error, :not_found}
-    end
-  end
+      {:ok, %Backup{} = backup} ->
+        put_in(room_keys.backups[version], Backup.delete_keys_under(backup, path_or_all))
 
-  def insert_user_room_keys(%User{} = user, %__MODULE__{} = room_keys) do
-    user = User.put_room_keys(user, room_keys)
-    with :ok <- RadioBeam.User.Database.update_user(user), do: {:ok, user}
+      :error ->
+        {:error, :not_found}
+    end
   end
 end

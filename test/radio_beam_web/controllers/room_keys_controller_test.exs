@@ -1,9 +1,7 @@
 defmodule RadioBeamWeb.RoomKeysControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeamWeb.Schemas.RoomKeys
-  alias RadioBeamWeb.Schemas.RoomKeys
-  alias RadioBeam.User.RoomKeys
+  alias RadioBeam.User.Keys
 
   @algo "m.megolm_backup.v1.curve25519-aes-sha2"
   @auth_data %{
@@ -32,7 +30,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
 
   describe "get_backup_info/2" do
     test "returns the latest backup when no version param is provided", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/version", %{})
 
       assert %{"version" => "2"} = json_response(conn, 200)
@@ -45,7 +43,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
     end
 
     test "returns the backup of the given version", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/version/1", %{})
 
       assert %{"version" => "1"} = json_response(conn, 200)
@@ -60,7 +58,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
 
   describe "put_backup_auth_data/2" do
     test "returns an empty JSON body (200) when the auth data was updated successfully", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
 
       req_body = %{"algorithm" => @algo, "auth_data" => Map.put(@auth_data, "public_key", "xyzyz")}
       conn = put(conn, ~p"/_matrix/client/v3/room_keys/version/2", req_body)
@@ -70,7 +68,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
     end
 
     test "returns M_BAD_JSON (400) when the algorithm doesn't match", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
 
       req_body = %{"algorithm" => "org.some.other.algo", "auth_data" => Map.put(@auth_data, "public_key", "xyzyz")}
       conn = put(conn, ~p"/_matrix/client/v3/room_keys/version/2", req_body)
@@ -90,7 +88,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       conn: conn,
       user: user
     } do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
 
       req_body = %{"version" => "1", "algorithm" => @algo, "auth_data" => Map.put(@auth_data, "public_key", "xyzyz")}
       conn = put(conn, ~p"/_matrix/client/v3/room_keys/version/2", req_body)
@@ -101,7 +99,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
 
   describe "delete_backup/2" do
     test "returns an empty JSON body (200) when the backup was deleted", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
 
       conn = delete(conn, ~p"/_matrix/client/v3/room_keys/version/2", %{})
 
@@ -110,7 +108,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
     end
 
     test "returns M_NOT_FOUND (404) when the backup has never existed", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
 
       conn = delete(conn, ~p"/_matrix/client/v3/room_keys/version/3", %{})
 
@@ -131,7 +129,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
     }
 
     test "successfully puts keys under a backup", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user)
+      add_room_keys_with_2_backups_to_user(user.id)
 
       room_id1 = Fixtures.room_id()
       room_id2 = Fixtures.room_id()
@@ -181,9 +179,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       room_id = Fixtures.room_id()
       session_id = "abcde"
 
-      user
-      |> add_room_keys_with_2_backups_to_user()
-      |> add_e2ee_keys_to_backup(2, %{room_id => %{session_id => @session_data}})
+      add_room_keys_with_2_backups_to_user(user.id)
+      add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
 
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/keys?version=2", %{})
       assert %{"rooms" => %{^room_id => %{"sessions" => %{^session_id => @session_data}}}} = json_response(conn, 200)
@@ -204,9 +201,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       room_id = Fixtures.room_id()
       session_id = "abcde"
 
-      user
-      |> add_room_keys_with_2_backups_to_user()
-      |> add_e2ee_keys_to_backup(2, %{room_id => %{session_id => @session_data}})
+      add_room_keys_with_2_backups_to_user(user.id)
+      add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
 
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/keys?version=6", %{})
       assert %{"errcode" => "M_NOT_FOUND", "error" => "Unknown backup version"} = json_response(conn, 404)
@@ -215,20 +211,26 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
 
   describe "delete_keys/2" do
     test "successfully deletes the specified keys", %{conn: conn, user: user} do
-      paths = [
-        fn _room_id, _session_id -> ~p"/_matrix/client/v3/room_keys/keys?version=2" end,
-        fn room_id, _session_id -> ~p"/_matrix/client/v3/room_keys/keys/#{room_id}?version=2" end,
-        fn room_id, session_id -> ~p"/_matrix/client/v3/room_keys/keys/#{room_id}/#{session_id}?version=2" end
-      ]
+      paths =
+        [
+          fn _room_id, _session_id, version -> ~p"/_matrix/client/v3/room_keys/keys?version=#{version}" end,
+          fn room_id, _session_id, version -> ~p"/_matrix/client/v3/room_keys/keys/#{room_id}?version=#{version}" end,
+          fn room_id, session_id, version ->
+            ~p"/_matrix/client/v3/room_keys/keys/#{room_id}/#{session_id}?version=#{version}"
+          end
+        ]
+        |> Enum.shuffle()
+        # all these paths hit one user, so have to make sure the backup version
+        # increments for each time we call add_room_keys_with_2_backups_to_user
+        |> Stream.with_index(fn _element, index -> index * 2 end)
 
-      for path_fxn <- paths do
+      for {path_fxn, version} <- paths do
         room_id = Fixtures.room_id()
         session_id = Fixtures.random_string(16)
-        path = path_fxn.(room_id, session_id)
+        path = path_fxn.(room_id, session_id, version)
 
-        user
-        |> add_room_keys_with_2_backups_to_user()
-        |> add_e2ee_keys_to_backup(2, %{room_id => %{session_id => @session_data}})
+        add_room_keys_with_2_backups_to_user(user.id)
+        add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
 
         conn = delete(conn, path, %{})
         assert %{"count" => 0, "etag" => "2"} = json_response(conn, 200)
@@ -244,24 +246,20 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       room_id = Fixtures.room_id()
       session_id = "abcde"
 
-      user
-      |> add_room_keys_with_2_backups_to_user()
-      |> add_e2ee_keys_to_backup(2, %{room_id => %{session_id => @session_data}})
+      add_room_keys_with_2_backups_to_user(user.id)
+      add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
 
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/keys?version=6", %{})
       assert %{"errcode" => "M_NOT_FOUND", "error" => "Unknown backup version"} = json_response(conn, 404)
     end
   end
 
-  defp add_room_keys_with_2_backups_to_user(user) do
-    room_keys = RoomKeys.new!() |> RoomKeys.new_backup(@algo, @auth_data) |> RoomKeys.new_backup(@algo, @auth_data)
-    {:ok, user} = RoomKeys.insert_user_room_keys(user, room_keys)
-    user
+  defp add_room_keys_with_2_backups_to_user(user_id) do
+    {:ok, _backup} = Keys.create_room_keys_backup(user_id, @algo, @auth_data)
+    {:ok, _backup} = Keys.create_room_keys_backup(user_id, @algo, @auth_data)
   end
 
-  defp add_e2ee_keys_to_backup(user, version, new_room_session_backups) do
-    %RoomKeys{} = room_keys = RoomKeys.put_backup_keys(user.room_keys, version, new_room_session_backups)
-    {:ok, user} = RoomKeys.insert_user_room_keys(user, room_keys)
-    user
+  defp add_e2ee_keys_to_backup(user_id, version, new_room_session_backups) do
+    Keys.put_room_keys_backup(user_id, version, new_room_session_backups)
   end
 end
