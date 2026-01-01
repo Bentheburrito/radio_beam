@@ -33,6 +33,7 @@ defmodule RadioBeam.User.Keys do
   end
 
   ### ROOM KEYS ###
+
   def create_room_keys_backup(user_id, algorithm, auth_data) do
     with {:ok, %__MODULE__{} = keys} <- update_room_keys(user_id, &RoomKeys.new_backup(&1, algorithm, auth_data)),
          {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_latest_backup(keys.room_keys) do
@@ -98,15 +99,12 @@ defmodule RadioBeam.User.Keys do
   defp update_room_keys(user_id, room_keys_updater) do
     Database.update_keys(user_id, fn %__MODULE__{} = keys ->
       case room_keys_updater.(keys.room_keys) do
-        {:ok, %RoomKeys{} = room_keys} -> put_room_keys(keys, room_keys)
-        %RoomKeys{} = room_keys -> put_room_keys(keys, room_keys)
+        {:ok, %RoomKeys{} = room_keys} -> put_in(keys.room_keys, room_keys)
+        %RoomKeys{} = room_keys -> put_in(keys.room_keys, room_keys)
         error -> error
       end
     end)
   end
-
-  # TOOD: move to Core?
-  defp put_room_keys(%__MODULE__{} = keys, %RoomKeys{} = room_keys), do: put_in(keys.room_keys, room_keys)
 
   ### DEVICE KEYS / CSKs
 
@@ -158,9 +156,8 @@ defmodule RadioBeam.User.Keys do
       Enum.reduce(query_map, %{}, fn
         {^querying_user_id, device_ids}, key_results ->
           devices = Database.get_all_devices_of_user(querying_user_id)
-          devices = if Enum.empty?(device_ids), do: devices, else: Enum.filter(devices, &(&1.id in device_ids))
 
-          add_all_keys(key_results, querying_user_id, querying_user_keys, devices)
+          Core.add_all_keys(key_results, querying_user_id, querying_user_keys, device_ids, devices)
 
         {target_user_id, device_ids}, key_results ->
           case Database.fetch_keys(target_user_id) do
@@ -169,39 +166,10 @@ defmodule RadioBeam.User.Keys do
 
             {:ok, target_user_keys} ->
               devices = Database.get_all_devices_of_user(target_user_id)
-              devices = if Enum.empty?(device_ids), do: devices, else: Enum.filter(devices, &(&1.id in device_ids))
 
-              add_allowed_keys(key_results, target_user_id, target_user_keys, devices)
+              Core.add_allowed_keys(key_results, target_user_id, target_user_keys, device_ids, devices)
           end
       end)
-    end
-  end
-
-  defp add_all_keys(key_results, querying_user_id, querying_user_keys, devices) do
-    user_signing_key = querying_user_keys.cross_signing_key_ring.user
-
-    key_results
-    |> add_allowed_keys(querying_user_id, querying_user_keys, devices)
-    |> add_csk(["user_signing_keys", querying_user_id], user_signing_key, querying_user_id)
-  end
-
-  defp add_allowed_keys(key_results, user_id, user_keys, devices) do
-    key_results
-    |> add_csk(["master_keys", user_id], user_keys.cross_signing_key_ring.master, user_id)
-    |> add_csk(["self_signing_keys", user_id], user_keys.cross_signing_key_ring.self, user_id)
-    |> add_device_keys(user_id, devices)
-  end
-
-  defp add_csk(key_results, _path, nil, _user_id), do: key_results
-
-  defp add_csk(key_results, path, %CrossSigningKey{} = key, user_id) do
-    RadioBeam.AccessExtras.put_nested(key_results, path, CrossSigningKey.to_map(key, user_id))
-  end
-
-  defp add_device_keys(key_results, user_id, devices) do
-    for %{id: device_id} = device <- devices, reduce: key_results do
-      key_results ->
-        RadioBeam.AccessExtras.put_nested(key_results, ["device_keys", user_id, device_id], device.identity_keys)
     end
   end
 
