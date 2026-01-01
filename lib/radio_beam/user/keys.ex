@@ -178,91 +178,13 @@ defmodule RadioBeam.User.Keys do
   def put_signatures(signer_user_id, signer_device_id, user_key_map, deps \\ deps()) do
     {self_signatures, others_msk_signatures} = Map.pop(user_key_map, signer_user_id, :none)
 
-    self_failures = try_put_self_signatures(self_signatures, signer_user_id, signer_device_id, deps)
+    self_failures = Core.try_put_self_signatures(self_signatures, signer_user_id, signer_device_id, deps)
     others_failures = try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps)
 
     case Map.merge(self_failures, others_failures) do
       failures when map_size(failures) == 0 -> :ok
       failures -> {:error, failures}
     end
-  end
-
-  defp try_put_self_signatures(:none, _signer_user_id, _signer_device_id, _deps), do: %{}
-
-  defp try_put_self_signatures(self_signatures, signer_user_id, signer_device_id, deps) do
-    self_signatures
-    |> Stream.map(fn {key_id_or_device_id, key_params} ->
-      case try_update_device_with_signatures(signer_user_id, key_id_or_device_id, key_params, deps) do
-        # it's either a CSK key ID or an unknown key ID
-        {:error, :not_found} ->
-          case try_update_csk_with_signatures(signer_user_id, signer_device_id, key_id_or_device_id, key_params, deps) do
-            {:error, error} -> {:error, key_id_or_device_id, error}
-            {:ok, _updated_keys} -> :ok
-          end
-
-        {:error, error} ->
-          {:error, key_id_or_device_id, error}
-
-        {:ok, _updated_device} ->
-          :ok
-      end
-    end)
-    |> Enum.reduce(_failures = %{}, fn
-      :ok, failures ->
-        failures
-
-      {:error, key_id_or_device_id, error}, failures ->
-        RadioBeam.AccessExtras.put_nested(failures, [signer_user_id, key_id_or_device_id], error)
-    end)
-  end
-
-  defp try_update_device_with_signatures(user_id, maybe_device_id, key_params, deps) do
-    deps.update_user_device_with.(user_id, maybe_device_id, fn %Device{} = device ->
-      case deps.fetch_keys.(user_id) do
-        {:ok, %__MODULE__{cross_signing_key_ring: %{self: %CrossSigningKey{id: ssk_id} = self_signing_key}}} ->
-          with :ok <- assert_signature_present(key_params, user_id, "ed25519:#{ssk_id}") do
-            Device.put_identity_keys_signature(device, user_id, key_params, self_signing_key)
-          end
-
-        {:error, :not_found} ->
-          {:error, :signer_has_no_self_csk}
-      end
-    end)
-  end
-
-  defp try_update_csk_with_signatures(signer_user_id, signer_device_id, maybe_key_id, key_params, deps) do
-    deps.update_keys.(signer_user_id, fn %__MODULE__{} = keys ->
-      case keys.cross_signing_key_ring do
-        # MSK must be signed by a device...
-        %{master: %CrossSigningKey{id: ^maybe_key_id} = msk} ->
-          # ...or more specifically, the signer_device_id that is POSTing this request
-          algo_and_device_id = "ed25519:#{signer_device_id}"
-
-          with :ok <- assert_signature_present(key_params, signer_user_id, algo_and_device_id),
-               {:ok, verify_key} <-
-                 make_verify_key_from_device_id_key(signer_user_id, signer_device_id, algo_and_device_id, deps),
-               {:ok, new_msk} <-
-                 CrossSigningKey.put_signature(msk, signer_user_id, key_params, signer_user_id, verify_key) do
-            {:ok, put_in(keys.cross_signing_key_ring.master, new_msk)}
-          end
-
-        # the SSK and USK must be signed by the MSK
-        %{self: %CrossSigningKey{id: ^maybe_key_id} = ssk} ->
-          try_put_user_or_self_signature(signer_user_id, keys, ssk, key_params)
-
-        %{user: %CrossSigningKey{id: ^maybe_key_id} = usk} ->
-          try_put_user_or_self_signature(signer_user_id, keys, usk, key_params)
-
-        _else ->
-          {:error, :signature_key_not_known}
-      end
-    end)
-  end
-
-  defp assert_signature_present(key_params, signer_user_id, signing_key_id_with_algo) do
-    if is_binary(key_params["signatures"][signer_user_id][signing_key_id_with_algo]),
-      do: :ok,
-      else: {:error, :missing_signature}
   end
 
   defp try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps) do
@@ -298,30 +220,6 @@ defmodule RadioBeam.User.Keys do
         for {user_id, key_map} <- others_msk_signatures, {keyb64, _key_params} <- key_map, into: _failures = %{} do
           {user_id, %{keyb64 => :signer_has_no_user_csk}}
         end
-    end
-  end
-
-  defp make_verify_key_from_device_id_key(user_id, device_id, algo_and_device_id, deps) do
-    with {:ok, device} <- deps.fetch_user_device.(user_id, device_id),
-         %Device{identity_keys: %{"keys" => %{^algo_and_device_id => key}}} <- device do
-      {:ok, Polyjuice.Util.make_verify_key(key, algo_and_device_id)}
-    else
-      _ -> {:error, :signature_key_not_known}
-    end
-  end
-
-  defp try_put_user_or_self_signature(signer_user_id, keys, usk_or_ssk, key_params) do
-    case keys.cross_signing_key_ring do
-      %{master: %CrossSigningKey{} = msk} ->
-        with {:ok, csk} <- CrossSigningKey.put_signature(usk_or_ssk, signer_user_id, key_params, signer_user_id, msk) do
-          case csk do
-            %CrossSigningKey{usages: ["user"]} -> {:ok, put_in(keys.cross_signing_key_ring.user, csk)}
-            %CrossSigningKey{usages: ["self"]} -> {:ok, put_in(keys.cross_signing_key_ring.self, csk)}
-          end
-        end
-
-      _else ->
-        {:error, :signature_key_not_known}
     end
   end
 
