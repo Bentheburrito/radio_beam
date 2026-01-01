@@ -179,47 +179,11 @@ defmodule RadioBeam.User.Keys do
     {self_signatures, others_msk_signatures} = Map.pop(user_key_map, signer_user_id, :none)
 
     self_failures = Core.try_put_self_signatures(self_signatures, signer_user_id, signer_device_id, deps)
-    others_failures = try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps)
+    others_failures = Core.try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps)
 
     case Map.merge(self_failures, others_failures) do
       failures when map_size(failures) == 0 -> :ok
       failures -> {:error, failures}
-    end
-  end
-
-  defp try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps) do
-    case deps.fetch_keys.(signer_user_id) do
-      {:ok, %__MODULE__{cross_signing_key_ring: %{user: %CrossSigningKey{} = signer_usk}}} ->
-        others_msk_signatures
-        |> Stream.flat_map(fn {user_id, key_map} ->
-          Stream.map(key_map, fn {keyb64, key_params} ->
-            {user_id, keyb64, key_params}
-          end)
-        end)
-        |> Enum.reduce(_failures = %{}, fn {user_id, keyb64, key_params}, failures ->
-          result =
-            deps.update_keys.(user_id, fn
-              %__MODULE__{cross_signing_key_ring: %{master: %CrossSigningKey{id: ^keyb64} = user_msk}} = user_keys ->
-                case CrossSigningKey.put_signature(user_msk, user_id, key_params, signer_user_id, signer_usk) do
-                  {:ok, new_user_msk} -> {:ok, put_in(user_keys.cross_signing_key_ring.master, new_user_msk)}
-                  {:error, error} -> RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], error)
-                end
-
-              _else ->
-                RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], :signature_key_not_known)
-            end)
-
-          case result do
-            {:error, :not_found} -> RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], :user_not_found)
-            {:ok, _} -> failures
-            %{} = failures -> failures
-          end
-        end)
-
-      {:error, :not_found} ->
-        for {user_id, key_map} <- others_msk_signatures, {keyb64, _key_params} <- key_map, into: _failures = %{} do
-          {user_id, %{keyb64 => :signer_has_no_user_csk}}
-        end
     end
   end
 
