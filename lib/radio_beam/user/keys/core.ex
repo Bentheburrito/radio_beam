@@ -203,28 +203,15 @@ defmodule RadioBeam.User.Keys.Core do
     case deps.fetch_keys.(signer_user_id) do
       {:ok, %Keys{cross_signing_key_ring: %{user: %CrossSigningKey{} = signer_usk}}} ->
         others_msk_signatures
-        |> Stream.flat_map(fn {user_id, key_map} ->
-          Stream.map(key_map, fn {keyb64, key_params} ->
-            {user_id, keyb64, key_params}
-          end)
-        end)
+        |> flatten_signature_map()
         |> Enum.reduce(_failures = %{}, fn {user_id, keyb64, key_params}, failures ->
-          result =
-            deps.update_keys.(user_id, fn
-              %Keys{cross_signing_key_ring: %{master: %CrossSigningKey{id: ^keyb64} = user_msk}} = user_keys ->
-                case CrossSigningKey.put_signature(user_msk, user_id, key_params, signer_user_id, signer_usk) do
-                  {:ok, new_user_msk} -> {:ok, put_in(user_keys.cross_signing_key_ring.master, new_user_msk)}
-                  {:error, error} -> RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], error)
-                end
-
-              _else ->
-                RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], :signature_key_not_known)
-            end)
-
-          case result do
+          case deps.update_keys.(
+                 user_id,
+                 &try_update_master_key_with_usk_signature(&1, user_id, keyb64, key_params, signer_user_id, signer_usk)
+               ) do
             {:error, :not_found} -> RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], :user_not_found)
+            {:error, error} -> RadioBeam.AccessExtras.put_nested(failures, [user_id, keyb64], error)
             {:ok, _} -> failures
-            %{} = failures -> failures
           end
         end)
 
@@ -232,6 +219,26 @@ defmodule RadioBeam.User.Keys.Core do
         for {user_id, key_map} <- others_msk_signatures, {keyb64, _key_params} <- key_map, into: _failures = %{} do
           {user_id, %{keyb64 => :signer_has_no_user_csk}}
         end
+    end
+  end
+
+  defp flatten_signature_map(signature_map) do
+    Stream.flat_map(signature_map, fn {user_id, key_map} ->
+      Stream.map(key_map, fn {keyb64, key_params} ->
+        {user_id, keyb64, key_params}
+      end)
+    end)
+  end
+
+  defp try_update_master_key_with_usk_signature(user_keys, user_id, keyb64, key_params, signer_id, signer_usk) do
+    case user_keys do
+      %Keys{cross_signing_key_ring: %{master: %CrossSigningKey{id: ^keyb64} = user_msk}} ->
+        with {:ok, new_user_msk} <- CrossSigningKey.put_signature(user_msk, user_id, key_params, signer_id, signer_usk) do
+          {:ok, put_in(user_keys.cross_signing_key_ring.master, new_user_msk)}
+        end
+
+      _master_key_did_not_match ->
+        {:error, :signature_key_not_known}
     end
   end
 end
