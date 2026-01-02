@@ -9,15 +9,15 @@ defmodule RadioBeam.RoomTest do
 
   describe "create/4" do
     setup do
-      user = Fixtures.user()
-      invitee = Fixtures.user()
+      account = Fixtures.create_account()
+      invitee = Fixtures.create_account()
 
-      %{creator: user, to_invite: invitee}
+      %{creator: account, to_invite: invitee}
     end
 
     test "successfully creates a minimal room", %{creator: creator} do
       for room_version <- @room_versions_to_test do
-        assert {:ok, room_id} = Room.create(creator, version: room_version)
+        assert {:ok, room_id} = Room.create(creator.user_id, version: room_version)
         assert [{pid, _}] = Registry.lookup(RoomRegistry, room_id)
         assert is_pid(pid)
       end
@@ -30,7 +30,7 @@ defmodule RadioBeam.RoomTest do
         maybe_deprecated_string_pl = if room_version in ~w|10 11|, do: 60, else: "60"
 
         power_levels_content = %{
-          "users" => %{creator.id => 99},
+          "users" => %{creator.user_id => 99},
           "ban" => maybe_deprecated_string_pl,
           "state_default" => 51
         }
@@ -46,16 +46,16 @@ defmodule RadioBeam.RoomTest do
           topic: "this one's for the nerds",
           direct?: true,
           visibility: :public,
-          invite: [invitee.id],
+          invite: [invitee.user_id],
           invite_3pid: []
         ]
 
-        assert {:ok, room_id} = Room.create(creator, Keyword.put(opts, :version, room_version))
+        assert {:ok, room_id} = Room.create(creator.user_id, Keyword.put(opts, :version, room_version))
 
         :pong = Room.Server.ping(room_id)
 
         assert {:ok, %{content: %{"name" => "The Computer Room"}}} =
-                 Room.get_state(room_id, creator.id, "m.room.name", "")
+                 Room.get_state(room_id, creator.user_id, "m.room.name", "")
 
         {:ok, alias} = Room.Alias.new("##{alias_localpart}:#{server_name}")
         assert {:ok, ^room_id} = Room.lookup_id_by_alias(alias)
@@ -66,19 +66,19 @@ defmodule RadioBeam.RoomTest do
 
   describe "bind_alias_to_room/2" do
     test "succeeds when no other alias is bound to the room" do
-      user = Fixtures.user()
-      {:ok, room_id} = Room.create(user)
+      account = Fixtures.create_account()
+      {:ok, room_id} = Room.create(account.user_id)
       {:ok, alias} = Room.Alias.new("#coffeetalk:localhost")
       :ok = Room.bind_alias_to_room(alias, room_id)
     end
 
     test "errors with :alias_in_use when the given alias is already mapped to a room ID" do
-      user = Fixtures.user()
-      {:ok, room_id} = Room.create(user)
+      account = Fixtures.create_account()
+      {:ok, room_id} = Room.create(account.user_id)
       {:ok, alias} = Room.Alias.new("#teatalk:localhost")
       :ok = Room.bind_alias_to_room(alias, room_id)
 
-      {:ok, another_room_id} = Room.create(user)
+      {:ok, another_room_id} = Room.create(account.user_id)
       assert {:error, :alias_in_use} = Room.bind_alias_to_room(alias, another_room_id)
     end
 
@@ -88,8 +88,8 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "errors with :invalid_or_unknown_server_name when servername does not match this homeserver" do
-      user = Fixtures.user()
-      {:ok, room_id} = Room.create(user)
+      account = Fixtures.create_account()
+      {:ok, room_id} = Room.create(account.user_id)
       {:ok, alias} = Room.Alias.new("#hellooooooworld:blahblah")
       assert {:error, :invalid_or_unknown_server_name} = Room.bind_alias_to_room(alias, room_id)
     end
@@ -97,530 +97,547 @@ defmodule RadioBeam.RoomTest do
 
   describe "joined/1" do
     setup do
-      user1 = Fixtures.user("@thehost:localhost")
-      user2 = Fixtures.user("@friendoftheshow:localhost")
+      account1 = Fixtures.create_account("@thehost:localhost")
+      account2 = Fixtures.create_account("@friendoftheshow:localhost")
 
-      %{user1: user1, user2: user2}
+      %{account1: account1, account2: account2}
     end
 
-    test "lists a user's room appropriately", %{user1: user1, user2: user2} do
-      assert [] = Room.joined(user1.id)
+    test "lists a user's room appropriately", %{account1: account1, account2: account2} do
+      assert [] = Room.joined(account1.user_id)
 
-      assert {:ok, room_id} = Room.create(user1)
+      assert {:ok, room_id} = Room.create(account1.user_id)
 
       :pong = Room.Server.ping(room_id)
 
-      assert [^room_id] = user1.id |> Room.joined() |> Enum.to_list()
+      assert [^room_id] = account1.user_id |> Room.joined() |> Enum.to_list()
 
-      assert {:ok, _other_users_room_id} = Room.create(user2)
-      assert [^room_id] = user1.id |> Room.joined() |> Enum.to_list()
+      assert {:ok, _other_users_room_id} = Room.create(account2.user_id)
+      assert [^room_id] = account1.user_id |> Room.joined() |> Enum.to_list()
 
-      assert {:ok, _other_users_room_id} = Room.create(user2, invite: [user1.id])
-      assert [^room_id] = user1.id |> Room.joined() |> Enum.to_list()
+      assert {:ok, _other_users_room_id} = Room.create(account2.user_id, invite: [account1.user_id])
+      assert [^room_id] = account1.user_id |> Room.joined() |> Enum.to_list()
 
-      assert {:ok, room_id2} = Room.create(user1)
+      assert {:ok, room_id2} = Room.create(account1.user_id)
       :pong = Room.Server.ping(room_id2)
-      assert Enum.sort([room_id, room_id2]) == user1.id |> Room.joined() |> Enum.sort()
+      assert Enum.sort([room_id, room_id2]) == account1.user_id |> Room.joined() |> Enum.sort()
     end
   end
 
   describe "invite/3" do
     setup do
-      user1 = Fixtures.user()
-      user2 = Fixtures.user()
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
 
-      %{user1: user1, user2: user2}
+      %{account1: account1, account2: account2}
     end
 
-    test "successfully invites a user", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create(user1)
+    test "successfully invites a user", %{account1: account1, account2: account2} do
+      {:ok, room_id} = Room.create(account1.user_id)
 
-      assert {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
+      assert {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
     end
 
-    test "fails with :unauthorized when the inviter does not have a high enough PL", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create(user1, power_levels: %{"invite" => 101})
+    test "fails with :unauthorized when the inviter does not have a high enough PL", %{
+      account1: account1,
+      account2: account2
+    } do
+      {:ok, room_id} = Room.create(account1.user_id, power_levels: %{"invite" => 101})
 
-      assert {:error, :unauthorized} = Room.invite(room_id, user1.id, user2.id)
+      assert {:error, :unauthorized} = Room.invite(room_id, account1.user_id, account2.user_id)
     end
   end
 
   describe "join/2" do
     setup do
-      user1 = Fixtures.user()
-      user2 = Fixtures.user()
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
 
-      %{user1: user1, user2: user2}
+      %{account1: account1, account2: account2}
     end
 
-    test "successfully joins the room", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create(user1)
+    test "successfully joins the room", %{account1: account1, account2: account2} do
+      {:ok, room_id} = Room.create(account1.user_id)
 
-      assert {:ok, _event_id} = Room.invite(room_id, user1.id, user2.id)
+      assert {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
       reason = "requested assistance"
-      assert {:ok, _event_id} = Room.join(room_id, user2.id, reason)
+      assert {:ok, _event_id} = Room.join(room_id, account2.user_id, reason)
     end
 
-    test "fails with :unauthorized when the joiner has not been invited", %{user1: user1, user2: user2} do
-      {:ok, room_id} = Room.create(user1)
+    test "fails with :unauthorized when the joiner has not been invited", %{account1: account1, account2: account2} do
+      {:ok, room_id} = Room.create(account1.user_id)
 
-      assert {:error, :unauthorized} = Room.join(room_id, user2.id)
+      assert {:error, :unauthorized} = Room.join(room_id, account2.user_id)
     end
   end
 
   describe "send/4" do
     setup do
-      user1 = Fixtures.user()
-      user2 = Fixtures.user()
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
 
-      %{user1: user1, user2: user2}
+      %{account1: account1, account2: account2}
     end
 
-    test "creator can put a message in the room", %{user1: creator} do
-      {:ok, room_id} = Room.create(creator)
+    test "creator can put a message in the room", %{account1: creator} do
+      {:ok, room_id} = Room.create(creator.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "This is a test message"}
-      assert {:ok, "$" <> _ = _event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      assert {:ok, "$" <> _ = _event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
     end
 
-    test "member can put a message in the room if has perms", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create(creator)
-      assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      assert {:ok, _event_id} = Room.join(room_id, user.id)
+    test "member can put a message in the room if has perms", %{account1: creator, account2: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      assert {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      assert {:ok, _event_id} = Room.join(room_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "This is another test message"}
-      assert {:ok, "$" <> _ = _event_id} = Room.send(room_id, user.id, "m.room.message", content)
+      assert {:ok, "$" <> _ = _event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
     end
 
-    test "member can't put a message in the room without perms", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create(creator, power_levels: %{"events" => %{"m.room.message" => 80}})
-      assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      assert {:ok, _event_id} = Room.join(room_id, user.id)
+    test "member can't put a message in the room without perms", %{account1: creator, account2: account} do
+      {:ok, room_id} = Room.create(creator.user_id, power_levels: %{"events" => %{"m.room.message" => 80}})
+      assert {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      assert {:ok, _event_id} = Room.join(room_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "I shouldn't be able to send this rn"}
-      assert {:error, :unauthorized} = Room.send(room_id, user.id, "m.room.message", content)
+      assert {:error, :unauthorized} = Room.send(room_id, account.user_id, "m.room.message", content)
     end
 
-    test "member can't put a message in the room without first joining", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create(creator)
-      assert {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+    test "member can't put a message in the room without first joining", %{account1: creator, account2: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      assert {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "I shouldn't be able to send this rn"}
-      assert {:error, :unauthorized} = Room.send(room_id, user.id, "m.room.message", content)
+      assert {:error, :unauthorized} = Room.send(room_id, account.user_id, "m.room.message", content)
     end
 
-    test "will reject duplicate annotations", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    test "will reject duplicate annotations", %{account1: creator, account2: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
 
-      {:ok, event_id} = Room.send_text_message(room_id, creator.id, "React to this twice")
+      {:ok, event_id} = Room.send_text_message(room_id, creator.user_id, "React to this twice")
       rel = %{"m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.annotation", "key" => "👍"}}
 
-      assert {:ok, _} = Room.send(room_id, creator.id, "m.reaction", rel)
-      assert {:error, :duplicate_annotation} = Room.send(room_id, creator.id, "m.reaction", rel)
-      assert {:ok, _} = Room.send(room_id, user.id, "m.reaction", rel)
-      assert {:error, :duplicate_annotation} = Room.send(room_id, user.id, "m.reaction", rel)
+      assert {:ok, _} = Room.send(room_id, creator.user_id, "m.reaction", rel)
+      assert {:error, :duplicate_annotation} = Room.send(room_id, creator.user_id, "m.reaction", rel)
+      assert {:ok, _} = Room.send(room_id, account.user_id, "m.reaction", rel)
+      assert {:error, :duplicate_annotation} = Room.send(room_id, account.user_id, "m.reaction", rel)
     end
   end
 
   describe "get_event/3" do
     setup do
-      user1 = Fixtures.user()
-      user2 = Fixtures.user()
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
 
-      %{user1: user1, user2: user2}
+      %{account1: account1, account2: account2}
     end
 
-    test "can get an event in a room the calling user is joined to", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    test "can get an event in a room the calling user is joined to", %{account1: creator, account2: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
       content = %{"msgtype" => "m.text", "body" => "yoOOOOOOOOO"}
-      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
-      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
     end
 
-    test "returns bundled events", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    test "returns bundled events", %{account1: creator, account2: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
       content = %{"msgtype" => "m.text", "body" => "yoOOOOOOOOO"}
-      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
       {:ok, child_id} =
-        Room.send(room_id, creator.id, "m.room.message", %{
+        Room.send(room_id, creator.user_id, "m.room.message", %{
           "msgtype" => "m.text",
           "body" => "Yoooooooo (in a thread)",
           "m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.thread"}
         })
 
       assert {:ok, %{id: ^event_id, bundled_events: [%{id: ^child_id}]}} =
-               Room.get_event(room_id, user.id, event_id)
+               Room.get_event(room_id, account.user_id, event_id)
     end
 
-    test "cannot get an event in a room the calling user is not a member of", %{user1: creator, user2: user} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+    test "cannot get an event in a room the calling user is not a member of", %{account1: creator, account2: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "lmao you can't see this"}
-      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
-      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+      assert {:error, :unauthorized} = Room.get_event(room_id, account.user_id, event_id)
     end
 
     test "can get an event in a room the calling user was joined to at the time it was sent", %{
-      user1: creator,
-      user2: user
+      account1: creator,
+      account2: account
     } do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "please leave"}
-      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
       content = %{"msgtype" => "m.text", "body" => "oh...ok"}
-      {:ok, _event_id} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, _event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
 
-      {:ok, _event_id} = Room.leave(room_id, user.id, "cya")
+      {:ok, _event_id} = Room.leave(room_id, account.user_id, "cya")
 
       content = %{"msgtype" => "m.text", "body" => "oh they actually left"}
-      {:ok, _event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, _event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
-      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
     end
 
     test "can get an event in a shared history room the calling user joined at a later time", %{
-      user1: creator,
-      user2: user
+      account1: creator,
+      account2: account
     } do
-      {:ok, room_id} = Room.create(creator, preset: :private_chat)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, room_id} = Room.create(creator.user_id, preset: :private_chat)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "I hope my friend joins soon"}
-      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
-      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+      assert {:error, :unauthorized} = Room.get_event(room_id, account.user_id, event_id)
 
-      {:ok, _event_id} = Room.join(room_id, user.id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "yoooo I'm here now"}
-      {:ok, _event_id} = Room.send(room_id, user.id, "m.room.message", content)
-      {:ok, _event_id} = Room.leave(room_id, user.id, "nvm gtg")
+      {:ok, _event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
+      {:ok, _event_id} = Room.leave(room_id, account.user_id, "nvm gtg")
 
-      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
+      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
 
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id, "please come back")
-      {:ok, _event_id} = Room.join(room_id, user.id, "ok")
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id, "please come back")
+      {:ok, _event_id} = Room.join(room_id, account.user_id, "ok")
       content = %{"msgtype" => "m.text", "body" => "I'm back"}
-      {:ok, event_id2} = Room.send(room_id, user.id, "m.room.message", content)
-      {:ok, _event_id} = Room.leave(room_id, user.id, "jk lmao")
+      {:ok, event_id2} = Room.send(room_id, account.user_id, "m.room.message", content)
+      {:ok, _event_id} = Room.leave(room_id, account.user_id, "jk lmao")
 
-      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, user.id, event_id)
-      assert {:ok, %{id: ^event_id2}} = Room.get_event(room_id, user.id, event_id2)
+      assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
+      assert {:ok, %{id: ^event_id2}} = Room.get_event(room_id, account.user_id, event_id2)
     end
 
     test "can't get an event in a since-joined-only history room the calling user was joined to at a later time", %{
-      user1: creator,
-      user2: user
+      account1: creator,
+      account2: account
     } do
-      {:ok, room_id} = Room.create(creator, addl_state_events: [history_visibility_event("joined")])
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
+      {:ok, room_id} = Room.create(creator.user_id, addl_state_events: [history_visibility_event("joined")])
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "I hope my friend joins soon"}
-      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
-      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+      assert {:error, :unauthorized} = Room.get_event(room_id, account.user_id, event_id)
 
-      {:ok, _event_id} = Room.join(room_id, user.id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "yoooo I'm here now"}
-      {:ok, _event_id} = Room.send(room_id, user.id, "m.room.message", content)
-      {:ok, _event_id} = Room.leave(room_id, user.id, "nvm gtg")
+      {:ok, _event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
+      {:ok, _event_id} = Room.leave(room_id, account.user_id, "nvm gtg")
 
-      assert {:error, :unauthorized} = Room.get_event(room_id, user.id, event_id)
+      assert {:error, :unauthorized} = Room.get_event(room_id, account.user_id, event_id)
     end
   end
 
   describe "redact_event/3,4" do
     setup do
-      user = Fixtures.user()
-      {:ok, room_id} = Room.create(user)
+      account = Fixtures.create_account()
+      {:ok, room_id} = Room.create(account.user_id)
 
-      %{user: user, room_id: room_id}
+      %{account: account, room_id: room_id}
     end
 
-    test "redacts a message event if the redactor is the creator", %{user: user, room_id: room_id} do
-      {:ok, event_id} = Room.send_text_message(room_id, user.id, "delete me")
-      assert {:ok, _redaction_event_id} = Room.redact_event(room_id, user.id, event_id, "meant to be deleted")
+    test "redacts a message event if the redactor is the creator", %{account: account, room_id: room_id} do
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "delete me")
+      assert {:ok, _redaction_event_id} = Room.redact_event(room_id, account.user_id, event_id, "meant to be deleted")
 
-      assert {:ok, %{content: content}} = Room.get_event(room_id, user.id, event_id)
+      assert {:ok, %{content: content}} = Room.get_event(room_id, account.user_id, event_id)
       assert 0 = map_size(content)
     end
 
-    test "redacts a message event if the redactor is the sender", %{user: user, room_id: room_id} do
-      rando = Fixtures.user()
-      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
-      {:ok, _event_id} = Room.join(room_id, rando.id)
+    test "redacts a message event if the redactor is the sender", %{account: account, room_id: room_id} do
+      rando = Fixtures.create_account()
+      {:ok, _event_id} = Room.invite(room_id, account.user_id, rando.user_id)
+      {:ok, _event_id} = Room.join(room_id, rando.user_id)
 
-      {:ok, event_id} = Room.send_text_message(room_id, rando.id, "rando's message")
+      {:ok, event_id} = Room.send_text_message(room_id, rando.user_id, "rando's message")
 
-      assert {:ok, _event_id} = Room.redact_event(room_id, rando.id, event_id, "can I delete my own msg? yes")
+      assert {:ok, _event_id} = Room.redact_event(room_id, rando.user_id, event_id, "can I delete my own msg? yes")
     end
 
-    test "redacts a message event if the redactor has the 'redact' power", %{user: user, room_id: room_id} do
-      rando = Fixtures.user()
-      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
-      {:ok, _event_id} = Room.join(room_id, rando.id)
+    test "redacts a message event if the redactor has the 'redact' power", %{account: account, room_id: room_id} do
+      rando = Fixtures.create_account()
+      {:ok, _event_id} = Room.invite(room_id, account.user_id, rando.user_id)
+      {:ok, _event_id} = Room.join(room_id, rando.user_id)
 
-      {:ok, event_id} = Room.send_text_message(room_id, rando.id, "try to delete me")
+      {:ok, event_id} = Room.send_text_message(room_id, rando.user_id, "try to delete me")
 
-      assert {:ok, _event_id} = Room.redact_event(room_id, user.id, event_id, "I will bc I'm the creator")
-      assert {:ok, %{content: content}} = Room.get_event(room_id, user.id, event_id)
+      assert {:ok, _event_id} = Room.redact_event(room_id, account.user_id, event_id, "I will bc I'm the creator")
+      assert {:ok, %{content: content}} = Room.get_event(room_id, account.user_id, event_id)
       assert 0 = map_size(content)
     end
 
     test "does not apply a redaction against another user if the redactor does not have 'redact' power", %{
-      user: user,
+      account: account,
       room_id: room_id
     } do
-      rando = Fixtures.user()
-      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
-      {:ok, _event_id} = Room.join(room_id, rando.id)
+      rando = Fixtures.create_account()
+      {:ok, _event_id} = Room.invite(room_id, account.user_id, rando.user_id)
+      {:ok, _event_id} = Room.join(room_id, rando.user_id)
 
-      {:ok, event_id} = Room.send_text_message(room_id, user.id, "try to delete me")
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "try to delete me")
 
-      assert {:ok, _redaction_event_id} = Room.redact_event(room_id, rando.id, event_id, "I can try")
-      assert {:ok, %{content: %{"body" => "try to delete me"}}} = Room.get_event(room_id, user.id, event_id)
+      assert {:ok, _redaction_event_id} = Room.redact_event(room_id, rando.user_id, event_id, "I can try")
+      assert {:ok, %{content: %{"body" => "try to delete me"}}} = Room.get_event(room_id, account.user_id, event_id)
     end
 
-    test "rejects an unauthorized redactor (does not have 'events -> m.room.redaction' power)", %{user: user} do
-      {:ok, room_id} = Room.create(user, power_levels: %{"events" => %{"m.room.redaction" => 5}})
+    test "rejects an unauthorized redactor (does not have 'events -> m.room.redaction' power)", %{account: account} do
+      {:ok, room_id} = Room.create(account.user_id, power_levels: %{"events" => %{"m.room.redaction" => 5}})
 
-      rando = Fixtures.user()
-      {:ok, _event_id} = Room.invite(room_id, user.id, rando.id)
-      {:ok, _event_id} = Room.join(room_id, rando.id)
+      rando = Fixtures.create_account()
+      {:ok, _event_id} = Room.invite(room_id, account.user_id, rando.user_id)
+      {:ok, _event_id} = Room.join(room_id, rando.user_id)
 
-      {:ok, event_id} = Room.send_text_message(room_id, rando.id, "rando's message")
+      {:ok, event_id} = Room.send_text_message(room_id, rando.user_id, "rando's message")
 
-      assert {:error, :unauthorized} = Room.redact_event(room_id, rando.id, event_id, "can I delete my own msg? no")
+      assert {:error, :unauthorized} =
+               Room.redact_event(room_id, rando.user_id, event_id, "can I delete my own msg? no")
     end
   end
 
   describe "get_members/4" do
     setup do
-      user1 = Fixtures.user()
-      user2 = Fixtures.user()
-      user3 = Fixtures.user()
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
+      account3 = Fixtures.create_account()
 
-      %{user1: user1, user2: user2, user3: user3}
+      %{account1: account1, account2: account2, account3: account3}
     end
 
-    test "returns members when the requester is in the room", %{user1: creator, user2: user2, user3: user3} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
-      {:ok, _event_id} = Room.join(room_id, user2.id)
-      {:ok, _event_id} = Room.join(room_id, user3.id)
+    test "returns members when the requester is in the room", %{
+      account1: creator,
+      account2: account2,
+      account3: account3
+    } do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id, account3.user_id)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id)
       assert 3 = Enum.count(members)
     end
 
     test "returns unauthorized when requester is not and has never been in the room", %{
-      user1: creator,
-      user2: user2,
-      user3: user3
+      account1: creator,
+      account2: account2,
+      account3: account3
     } do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
-      {:ok, _event_id} = Room.join(room_id, user3.id)
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account3.user_id)
 
-      assert {:error, :unauthorized} = Room.get_members(room_id, user2.id)
+      assert {:error, :unauthorized} = Room.get_members(room_id, account2.user_id)
     end
 
     test "returns members when the requester was last in the room after leaving", %{
-      user1: creator,
-      user2: user2,
-      user3: user3
+      account1: creator,
+      account2: account2,
+      account3: account3
     } do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
-      {:ok, _event_id} = Room.join(room_id, user2.id)
-      {:ok, _event_id} = Room.join(room_id, user3.id)
-      {:ok, _event_id} = Room.leave(room_id, user2.id)
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id, account3.user_id)
+      {:ok, _event_id} = Room.leave(room_id, account2.user_id)
 
-      assert {:ok, expected} = Room.get_members(room_id, user2.id)
+      assert {:ok, expected} = Room.get_members(room_id, account2.user_id)
 
-      {:ok, _event_id} = Room.leave(room_id, user3.id)
+      {:ok, _event_id} = Room.leave(room_id, account3.user_id)
 
-      assert {:ok, actual} = Room.get_members(room_id, user2.id)
+      assert {:ok, actual} = Room.get_members(room_id, account2.user_id)
       assert Enum.sort(expected) == Enum.sort(actual)
     end
 
     test "returns members that pass the given filter", %{
-      user1: creator,
-      user2: user2,
-      user3: user3
+      account1: creator,
+      account2: account2,
+      account3: account3
     } do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
-      {:ok, _event_id} = Room.join(room_id, user2.id)
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
 
       filter_fn = fn membership -> membership == "join" end
-      assert {:ok, members} = Room.get_members(room_id, user2.id, :latest_visible, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, :latest_visible, filter_fn)
       assert 2 = Enum.count(members)
 
-      {:ok, _event_id} = Room.join(room_id, user3.id)
+      {:ok, _event_id} = Room.join(room_id, account3.user_id)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, :latest_visible, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, :latest_visible, filter_fn)
       assert 3 = Enum.count(members)
 
-      {:ok, _event_id} = Room.leave(room_id, user3.id)
+      {:ok, _event_id} = Room.leave(room_id, account3.user_id)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, :latest_visible, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, :latest_visible, filter_fn)
       assert 2 = Enum.count(members)
     end
 
-    test "returns members in the room at the given event ID", %{user1: creator, user2: user2, user3: user3} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.join(room_id, user2.id)
+    test "returns members in the room at the given event ID", %{
+      account1: creator,
+      account2: account2,
+      account3: account3
+    } do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
 
       content = %{"msgtype" => "m.text", "body" => "hi"}
-      {:ok, event_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, event_id)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, event_id)
       assert 2 = Enum.count(members)
 
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user3.id)
-      {:ok, _event_id} = Room.join(room_id, user3.id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account3.user_id)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, :latest_visible)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, :latest_visible)
       assert 3 = Enum.count(members)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, event_id)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, event_id)
       assert 2 = Enum.count(members)
 
       filter_fn = fn membership -> membership == "join" end
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, :latest_visible, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, :latest_visible, filter_fn)
       assert 3 = Enum.count(members)
 
-      assert {:ok, members} = Room.get_members(room_id, user2.id, event_id, filter_fn)
+      assert {:ok, members} = Room.get_members(room_id, account2.user_id, event_id, filter_fn)
       assert 2 = Enum.count(members)
     end
   end
 
   describe "get_state/2" do
     setup do
-      user1 = Fixtures.user()
-      user2 = Fixtures.user()
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
 
-      %{user1: user1, user2: user2}
+      %{account1: account1, account2: account2}
     end
 
-    test "returns cur room state when the requester is in the room", %{user1: creator} do
-      {:ok, room_id} = Room.create(creator)
+    test "returns cur room state when the requester is in the room", %{account1: creator} do
+      {:ok, room_id} = Room.create(creator.user_id)
 
       :pong = Room.Server.ping(room_id)
 
-      assert {:ok, state_event_stream} = Room.get_state(room_id, creator.id)
+      assert {:ok, state_event_stream} = Room.get_state(room_id, creator.user_id)
       assert 6 = Enum.count(state_event_stream)
     end
 
-    test "returns unauthorized when requester is not and has never been in the room", %{user1: creator, user2: user2} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+    test "returns unauthorized when requester is not and has never been in the room", %{
+      account1: creator,
+      account2: account2
+    } do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
 
-      assert {:error, :unauthorized} = Room.get_state(room_id, user2.id)
+      assert {:error, :unauthorized} = Room.get_state(room_id, account2.user_id)
     end
 
     test "returns the room state at the time the requester left", %{
-      user1: creator,
-      user2: user2
+      account1: creator,
+      account2: account2
     } do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.join(room_id, user2.id)
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
 
-      assert {:ok, state_event_stream} = Room.get_state(room_id, user2.id)
+      assert {:ok, state_event_stream} = Room.get_state(room_id, account2.user_id)
       assert 7 = Enum.count(state_event_stream)
 
-      {:ok, _event_id} = Room.leave(room_id, user2.id)
+      {:ok, _event_id} = Room.leave(room_id, account2.user_id)
 
-      assert {:ok, state_event_stream_after_leave} = Room.get_state(room_id, user2.id)
+      assert {:ok, state_event_stream_after_leave} = Room.get_state(room_id, account2.user_id)
 
       assert state_event_stream_after_leave
-             |> Stream.reject(&(&1.type == "m.room.member" and &1.state_key == user2.id))
+             |> Stream.reject(&(&1.type == "m.room.member" and &1.state_key == account2.user_id))
              |> Enum.sort() ==
                state_event_stream
-               |> Stream.reject(&(&1.type == "m.room.member" and &1.state_key == user2.id))
+               |> Stream.reject(&(&1.type == "m.room.member" and &1.state_key == account2.user_id))
                |> Enum.sort()
 
-      {:ok, _event_id} = Room.set_name(room_id, creator.id, "A New Name")
+      {:ok, _event_id} = Room.set_name(room_id, creator.user_id, "A New Name")
 
-      assert {:ok, state_event_stream_after_name} = Room.get_state(room_id, user2.id)
+      assert {:ok, state_event_stream_after_name} = Room.get_state(room_id, account2.user_id)
       assert Enum.sort(state_event_stream_after_name) == Enum.sort(state_event_stream_after_leave)
     end
   end
 
   describe "get_state/4" do
     setup do
-      user1 = Fixtures.user()
-      user2 = Fixtures.user()
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
 
-      %{user1: user1, user2: user2}
+      %{account1: account1, account2: account2}
     end
 
-    test "returns state content when the requester is in the room", %{user1: creator} do
-      {:ok, room_id} = Room.create(creator)
+    test "returns state content when the requester is in the room", %{account1: creator} do
+      {:ok, room_id} = Room.create(creator.user_id)
 
       :pong = Room.Server.ping(room_id)
 
       assert {:ok, %{content: %{"membership" => "join"}}} =
-               Room.get_state(room_id, creator.id, "m.room.member", creator.id)
+               Room.get_state(room_id, creator.user_id, "m.room.member", creator.user_id)
     end
 
     test "returns unauthorized when requester is not and has never been in the room", %{
-      user1: creator,
-      user2: user2
+      account1: creator,
+      account2: account2
     } do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
 
-      assert {:error, :unauthorized} = Room.get_state(room_id, user2.id, "m.room.member", user2.id)
+      assert {:error, :unauthorized} = Room.get_state(room_id, account2.user_id, "m.room.member", account2.user_id)
     end
 
-    test "returns not_found when the key doesn't exist in the state", %{user1: creator} do
-      {:ok, room_id} = Room.create(creator)
-      assert {:error, :not_found} = Room.get_state(room_id, creator.id, "m.room.message_board", "")
+    test "returns not_found when the key doesn't exist in the state", %{account1: creator} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      assert {:error, :not_found} = Room.get_state(room_id, creator.user_id, "m.room.message_board", "")
     end
 
     test "returns the state content at the time the requester left", %{
-      user1: creator,
-      user2: user2
+      account1: creator,
+      account2: account2
     } do
       topic = "There are monsters on this world"
-      {:ok, room_id} = Room.create(creator, topic: topic)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.join(room_id, user2.id)
+      {:ok, room_id} = Room.create(creator.user_id, topic: topic)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
 
-      assert {:ok, %{content: %{"topic" => ^topic}} = event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
-      assert {:error, :not_found} = Room.get_state(room_id, user2.id, "m.room.name", "")
+      assert {:ok, %{content: %{"topic" => ^topic}} = event} =
+               Room.get_state(room_id, account2.user_id, "m.room.topic", "")
 
-      {:ok, _event_id} = Room.leave(room_id, user2.id)
-      {:ok, _event_id} = Room.set_name(room_id, creator.id, "A New Name")
+      assert {:error, :not_found} = Room.get_state(room_id, account2.user_id, "m.room.name", "")
+
+      {:ok, _event_id} = Room.leave(room_id, account2.user_id)
+      {:ok, _event_id} = Room.set_name(room_id, creator.user_id, "A New Name")
 
       {:ok, _event_id} =
-        Room.put_state(room_id, creator.id, "m.room.topic", "", %{"topic" => "THERE ARE MONSTERS ON THIS WORLD!?"})
+        Room.put_state(room_id, creator.user_id, "m.room.topic", "", %{"topic" => "THERE ARE MONSTERS ON THIS WORLD!?"})
 
-      assert {:ok, ^event} = Room.get_state(room_id, user2.id, "m.room.topic", "")
-      assert {:error, :not_found} = Room.get_state(room_id, user2.id, "m.room.name", "")
+      assert {:ok, ^event} = Room.get_state(room_id, account2.user_id, "m.room.topic", "")
+      assert {:error, :not_found} = Room.get_state(room_id, account2.user_id, "m.room.name", "")
     end
   end
 

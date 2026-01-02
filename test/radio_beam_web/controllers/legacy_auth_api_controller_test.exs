@@ -54,7 +54,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
     # TOIMPL: M_EXCLUSIVE test for namespaced appservice
     test "with M_USER_IN_USE when the username has been taken", %{conn: conn} do
       username = "batman"
-      Fixtures.user("@#{username}:localhost")
+      Fixtures.create_account("@#{username}:localhost")
 
       conn = request(conn, username)
 
@@ -98,12 +98,13 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
 
   describe "login/2 - valid user password login requests succeed" do
     setup do
-      {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
+      account = Fixtures.create_account()
+      device = Fixtures.create_device(account.user_id, "da steam deck")
 
-      %{user: user, password: Fixtures.strong_password(), device_id: device.id}
+      %{account: account, password: Fixtures.strong_password(), device_id: device.id}
     end
 
-    test "with a valid user_id/password pair", %{conn: conn, user: %{id: user_id}, password: password} do
+    test "with a valid user_id/password pair", %{conn: conn, account: %{user_id: user_id}, password: password} do
       conn = login_request(conn, user_id, password)
 
       assert %{
@@ -115,7 +116,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
              } = json_response(conn, 200)
     end
 
-    test "with a valid localpart/password pair", %{conn: conn, user: %{id: user_id}, password: password} do
+    test "with a valid localpart/password pair", %{conn: conn, account: %{user_id: user_id}, password: password} do
       ["@" <> localpart, _rest] = String.split(user_id, ":")
 
       conn = login_request(conn, localpart, password)
@@ -129,7 +130,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
              } = json_response(conn, 200)
     end
 
-    test "with provided device parameters", %{conn: conn, user: %{id: user_id}, password: password} do
+    test "with provided device parameters", %{conn: conn, account: %{user_id: user_id}, password: password} do
       device_id = "coolgadget"
 
       add_params = %{
@@ -150,7 +151,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
 
     test "with provided device parameters for an existing device", %{
       conn: conn,
-      user: %{id: user_id},
+      account: %{user_id: user_id},
       password: password,
       device_id: device_id
     } do
@@ -172,14 +173,15 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
 
   describe "login/2 - invalid user password login requests fail" do
     setup do
-      {user, device} = Fixtures.device(Fixtures.user(), "da steam deck")
+      account = Fixtures.create_account()
+      device = Fixtures.create_device(account.user_id, "da steam deck")
 
-      %{user: user, password: Fixtures.strong_password(), device_id: device.id}
+      %{account: account, password: Fixtures.strong_password(), device_id: device.id}
     end
 
     test "with M_BAD_JSON when an unknown login type is provided", %{
       conn: conn,
-      user: %{id: user_id},
+      account: %{user_id: user_id},
       password: password
     } do
       device_id = "dont insert me duh"
@@ -195,7 +197,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
       assert %{"errcode" => "M_FORBIDDEN", "error" => "Unknown username or password"} = json_response(conn, 403)
     end
 
-    test "with M_FORBIDDEN when the password is incorrect", %{conn: conn, user: %{id: user_id}} do
+    test "with M_FORBIDDEN when the password is incorrect", %{conn: conn, account: %{user_id: user_id}} do
       device_id = "dont insert me duh"
       conn = login_request(conn, user_id, "justguessinghere", %{"device_id" => device_id})
 
@@ -204,7 +206,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIControllerTest do
 
     test "with M_BAD_JSON when an unknown identifier is provided", %{
       conn: conn,
-      user: %{id: user_id},
+      account: %{user_id: user_id},
       password: password
     } do
       device_id = "dont insert me derp"

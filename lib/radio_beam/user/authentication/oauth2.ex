@@ -122,11 +122,6 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
       with {:ok, %LocalAccount{} = user_account} <- LocalAccount.new(user_id, password),
            :ok <- Database.insert_new_key_store(user_id, KeyStore.new!()),
            :ok <- Database.insert_new_user_account(user_account) do
-        # temp
-        {:ok, user} = User.new(user_id)
-        :ok = Database.insert_new_user(user)
-        # temp
-
         oauth2_module.authenticate_user_by_password(user_id, password, code_grant_values)
       end
     else

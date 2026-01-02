@@ -10,35 +10,38 @@ defmodule RadioBeam.Room.SyncTest do
   alias RadioBeam.User.EventFilter
 
   setup do
-    creator = Fixtures.user()
-    {user, device} = Fixtures.device(Fixtures.user())
+    creator = Fixtures.create_account()
+    account = Fixtures.create_account()
+    device = Fixtures.create_device(account.user_id)
 
-    %{creator: creator, user: user, device: device}
+    %{creator: creator, account: account, device: device}
   end
 
   describe "performing an initial sync" do
-    test "successfully syncs all events in a newly created room", %{creator: creator, user: user, device: device} do
-      {:ok, room_id1} = Room.create(creator)
-      {:ok, room_id2} = Room.create(creator, name: "The Chatroom")
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id1, user.id)
+    test "successfully syncs all events in a newly created room", %{creator: creator, account: account, device: device} do
+      {:ok, room_id1} = Room.create(creator.user_id)
+      {:ok, room_id2} = Room.create(creator.user_id, name: "The Chatroom")
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       assert 2 = map_size(next_batch_map)
       join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream!(user.id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
 
-      user_id = user.id
+      user_id = account.user_id
 
       # user shouldn't be able to see even their own invited membership event.
       # only the stripped state event can be viewed
-      assert {:error, :unauthorized} = Room.get_state(room_id2, user.id, "m.room.member", user_id)
-      {:ok, %{id: invite_next_batch_event_id}} = Room.get_state(room_id2, creator.id, "m.room.member", user_id)
+      assert {:error, :unauthorized} = Room.get_state(room_id2, account.user_id, "m.room.member", user_id)
+      {:ok, %{id: invite_next_batch_event_id}} = Room.get_state(room_id2, creator.user_id, "m.room.member", user_id)
 
       assert ^invite_next_batch_event_id = Map.fetch!(next_batch_map, room_id2)
 
@@ -74,12 +77,12 @@ defmodule RadioBeam.Room.SyncTest do
       assert Enum.any?(invite_state, &match?(%{type: "m.room.member", state_key: ^user_id}, &1))
     end
 
-    test "successfully syncs, bundling aggregate events", %{creator: creator, user: user, device: device} do
-      {:ok, room_id1} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id1, user.id)
+    test "successfully syncs, bundling aggregate events", %{creator: creator, account: account, device: device} do
+      {:ok, room_id1} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
 
-      {:ok, thread_id} = Room.send_text_message(room_id1, user.id, "I have news -> 🧵")
+      {:ok, thread_id} = Room.send_text_message(room_id1, account.user_id, "I have news -> 🧵")
 
       content = %{
         "msgtype" => "m.text",
@@ -87,20 +90,22 @@ defmodule RadioBeam.Room.SyncTest do
         "m.relates_to" => %{"event_id" => thread_id, "rel_type" => "m.thread"}
       }
 
-      Room.send(room_id1, user.id, "m.room.message", content)
+      Room.send(room_id1, account.user_id, "m.room.message", content)
       # Process.sleep(1)
 
       {:ok, latest_event_id} =
-        Room.send(room_id1, creator.id, "m.room.message", put_in(content["content"], "happy bday @bob!!!!!"))
+        Room.send(room_id1, creator.user_id, "m.room.message", put_in(content["content"], "happy bday @bob!!!!!"))
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       assert 1 = map_size(next_batch_map)
       join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream!(user.id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
 
       assert [
                %JoinedRoomResult{
@@ -113,7 +118,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       assert [] = Enum.to_list(state_event_stream)
 
-      user_id = user.id
+      user_id = account.user_id
 
       assert [
                %{type: "m.room.create"},
@@ -135,35 +140,37 @@ defmodule RadioBeam.Room.SyncTest do
                events
     end
 
-    test "successfully syncs all events up to n", %{creator: creator, user: user, device: device} do
-      {:ok, room_id1} = Room.create(creator)
-      {:ok, room_id2} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id1, user.id)
+    test "successfully syncs all events up to n", %{creator: creator, account: account, device: device} do
+      {:ok, room_id1} = Room.create(creator.user_id)
+      {:ok, room_id2} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 5}}})
 
+      config = User.ClientConfig.new!(account.user_id)
+
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id, filter: filter) |> Sync.perform()
+               config |> Sync.init(device.id, filter: filter) |> Sync.perform()
 
       assert 2 = map_size(next_batch_map)
 
-      user_id = user.id
+      user_id = account.user_id
 
       # user shouldn't be able to see even their own invited membership event.
       # only the stripped state event can be viewed
-      assert {:error, :unauthorized} = Room.get_state(room_id2, user.id, "m.room.member", user_id)
+      assert {:error, :unauthorized} = Room.get_state(room_id2, account.user_id, "m.room.member", user_id)
 
       {:ok, %{id: invite_next_batch_event_id}} =
-        Room.get_state(room_id2, creator.id, "m.room.member", user_id)
+        Room.get_state(room_id2, creator.user_id, "m.room.member", user_id)
 
       assert ^invite_next_batch_event_id = Map.fetch!(next_batch_map, room_id2)
 
       join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream!(user.id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
 
       assert [
                %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream},
@@ -202,40 +209,42 @@ defmodule RadioBeam.Room.SyncTest do
 
     test "successfully syncs, filtering out timeline events from ignored users", %{
       creator: creator,
-      user: user,
+      account: account,
       device: device
     } do
-      annoying_user = Fixtures.user()
+      annoying_account = Fixtures.create_account()
 
       :ok =
-        User.put_account_data(user.id, :global, "m.ignored_user_list", %{
-          "ignored_users" => %{annoying_user.id => %{}}
+        User.put_account_data(account.user_id, :global, "m.ignored_user_list", %{
+          "ignored_users" => %{annoying_account.user_id => %{}}
         })
 
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, annoying_user.id)
-      {:ok, _event_id} = Room.join(room_id, annoying_user.id)
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, annoying_account.user_id)
+      {:ok, _event_id} = Room.join(room_id, annoying_account.user_id)
 
-      Room.send_text_message(room_id, annoying_user.id, "blah blah blah")
-      Room.send_text_message(room_id, annoying_user.id, "you shouldn't see this")
+      Room.send_text_message(room_id, annoying_account.user_id, "blah blah blah")
+      Room.send_text_message(room_id, annoying_account.user_id, "you shouldn't see this")
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       assert [%JoinedRoomResult{room_id: ^room_id, timeline_events: events}] = result_data
 
-      annoying_user_id = annoying_user.id
+      annoying_user_id = annoying_account.user_id
       refute Enum.any?(events, &match?(%{sender: ^annoying_user_id, state_key: nil}, &1))
 
-      {:ok, _event_id} = Room.leave(room_id, annoying_user.id)
-      Room.send_text_message(room_id, creator.id, "welp, bye")
+      {:ok, _event_id} = Room.leave(room_id, annoying_account.user_id)
+      Room.send_text_message(room_id, creator.user_id, "welp, bye")
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 1}}})
 
       assert %Sync.Result{data: result_data} =
-               user
+               config
                |> Sync.init(device.id,
                  filter: filter,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
@@ -247,47 +256,55 @@ defmodule RadioBeam.Room.SyncTest do
       assert Enum.any?(state_events, &match?(%{sender: ^annoying_user_id}, &1))
     end
 
-    test "successfully syncs, filtering out invites from ignored users", %{user: user, device: device} do
-      annoying_user = Fixtures.user()
+    test "successfully syncs, filtering out invites from ignored users", %{account: account, device: device} do
+      annoying_account = Fixtures.create_account()
 
       :ok =
-        User.put_account_data(user.id, :global, "m.ignored_user_list", %{
-          "ignored_users" => %{annoying_user.id => %{}}
+        User.put_account_data(account.user_id, :global, "m.ignored_user_list", %{
+          "ignored_users" => %{annoying_account.user_id => %{}}
         })
 
-      {:ok, room_id} = Room.create(annoying_user)
-      {:ok, _event_id} = Room.invite(room_id, annoying_user.id, user.id)
+      {:ok, room_id} = Room.create(annoying_account.user_id)
+      {:ok, _event_id} = Room.invite(room_id, annoying_account.user_id, account.user_id)
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: [], next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
-      :ok = User.put_account_data(user.id, :global, "m.ignored_user_list", %{"ignored_users" => %{}})
+      :ok = User.put_account_data(account.user_id, :global, "m.ignored_user_list", %{"ignored_users" => %{}})
 
       assert %Sync.Result{data: [%InvitedRoomResult{room_id: ^room_id}]} =
-               user
+               config
                |> Sync.init(device.id,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
                )
                |> Sync.perform()
 
       assert %Sync.Result{data: [%InvitedRoomResult{room_id: ^room_id}]} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
     end
   end
 
   describe "sync/4 performing a follow-up sync" do
-    test "successfully syncs all new events when there aren't many", %{creator: creator, user: user, device: device} do
+    test "successfully syncs all new events when there aren't many", %{
+      creator: creator,
+      account: account,
+      device: device
+    } do
+      config = User.ClientConfig.new!(account.user_id)
+
       assert %Sync.Result{next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       # ---
 
-      {:ok, room_id1} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id1, user.id)
+      {:ok, room_id1} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user
+               config
                |> Sync.init(device.id,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
                )
@@ -304,7 +321,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       assert [] = Enum.to_list(state_event_stream)
 
-      user_id = user.id
+      user_id = account.user_id
 
       assert [
                %{type: "m.room.create"},
@@ -320,11 +337,11 @@ defmodule RadioBeam.Room.SyncTest do
 
       # ---
 
-      {:ok, room_id2} = Room.create(creator, name: "Notes")
-      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
+      {:ok, room_id2} = Room.create(creator.user_id, name: "Notes")
+      {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user
+               config
                |> Sync.init(device.id,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
                )
@@ -335,7 +352,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       # assert 0 = map_size(join_map)
 
-      user_id = user.id
+      user_id = account.user_id
 
       invite_state = Enum.to_list(invite_state_stream)
       assert 4 = length(invite_state)
@@ -346,12 +363,12 @@ defmodule RadioBeam.Room.SyncTest do
 
       # ---
 
-      %{id: rando_id} = Fixtures.user()
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, rando_id)
+      %{user_id: rando_id} = Fixtures.create_account()
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, rando_id)
       {:ok, _event_id} = Room.join(room_id1, rando_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user
+               config
                |> Sync.init(device.id,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
                )
@@ -369,14 +386,14 @@ defmodule RadioBeam.Room.SyncTest do
 
       # ---
 
-      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "should be able to see this")
-      {:ok, _event_id} = Room.leave(room_id1, user.id, "byeeeeeeeeeeeeeee")
-      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "alright user is gone let's party!!!!!!!!")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "should be able to see this")
+      {:ok, _event_id} = Room.leave(room_id1, account.user_id, "byeeeeeeeeeeeeeee")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "alright user is gone let's party!!!!!!!!")
 
       filter = EventFilter.new(%{"room" => %{"include_leave" => true}})
 
       assert %Sync.Result{data: result_data} =
-               user
+               config
                |> Sync.init(device.id,
                  filter: filter,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
@@ -396,7 +413,7 @@ defmodule RadioBeam.Room.SyncTest do
              |> Stream.filter(&(&1.type == "m.room.name"))
              |> Enum.any?(&(&1.content["name"] =~ "let's party!"))
 
-      creator_id = creator.id
+      creator_id = creator.user_id
 
       assert [
                %{type: "m.room.name", sender: ^creator_id, content: %{"name" => "should be able to see this"}},
@@ -407,15 +424,17 @@ defmodule RadioBeam.Room.SyncTest do
 
     test "successfully syncs, responding with a partial timeline when necessary", %{
       creator: creator,
-      user: user,
+      account: account,
       device: device
     } do
-      {:ok, room_id1} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id1, user.id)
+      {:ok, room_id1} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user
+               config
                |> Sync.init(device.id)
                |> Sync.perform()
 
@@ -431,7 +450,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       assert [] = Enum.to_list(state_event_stream)
 
-      user_id = user.id
+      user_id = account.user_id
 
       assert [
                %{type: "m.room.create"},
@@ -447,14 +466,14 @@ defmodule RadioBeam.Room.SyncTest do
 
       # --- 
 
-      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "Name update outside of window")
-      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "First name update")
-      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "Second name update")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "Name update outside of window")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "First name update")
+      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "Second name update")
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user
+               config
                |> Sync.init(device.id,
                  filter: filter,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
@@ -483,12 +502,17 @@ defmodule RadioBeam.Room.SyncTest do
       assert next_event_id == event_id
       # ---
 
-      Room.set_name(room_id1, creator.id, "THIS SHOULD SHOW UP IN FULL STATE ONLY")
-      Room.send(room_id1, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello? Is anyone there?"})
-      Room.send(room_id1, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
+      Room.set_name(room_id1, creator.user_id, "THIS SHOULD SHOW UP IN FULL STATE ONLY")
+
+      Room.send(room_id1, account.user_id, "m.room.message", %{
+        "msgtype" => "m.text",
+        "body" => "Hello? Is anyone there?"
+      })
+
+      Room.send(room_id1, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
 
       assert %Sync.Result{data: result_data} =
-               user
+               config
                |> Sync.init(device.id,
                  filter: filter,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
@@ -514,7 +538,7 @@ defmodule RadioBeam.Room.SyncTest do
                events
 
       assert %Sync.Result{data: result_data} =
-               user
+               config
                |> Sync.init(device.id,
                  filter: filter,
                  full_state?: true,
@@ -543,24 +567,25 @@ defmodule RadioBeam.Room.SyncTest do
   end
 
   describe "sync/4 with a filter" do
-    test "applies `room`-key-level rooms and not_rooms filters", %{creator: creator, user: user, device: device} do
-      {:ok, room_id1} = Room.create(creator, name: "Introductions")
-      {:ok, room_id2} = Room.create(creator, name: "General", topic: "whatever you wanna talk about")
-      {:ok, room_id3} = Room.create(creator, name: "Media & Photos")
+    test "applies `room`-key-level rooms and not_rooms filters", %{creator: creator, account: account, device: device} do
+      {:ok, room_id1} = Room.create(creator.user_id, name: "Introductions")
+      {:ok, room_id2} = Room.create(creator.user_id, name: "General", topic: "whatever you wanna talk about")
+      {:ok, room_id3} = Room.create(creator.user_id, name: "Media & Photos")
 
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
-      {:ok, _event_id} = Room.invite(room_id3, creator.id, user.id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id3, creator.user_id, account.user_id)
 
-      {:ok, _event_id} = Room.join(room_id1, user.id)
-      {:ok, _event_id} = Room.join(room_id2, user.id)
-      {:ok, _event_id} = Room.join(room_id3, user.id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
+      {:ok, _event_id} = Room.join(room_id2, account.user_id)
+      {:ok, _event_id} = Room.join(room_id3, account.user_id)
 
-      {:ok, _event_id} = Room.set_name(room_id2, creator.id, "General Chat")
+      {:ok, _event_id} = Room.set_name(room_id2, creator.user_id, "General Chat")
 
       filter = EventFilter.new(%{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}})
 
-      assert %Sync.Result{data: result_data} = user |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      config = User.ClientConfig.new!(account.user_id)
+      assert %Sync.Result{data: result_data} = config |> Sync.init(device.id, filter: filter) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -579,27 +604,30 @@ defmodule RadioBeam.Room.SyncTest do
       assert %{type: "m.room.name", content: %{"name" => "General Chat"}} = List.last(events)
     end
 
-    test "applies lazy_load_members to state delta", %{creator: creator, user: user} do
-      user2 = Fixtures.user()
-      user3 = Fixtures.user()
+    test "applies lazy_load_members to state delta", %{creator: creator, account: account} do
+      account2 = Fixtures.create_account()
+      account3 = Fixtures.create_account()
 
-      {:ok, room_id1} = Room.create(creator, name: "Introductions")
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user2.id)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user3.id)
-      {:ok, _event_id} = Room.join(room_id1, user.id)
-      {:ok, _event_id} = Room.join(room_id1, user2.id)
-      {:ok, _event_id} = Room.join(room_id1, user3.id)
+      {:ok, room_id1} = Room.create(creator.user_id, name: "Introductions")
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account3.user_id)
 
-      {:ok, _event_id} = Room.send_text_message(room_id1, creator.id, "welcome all")
-      {:ok, _event_id} = Room.send_text_message(room_id1, user.id, "hello!")
-      {:ok, _event_id} = Room.send_text_message(room_id1, user2.id, "hi")
-      {:ok, _event_id} = Room.send_text_message(room_id1, user3.id, "yo")
+      {:ok, _event_id} = Room.send_text_message(room_id1, creator.user_id, "welcome all")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account.user_id, "hello!")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account2.user_id, "hi")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account3.user_id, "yo")
 
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
-      {user3, %{id: user3_device_id}} = Fixtures.device(user3)
+      %{id: account3_device_id} = Fixtures.create_device(account3.user_id)
 
-      assert %Sync.Result{data: result_data} = user3 |> Sync.init(user3_device_id, filter: filter) |> Sync.perform()
+      config3 = User.ClientConfig.new!(account3.user_id)
+
+      assert %Sync.Result{data: result_data} =
+               config3 |> Sync.init(account3_device_id, filter: filter) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -611,17 +639,20 @@ defmodule RadioBeam.Room.SyncTest do
              ] =
                result_data
 
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.id))
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user.id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
 
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user2.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user3.id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account2.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account3.user_id))
 
       # the creator's membership event should always be present
 
-      {creator, %{id: creator_device_id}} = Fixtures.device(creator)
+      %{id: creator_device_id} = Fixtures.create_device(creator.user_id)
 
-      assert %Sync.Result{data: result_data} = creator |> Sync.init(creator_device_id, filter: filter) |> Sync.perform()
+      creator_config = User.ClientConfig.new!(creator.user_id)
+
+      assert %Sync.Result{data: result_data} =
+               creator_config |> Sync.init(creator_device_id, filter: filter) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -633,37 +664,38 @@ defmodule RadioBeam.Room.SyncTest do
              ] =
                result_data
 
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user2.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user3.id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account2.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account3.user_id))
     end
 
     test "applies lazy_load_members to state delta, excluding redundant membership events from state unless the filter requests it",
          %{
            creator: creator,
-           user: user
+           account: account
          } do
-      user2 = Fixtures.user()
-      user3 = Fixtures.user()
+      account2 = Fixtures.create_account()
+      account3 = Fixtures.create_account()
 
-      {:ok, room_id1} = Room.create(creator, name: "Introductions")
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user2.id)
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user3.id)
-      {:ok, _event_id} = Room.join(room_id1, user.id)
-      {:ok, _event_id} = Room.join(room_id1, user2.id)
-      {:ok, _event_id} = Room.join(room_id1, user3.id)
+      {:ok, room_id1} = Room.create(creator.user_id, name: "Introductions")
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id1, account3.user_id)
 
-      {:ok, _event_id} = Room.send_text_message(room_id1, creator.id, "welcome all")
-      {:ok, _event_id} = Room.send_text_message(room_id1, user.id, "hello!")
-      {:ok, _event_id} = Room.send_text_message(room_id1, user2.id, "hi")
-      {:ok, _event_id} = Room.send_text_message(room_id1, user3.id, "yo")
+      {:ok, _event_id} = Room.send_text_message(room_id1, creator.user_id, "welcome all")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account.user_id, "hello!")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account2.user_id, "hi")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account3.user_id, "yo")
 
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
-      {user, device} = Fixtures.device(user)
+      device = Fixtures.create_device(account.user_id)
 
-      assert %Sync.Result{data: result_data} = user3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      config3 = User.ClientConfig.new!(account3.user_id)
+      assert %Sync.Result{data: result_data} = config3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -675,19 +707,19 @@ defmodule RadioBeam.Room.SyncTest do
              ] =
                result_data
 
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.id))
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user.id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
 
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user2.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user3.id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account2.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account3.user_id))
 
       # initial sync again - memberships already sent last time should not be 
       # sent again (unless its the syncing user's membership)
 
-      {:ok, _event_id} = Room.send_text_message(room_id1, user2.id, "so what is the plan")
-      {:ok, _event_id} = Room.send_text_message(room_id1, user.id, "brunch tomorrow @ 11")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account2.user_id, "so what is the plan")
+      {:ok, _event_id} = Room.send_text_message(room_id1, account.user_id, "brunch tomorrow @ 11")
 
-      assert %Sync.Result{data: result_data} = user3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      assert %Sync.Result{data: result_data} = config3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -699,11 +731,11 @@ defmodule RadioBeam.Room.SyncTest do
              ] =
                result_data
 
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.id))
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user2.id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account2.user_id))
 
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user3.id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account3.user_id))
 
       # adjust filter to request redundant memberships
 
@@ -715,7 +747,8 @@ defmodule RadioBeam.Room.SyncTest do
           }
         })
 
-      assert %Sync.Result{data: result_data} = user3 |> Sync.init(device.id, filter: redundant_filter) |> Sync.perform()
+      assert %Sync.Result{data: result_data} =
+               config3 |> Sync.init(device.id, filter: redundant_filter) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -727,14 +760,14 @@ defmodule RadioBeam.Room.SyncTest do
              ] =
                result_data
 
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
 
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user2.id))
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user3.id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account2.user_id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account3.user_id))
 
       # and once more without redundant members...should only be the syncing user
-      assert %Sync.Result{data: result_data} = user3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      assert %Sync.Result{data: result_data} = config3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -746,22 +779,24 @@ defmodule RadioBeam.Room.SyncTest do
              ] =
                result_data
 
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.id))
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user.id))
-      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user2.id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
+      refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account2.user_id))
 
-      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == user3.id))
+      assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account3.user_id))
     end
   end
 
   describe "sync/4 with a timeout" do
-    test "will wait for the next room event", %{creator: creator, user: user, device: device} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    test "will wait for the next room event", %{creator: creator, account: account, device: device} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -774,7 +809,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       assert 0 = Enum.count(state_event_stream)
 
-      user_id = user.id
+      user_id = account.user_id
 
       assert [
                %{type: "m.room.create"},
@@ -793,7 +828,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       sync_task =
         Task.async(fn ->
-          user
+          config
           |> Sync.init(device.id,
             timeout: timeout,
             since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
@@ -802,7 +837,7 @@ defmodule RadioBeam.Room.SyncTest do
         end)
 
       Process.sleep(wait_for)
-      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello!!"})
+      Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello!!"})
 
       assert %Sync.Result{
                data: [
@@ -820,13 +855,15 @@ defmodule RadioBeam.Room.SyncTest do
       assert System.os_time(:millisecond) - time_before_wait >= wait_for
     end
 
-    test "will wait for the next invite event", %{creator: creator, user: user, device: device} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    test "will wait for the next invite event", %{creator: creator, account: account, device: device} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -839,7 +876,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       assert 0 = Enum.count(state_event_stream)
 
-      user_id = user.id
+      user_id = account.user_id
 
       assert [
                %{type: "m.room.create"},
@@ -858,7 +895,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       sync_task =
         Task.async(fn ->
-          user
+          config
           |> Sync.init(device.id,
             timeout: timeout,
             since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
@@ -867,8 +904,8 @@ defmodule RadioBeam.Room.SyncTest do
         end)
 
       Process.sleep(wait_for)
-      {:ok, room_id2} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id2, creator.id, user.id)
+      {:ok, room_id2} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
 
       assert %Sync.Result{
                data: [%InvitedRoomResult{room_id: ^room_id2, stripped_state_events: _events}]
@@ -877,13 +914,19 @@ defmodule RadioBeam.Room.SyncTest do
       assert System.os_time(:millisecond) - time_before_wait >= wait_for
     end
 
-    test "will wait for the next room event that matches the filter", %{creator: creator, user: user, device: device} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    test "will wait for the next room event that matches the filter", %{
+      creator: creator,
+      account: account,
+      device: device
+    } do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -898,12 +941,12 @@ defmodule RadioBeam.Room.SyncTest do
 
       time_before_wait = System.os_time(:millisecond)
 
-      event_filter = %{"not_senders" => [creator.id]}
+      event_filter = %{"not_senders" => [creator.user_id]}
       filter = EventFilter.new(%{"room" => %{"timeline" => event_filter, "state" => event_filter}})
 
       sync_task =
         Task.async(fn ->
-          user
+          config
           |> Sync.init(device.id,
             filter: filter,
             timeout: 1000,
@@ -914,13 +957,13 @@ defmodule RadioBeam.Room.SyncTest do
 
       Process.sleep(100)
 
-      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+      Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
 
       assert is_nil(Task.yield(sync_task, 0))
 
       Process.sleep(100)
 
-      Room.send(room_id, user.id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+      Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
 
       assert %Sync.Result{
                data: [
@@ -940,13 +983,15 @@ defmodule RadioBeam.Room.SyncTest do
       assert System.os_time(:millisecond) - time_before_wait >= 200
     end
 
-    test "will timeout", %{creator: creator, user: user, device: device} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    test "will timeout", %{creator: creator, account: account, device: device} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
+
+      config = User.ClientConfig.new!(account.user_id)
 
       assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               user |> Sync.init(device.id) |> Sync.perform()
+               config |> Sync.init(device.id) |> Sync.perform()
 
       assert [
                %JoinedRoomResult{
@@ -960,7 +1005,7 @@ defmodule RadioBeam.Room.SyncTest do
       assert 0 = Enum.count(state_event_stream)
 
       assert %Sync.Result{data: []} =
-               user
+               config
                |> Sync.init(device.id,
                  timeout: 300,
                  since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))

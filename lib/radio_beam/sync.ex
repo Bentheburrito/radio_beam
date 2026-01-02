@@ -17,27 +17,24 @@ defmodule RadioBeam.Sync do
   def perform_v2(user_id, device_id, opts) do
     since_or_nil = Keyword.get(opts, :since)
 
-    with {:ok, user} <- Database.fetch_user(user_id) do
+    with {:ok, client_config} <- Database.fetch_user_client_config(user_id) do
       room_sync_result =
-        user
+        client_config
         |> Room.Sync.init(device_id, opts)
         |> Room.Sync.perform()
 
       next_batch = PaginationToken.new(room_sync_result.next_batch_map, :forward, System.os_time(:millisecond))
 
       %__MODULE__{rooms: room_sync_result, next_batch: next_batch, to_device: %{}}
-      |> put_account_data(user.id)
-      |> put_to_device_messages(user.id, device_id, since_or_nil)
-      |> put_device_key_changes(user, since_or_nil)
-      |> put_device_otk_usages(user.id, device_id)
+      |> put_account_data(client_config)
+      |> put_to_device_messages(client_config.user_id, device_id, since_or_nil)
+      |> put_device_key_changes(client_config.user_id, since_or_nil)
+      |> put_device_otk_usages(client_config.user_id, device_id)
     end
   end
 
-  defp put_account_data(sync, user_id) do
-    case User.get_account_data(user_id) do
-      {:ok, account_data} -> put_in(sync.account_data, Map.get(account_data, :global, %{}))
-      {:error, :not_found} -> put_in(sync.account_data, %{})
-    end
+  defp put_account_data(sync, client_config) do
+    put_in(sync.account_data, Map.get(client_config.account_data, :global, %{}))
   end
 
   defp put_to_device_messages(sync, user_id, device_id, mark_as_read) do
@@ -54,11 +51,11 @@ defmodule RadioBeam.Sync do
     end
   end
 
-  defp put_device_key_changes(sync, _user, nil), do: put_in(sync.device_lists, %{changed: [], left: []})
+  defp put_device_key_changes(sync, _user_id, nil), do: put_in(sync.device_lists, %{changed: [], left: []})
 
-  defp put_device_key_changes(sync, user, since) do
+  defp put_device_key_changes(sync, user_id, since) do
     changed_map =
-      user.id
+      user_id
       |> KeyStore.all_changed_since(since)
       |> Map.update!(:changed, &MapSet.to_list/1)
       |> Map.update!(:left, &MapSet.to_list/1)

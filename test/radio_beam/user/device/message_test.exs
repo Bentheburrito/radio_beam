@@ -6,7 +6,8 @@ defmodule RadioBeam.User.Device.MessageTest do
   alias RadioBeam.User.Device.Message
 
   setup do
-    {_user, device} = Fixtures.device(Fixtures.user())
+    account = Fixtures.create_account()
+    device = Fixtures.create_device(account.user_id)
     %{device: device}
   end
 

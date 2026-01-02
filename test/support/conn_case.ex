@@ -38,7 +38,7 @@ defmodule RadioBeamWeb.ConnCase do
   end
 
   defp setup_authenticated_user(conn, tags) do
-    user = Fixtures.user()
+    account = Fixtures.create_account()
 
     code_verifier = 24 |> :crypto.strong_rand_bytes() |> Base.encode64()
     code_challenge = Base.url_encode64(:crypto.hash(:sha256, code_verifier), padding: false)
@@ -63,7 +63,7 @@ defmodule RadioBeamWeb.ConnCase do
 
     {:ok, code} =
       RadioBeam.User.Authentication.OAuth2.authenticate_user_by_password(
-        user.id,
+        account.user_id,
         Fixtures.strong_password(),
         grant_params
       )
@@ -81,7 +81,7 @@ defmodule RadioBeamWeb.ConnCase do
 
     %{
       conn: Plug.Conn.put_req_header(conn, "authorization", "Bearer #{access_token}"),
-      user: user,
+      account: account,
       device: device,
       access_token: access_token,
       refresh_token: refresh_token

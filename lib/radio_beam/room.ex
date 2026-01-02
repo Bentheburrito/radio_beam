@@ -34,10 +34,7 @@ defmodule RadioBeam.Room do
   room was successfully started.
   """
   @spec create(User.id() | User.t(), [Room.Core.create_opt() | {:version, String.t()}]) :: {:ok, id()} | {:error, any()}
-  def create(creator_id, opts \\ [])
-  def create(%User{id: creator_id}, opts), do: create(creator_id, opts)
-
-  def create(creator_id, opts) do
+  def create(creator_id, opts \\ []) do
     room_version = Keyword.get(opts, :version, RadioBeam.Config.default_room_version())
 
     if User.exists?(creator_id) do

@@ -16,13 +16,11 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
   import RadioBeam.Database.Mnesia.Tables.RoomView
   import RadioBeam.Database.Mnesia.Tables.Upload
-  import RadioBeam.Database.Mnesia.Tables.User
   import RadioBeam.Database.Mnesia.Tables.UserClientConfig
 
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Database.Mnesia.Tables
   alias RadioBeam.Room
-  alias RadioBeam.User
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Device
@@ -40,7 +38,6 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.RoomAlias,
     Tables.RoomView,
     Tables.Upload,
-    Tables.User,
     Tables.UserClientConfig
   ]
 
@@ -208,17 +205,6 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def insert_new_user(%User{} = user) do
-    user_record = user(id: user.id, user: user)
-
-    transaction(fn ->
-      if user_exists?(user.id), do: {:error, :already_exists}, else: :mnesia.write(Tables.User, user_record, :write)
-    end)
-  end
-
-  defp user_exists?(id), do: Tables.User |> :mnesia.read(id, :write) |> Enum.empty?() |> Kernel.not()
-
-  @impl RadioBeam.User.Database
   def insert_new_user_account(%LocalAccount{} = account) do
     record = local_account(id: account.user_id, local_account: account)
 
@@ -230,16 +216,6 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   defp account_exists?(id), do: Tables.LocalAccount |> :mnesia.read(id, :write) |> Enum.empty?() |> Kernel.not()
-
-  @impl RadioBeam.User.Database
-  def update_user(%User{id: user_id} = user) do
-    transaction(fn ->
-      case :mnesia.read(Tables.User, user.id, :write) do
-        [] -> {:error, :not_found}
-        [user(id: ^user_id)] -> :mnesia.write(Tables.User, user(id: user.id, user: user), :write)
-      end
-    end)
-  end
 
   @impl RadioBeam.User.Database
   def insert_new_device(%Device{} = device) do
@@ -357,16 +333,6 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def fetch_user(user_id) do
-    transaction(fn ->
-      case :mnesia.read(Tables.User, user_id, :read) do
-        [] -> {:error, :not_found}
-        [record] -> {:ok, record_to_domain_struct(record)}
-      end
-    end)
-  end
-
-  @impl RadioBeam.User.Database
   def fetch_user_account(user_id) do
     transaction(fn ->
       case :mnesia.read(Tables.LocalAccount, user_id, :read) do
@@ -428,7 +394,6 @@ defmodule RadioBeam.Database.Mnesia do
     transaction(callback)
   end
 
-  defp record_to_domain_struct(user(user: %User{} = user)), do: user
   defp record_to_domain_struct(key_store(key_store: %KeyStore{} = key_store)), do: key_store
   defp record_to_domain_struct(user_client_config(client_config: %ClientConfig{} = config)), do: config
   defp record_to_domain_struct(device(device: %Device{} = device)), do: device

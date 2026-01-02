@@ -108,7 +108,7 @@ defmodule RadioBeam.User.KeyStore do
   ### DEVICE KEYS / CSKs ###
 
   def put_cross_signing_keys(user_id, kw_list) do
-    Database.update_key_store(user_id, fn %User.KeyStore{cross_signing_key_ring: csk_ring} = key_store ->
+    Database.update_key_store(user_id, fn %__MODULE__{cross_signing_key_ring: csk_ring} = key_store ->
       with {:ok, %CrossSigningKeyRing{} = csk_ring} <- CrossSigningKeyRing.put(csk_ring, user_id, kw_list) do
         struct!(key_store, cross_signing_key_ring: csk_ring)
       end

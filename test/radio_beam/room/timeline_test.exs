@@ -9,44 +9,45 @@ defmodule RadioBeam.Room.TimelineTest do
   alias RadioBeam.User.EventFilter
 
   setup do
-    creator = Fixtures.user()
-    {user, device} = Fixtures.device(Fixtures.user())
+    creator = Fixtures.create_account()
+    account = Fixtures.create_account()
+    device = Fixtures.create_device(account.user_id)
 
-    %{creator: creator, user: user, device: device}
+    %{creator: creator, account: account, device: device}
   end
 
   describe "get_messages/5,6" do
-    setup %{creator: creator, user: user} do
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
+    setup %{creator: creator, account: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
 
-      Room.send_text_message(room_id, creator.id, "sup")
-      Room.send_text_message(room_id, user.id, "yo")
-      Room.send_text_message(room_id, user.id, "what is this room about")
-      Room.send_text_message(room_id, creator.id, "idk")
-      Room.send_text_message(room_id, creator.id, "wait yes I do")
-      Room.set_name(room_id, creator.id, "Get Messages Pagination")
-      Room.send_text_message(room_id, creator.id, "there we go")
-      Room.send_text_message(room_id, user.id, "so you're just using me to test something?")
-      Room.send_text_message(room_id, creator.id, "yeah")
-      Room.send_text_message(room_id, user.id, "wow")
-      Room.send_text_message(room_id, creator.id, "?")
-      Room.send_text_message(room_id, user.id, "I thought I was more than that to you")
+      Room.send_text_message(room_id, creator.user_id, "sup")
+      Room.send_text_message(room_id, account.user_id, "yo")
+      Room.send_text_message(room_id, account.user_id, "what is this room about")
+      Room.send_text_message(room_id, creator.user_id, "idk")
+      Room.send_text_message(room_id, creator.user_id, "wait yes I do")
+      Room.set_name(room_id, creator.user_id, "Get Messages Pagination")
+      Room.send_text_message(room_id, creator.user_id, "there we go")
+      Room.send_text_message(room_id, account.user_id, "so you're just using me to test something?")
+      Room.send_text_message(room_id, creator.user_id, "yeah")
+      Room.send_text_message(room_id, account.user_id, "wow")
+      Room.send_text_message(room_id, creator.user_id, "?")
+      Room.send_text_message(room_id, account.user_id, "I thought I was more than that to you")
 
-      Room.leave(room_id, user.id, "you can't trust anyone in this industry")
+      Room.leave(room_id, account.user_id, "you can't trust anyone in this industry")
 
       %{room_id: room_id}
     end
 
     test "can successfully paginate backwards through events in a room using a PaginationToken", %{
       room_id: room_id,
-      creator: %{id: creator_id} = creator,
-      user: %{id: user_id}
+      creator: %{user_id: creator_id} = creator,
+      account: %{user_id: user_id}
     } do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
-      {creator, device} = Fixtures.device(creator)
+      device = Fixtures.create_device(creator.user_id)
 
       now = System.os_time(:millisecond)
 
@@ -54,7 +55,7 @@ defmodule RadioBeam.Room.TimelineTest do
       start_token = PaginationToken.new(room_id, tip_event_id, :forward, now)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :tip, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token, start_token2)
 
@@ -69,7 +70,7 @@ defmodule RadioBeam.Room.TimelineTest do
                events
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token2}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(end_token, start_token3)
 
@@ -83,7 +84,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token2, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(end_token2, start_token4)
 
@@ -98,7 +99,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 30}}})
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token5, end: :no_more_events}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token3, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :backward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(end_token3, start_token5)
 
@@ -108,11 +109,11 @@ defmodule RadioBeam.Room.TimelineTest do
 
     test "can successfully paginate forward events in a room after a sync", %{
       room_id: room_id,
-      creator: %{id: creator_id} = creator,
-      user: %{id: user_id}
+      creator: %{user_id: creator_id} = creator,
+      account: %{user_id: user_id}
     } do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
-      {creator, device} = Fixtures.device(creator)
+      device = Fixtures.create_device(creator.user_id)
 
       now = System.os_time(:millisecond)
 
@@ -120,7 +121,7 @@ defmodule RadioBeam.Room.TimelineTest do
       start_token = PaginationToken.new(room_id, tip_event_id, :forward, now)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :tip, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token, start_token2)
 
@@ -134,7 +135,7 @@ defmodule RadioBeam.Room.TimelineTest do
                Enum.sort(state, Event)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token2, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token, :forward})
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward})
 
       assert PaginationToken.topologically_equal?(end_token, end_token2)
 
@@ -147,10 +148,10 @@ defmodule RadioBeam.Room.TimelineTest do
                %{type: "m.room.member"}
              ] = events
 
-      Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
+      Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
 
       assert {:ok, %Chunk{timeline_events: events, state_events: _state, start: end_token4, end: _}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token, :forward})
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward})
 
       assert PaginationToken.topologically_equal?(end_token, end_token4)
 
@@ -162,7 +163,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, %Chunk{timeline_events: events, state_events: _state, start: end_token5, end: end_token6}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token3, :forward})
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward})
 
       assert PaginationToken.topologically_equal?(end_token3, end_token5)
 
@@ -174,10 +175,10 @@ defmodule RadioBeam.Room.TimelineTest do
     test "can successfully paginate forward from the beginning of a room", %{
       room_id: room_id,
       creator: creator,
-      user: %{id: user_id}
+      account: %{user_id: user_id}
     } do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
-      {creator, device} = Fixtures.device(creator)
+      device = Fixtures.create_device(creator.user_id)
 
       now = System.os_time(:millisecond)
 
@@ -185,7 +186,7 @@ defmodule RadioBeam.Room.TimelineTest do
       start_token = PaginationToken.new(room_id, root_event_id, :backward, now)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :root, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, :root, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token, start_token2)
 
@@ -205,7 +206,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token2, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(end_token, end_token2)
 
@@ -226,7 +227,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       assert {:ok,
               %Chunk{timeline_events: events, state_events: state, start: end_token4, end: %PaginationToken{} = _next}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token3, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(end_token3, end_token4)
 
@@ -237,10 +238,10 @@ defmodule RadioBeam.Room.TimelineTest do
     test "can successfully paginate backward from the end of a room", %{
       room_id: room_id,
       creator: creator,
-      user: %{id: user_id}
+      account: %{user_id: user_id}
     } do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
-      {creator, device} = Fixtures.device(creator)
+      device = Fixtures.create_device(creator.user_id)
 
       now = System.os_time(:millisecond)
 
@@ -248,7 +249,7 @@ defmodule RadioBeam.Room.TimelineTest do
       start_token = PaginationToken.new(room_id, tip_event_id, :forward, now)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :tip, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token, start_token2)
 
@@ -268,7 +269,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token2}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token3, end_token)
 
@@ -288,7 +289,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: :no_more_events}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token2, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token4, end_token2)
 
@@ -298,13 +299,13 @@ defmodule RadioBeam.Room.TimelineTest do
 
     test "can successfully paginate in either direction from a pagination token", %{room_id: room_id, creator: creator} do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
-      {creator, device} = Fixtures.device(creator)
+      device = Fixtures.create_device(creator.user_id)
 
       assert {:ok, %Chunk{timeline_events: _events, state_events: _state, start: %PaginationToken{}, end: end_token}} =
-               Timeline.get_messages(room_id, creator.id, device.id, :tip, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token, end: end_token2}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token, end_token)
 
@@ -317,7 +318,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token2, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token2, end_token2)
 
@@ -332,7 +333,7 @@ defmodule RadioBeam.Room.TimelineTest do
       expected_end_token4 = PaginationToken.new(room_id, event_id2, :forward, System.os_time(:millisecond))
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token4}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token3, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token3, end_token3)
       assert PaginationToken.topologically_equal?(expected_end_token4, end_token4)
@@ -348,7 +349,7 @@ defmodule RadioBeam.Room.TimelineTest do
       expected_end_token5 = PaginationToken.new(room_id, event_id1, :forward, System.os_time(:millisecond))
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token5}} =
-               Timeline.get_messages(room_id, creator.id, device.id, {end_token2, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :forward}, filter: filter)
 
       assert PaginationToken.topologically_equal?(start_token4, end_token2)
       assert PaginationToken.topologically_equal?(expected_end_token5, end_token5)
@@ -364,37 +365,37 @@ defmodule RadioBeam.Room.TimelineTest do
 
     test "filters state by relevant senders when lazy_load_members is true", %{
       creator: creator,
-      user: user
+      account: account
     } do
-      user2 = Fixtures.user()
-      {:ok, room_id} = Room.create(creator)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user.id)
-      {:ok, _event_id} = Room.invite(room_id, creator.id, user2.id)
-      {:ok, _event_id} = Room.join(room_id, user.id)
-      {:ok, _event_id} = Room.join(room_id, user2.id)
+      account2 = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
 
-      Room.send_text_message(room_id, creator.id, "sup")
-      Room.send_text_message(room_id, user.id, "hi")
-      Room.send_text_message(room_id, user.id, "creator shouldn't show up in the response")
-      Room.send_text_message(room_id, user2.id, "true")
+      Room.send_text_message(room_id, creator.user_id, "sup")
+      Room.send_text_message(room_id, account.user_id, "hi")
+      Room.send_text_message(room_id, account.user_id, "creator shouldn't show up in the response")
+      Room.send_text_message(room_id, account2.user_id, "true")
 
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
-      {user2, user2_device_id} = Fixtures.device(user2)
+      account2_device = Fixtures.create_device(account2.user_id)
 
       assert {:ok, %Chunk{timeline_events: [_one, _two], state_events: state}} =
-               Timeline.get_messages(room_id, user2.id, user2_device_id, :tip, filter: filter)
+               Timeline.get_messages(room_id, account2.user_id, account2_device, :tip, filter: filter)
 
-      for id <- [user.id, user2.id] do
+      for id <- [account.user_id, account2.user_id] do
         assert Enum.any?(state, &match?(%{type: "m.room.member", sender: ^id}, &1))
       end
 
-      creator_id = creator.id
+      creator_id = creator.user_id
       refute Enum.any?(state, &match?(%{type: "m.room.member", sender: ^creator_id}, &1))
     end
 
     test "returned events have bundled child events", %{room_id: room_id, creator: creator} do
-      {:ok, parent_id} = Room.send_text_message(room_id, creator.id, "thread start")
+      {:ok, parent_id} = Room.send_text_message(room_id, creator.user_id, "thread start")
 
       content = %{
         "msgtype" => "m.text",
@@ -402,14 +403,14 @@ defmodule RadioBeam.Room.TimelineTest do
         "m.relates_to" => %{"event_id" => parent_id, "rel_type" => "m.thread"}
       }
 
-      {:ok, child_id} = Room.send(room_id, creator.id, "m.room.message", content)
+      {:ok, child_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
-      {creator, creator_device_id} = Fixtures.device(creator)
+      creator_device_id = Fixtures.create_device(creator.user_id)
 
       {:ok, %Chunk{timeline_events: events}} =
-        Timeline.get_messages(room_id, creator.id, creator_device_id, :tip, filter: filter)
+        Timeline.get_messages(room_id, creator.user_id, creator_device_id, :tip, filter: filter)
 
       assert [
                %{id: ^child_id},

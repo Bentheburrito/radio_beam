@@ -11,7 +11,7 @@ defmodule RadioBeam.Room.Sync.Core do
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   def perform(%Sync{} = sync, %Room{} = room) do
-    {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", sync.user.id)
+    {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", sync.client_config.user_id)
     user_membership = user_membership_pdu.event.content["membership"]
 
     maybe_last_sync_room_state_pdus =
@@ -50,7 +50,7 @@ defmodule RadioBeam.Room.Sync.Core do
         if user_membership_pdu.event.sender in sync.ignored_user_ids do
           :no_update
         else
-          InvitedRoomResult.new!(room, sync.user.id, user_membership_pdu.event.id)
+          InvitedRoomResult.new!(room, sync.client_config.user_id, user_membership_pdu.event.id)
         end
 
       "invite" ->
@@ -112,8 +112,8 @@ defmodule RadioBeam.Room.Sync.Core do
 
     JoinedRoomResult.new(
       room,
-      sync.user.id,
-      sync.account_data,
+      sync.client_config.user_id,
+      sync.client_config.account_data,
       timeline_events,
       sync.functions.get_events_for_user,
       membership,

@@ -6,8 +6,8 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalID.OrderedSetTest do
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID.OrderedSet
 
   setup do
-    creator = Fixtures.user()
-    room = Fixtures.room("11", creator.id)
+    creator = Fixtures.create_account()
+    room = Fixtures.room("11", creator.user_id)
     %{room: room}
   end
 
@@ -36,8 +36,8 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalID.OrderedSetTest do
 
   describe "stream_from/3" do
     setup do
-      creator = Fixtures.user()
-      room = Fixtures.room("11", creator.id)
+      creator = Fixtures.create_account()
+      room = Fixtures.room("11", creator.user_id)
       %{set: ordered_set_size_five(room)}
     end
 

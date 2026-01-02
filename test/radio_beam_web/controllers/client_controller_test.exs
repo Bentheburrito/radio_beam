@@ -44,10 +44,10 @@ defmodule RadioBeamWeb.ClientControllerTest do
   end
 
   describe "send_to_device/2" do
-    test "returns an empty object on success (200)", %{conn: conn, user: user, device: device} do
+    test "returns an empty object on success (200)", %{conn: conn, account: account, device: device} do
       messages = %{
-        user.id => %{
-          device.id => %{"content" => %{"hello" => "world"}, "sender" => user.id, "type" => "org.some.hello"}
+        account.user_id => %{
+          device.id => %{"content" => %{"hello" => "world"}, "sender" => account.user_id, "type" => "org.some.hello"}
         }
       }
 
@@ -76,13 +76,13 @@ defmodule RadioBeamWeb.ClientControllerTest do
     @tag :capture_log
     test "returns an empty object (200) and even when a message coudn't be delivered because a device is not found", %{
       conn: conn,
-      user: user,
+      account: account,
       device: device
     } do
-      message = %{"content" => %{"hello" => "world"}, "sender" => user.id, "type" => "org.some.hello"}
+      message = %{"content" => %{"hello" => "world"}, "sender" => account.user_id, "type" => "org.some.hello"}
 
       messages = %{
-        user.id => %{
+        account.user_id => %{
           device.id => message,
           "idontexist" => message
         }

@@ -10,9 +10,10 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
 
   describe "call/2" do
     setup do
-      {user, device} = Fixtures.device(Fixtures.user())
+      account = Fixtures.create_account()
+      device = Fixtures.create_device(account.user_id)
 
-      %{user: user, user_id: user.id, device_id: device.id}
+      %{account: account, user_id: account.user_id, device_id: device.id}
     end
 
     @high_limit 1000 / :timer.minutes(1)
@@ -61,7 +62,7 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
     end
 
     test "returns the conn unmodified, until the user device rate limit is hit", %{
-      user: user,
+      account: account,
       user_id: user_id,
       device_id: device_id
     } do
@@ -99,13 +100,13 @@ defmodule RadioBeamWeb.Plugs.RateLimitTest do
       assert Enum.any?(headers_kwlist, fn {header, _} -> header == "retry-after" end)
       assert body =~ "M_LIMIT_EXCEEDED"
 
-      {user, device} = Fixtures.device(user)
+      device = Fixtures.create_device(account.user_id)
 
       conn =
         :post
         |> conn("/_matrix/v3/cool_stuff")
         |> assign(:rate_limit, rate_limit)
-        |> assign(:user_id, user.id)
+        |> assign(:user_id, account.user_id)
         |> assign(:device_id, device.id)
         |> RateLimit.call([])
 

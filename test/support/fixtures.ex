@@ -82,28 +82,20 @@ defmodule Fixtures do
 
   def user_id(server_name \\ "localhost"), do: server_name |> UserIdentifier.generate() |> to_string()
 
-  def user(user_id \\ user_id()) do
-    {:ok, user} = User.new(user_id)
-    :ok = Database.insert_new_user(user)
-    {:ok, local_account} = LocalAccount.new(user.id, strong_password())
+  def create_account(user_id \\ user_id()) do
+    {:ok, local_account} = LocalAccount.new(user_id, strong_password())
     :ok = Database.insert_new_user_account(local_account)
     :ok = Database.insert_new_key_store(user_id, User.KeyStore.new!())
+    {:ok, _} = Database.upsert_user_client_config_with(user_id, fn _ -> User.ClientConfig.new!(user_id) end)
 
-    user
+    local_account
   end
 
-  def device(user_or_user_id, display_name \\ Device.default_device_name())
-
-  def device("@" <> _ = user_id, display_name) do
-    {:ok, user} = Database.fetch_user(user_id)
-    device(user, display_name)
-  end
-
-  def device(user, display_name) do
-    device = Device.new(user.id, device_id(), display_name: display_name)
+  def create_device(user_id, display_name \\ Device.default_device_name()) do
+    device = Device.new(user_id, device_id(), display_name: display_name)
     :ok = Database.insert_new_device(device)
 
-    {user, device}
+    device
   end
 
   def file_info(content, type \\ "txt", filename \\ "TestUpload") do
@@ -114,8 +106,8 @@ defmodule Fixtures do
     for _i <- 1..num_bytes, into: "", do: <<:rand.uniform(26) + ?A - 1>>
   end
 
-  def jpg_upload(user, width, height, tmp_dir, repo_dir \\ ContentRepo.path()) do
-    {:ok, upload} = ContentRepo.create(user.id)
+  def jpg_upload(user_id, width, height, tmp_dir, repo_dir \\ ContentRepo.path()) do
+    {:ok, upload} = ContentRepo.create(user_id)
 
     tmp_upload_path = Path.join([tmp_dir, "tmp_jpg_upload_#{width}_#{height}"])
 
@@ -211,13 +203,13 @@ defmodule Fixtures do
     {signed_key_obj, signingkey}
   end
 
-  def create_and_put_device_keys(user, device) do
-    {key, _} = device_keys(device.id, user.id)
+  def create_and_put_device_keys(user_id, device_id) do
+    {key, _} = device_keys(device_id, user_id)
 
     {:ok, device} =
-      Database.update_user_device_with(user.id, device.id, &Device.put_keys(&1, user.id, identity_keys: key))
+      Database.update_user_device_with(user_id, device_id, &Device.put_keys(&1, user_id, identity_keys: key))
 
-    {user, device}
+    device
   end
 
   def authz_event(event_attrs, auth_events) do

@@ -29,8 +29,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
   end
 
   describe "get_backup_info/2" do
-    test "returns the latest backup when no version param is provided", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user.id)
+    test "returns the latest backup when no version param is provided", %{conn: conn, account: account} do
+      add_room_keys_with_2_backups_to_user(account.user_id)
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/version", %{})
 
       assert %{"version" => "2"} = json_response(conn, 200)
@@ -42,8 +42,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       assert %{"errcode" => "M_NOT_FOUND", "error" => "Backup not found"} = json_response(conn, 404)
     end
 
-    test "returns the backup of the given version", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user.id)
+    test "returns the backup of the given version", %{conn: conn, account: account} do
+      add_room_keys_with_2_backups_to_user(account.user_id)
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/version/1", %{})
 
       assert %{"version" => "1"} = json_response(conn, 200)
@@ -57,8 +57,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
   end
 
   describe "put_backup_auth_data/2" do
-    test "returns an empty JSON body (200) when the auth data was updated successfully", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user.id)
+    test "returns an empty JSON body (200) when the auth data was updated successfully", %{conn: conn, account: account} do
+      add_room_keys_with_2_backups_to_user(account.user_id)
 
       req_body = %{"algorithm" => @algo, "auth_data" => Map.put(@auth_data, "public_key", "xyzyz")}
       conn = put(conn, ~p"/_matrix/client/v3/room_keys/version/2", req_body)
@@ -67,8 +67,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       assert 0 = map_size(response)
     end
 
-    test "returns M_BAD_JSON (400) when the algorithm doesn't match", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user.id)
+    test "returns M_BAD_JSON (400) when the algorithm doesn't match", %{conn: conn, account: account} do
+      add_room_keys_with_2_backups_to_user(account.user_id)
 
       req_body = %{"algorithm" => "org.some.other.algo", "auth_data" => Map.put(@auth_data, "public_key", "xyzyz")}
       conn = put(conn, ~p"/_matrix/client/v3/room_keys/version/2", req_body)
@@ -86,9 +86,9 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
 
     test "returns M_INVALID_PARAM (400) when the version in the path and req body don't match", %{
       conn: conn,
-      user: user
+      account: account
     } do
-      add_room_keys_with_2_backups_to_user(user.id)
+      add_room_keys_with_2_backups_to_user(account.user_id)
 
       req_body = %{"version" => "1", "algorithm" => @algo, "auth_data" => Map.put(@auth_data, "public_key", "xyzyz")}
       conn = put(conn, ~p"/_matrix/client/v3/room_keys/version/2", req_body)
@@ -98,8 +98,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
   end
 
   describe "delete_backup/2" do
-    test "returns an empty JSON body (200) when the backup was deleted", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user.id)
+    test "returns an empty JSON body (200) when the backup was deleted", %{conn: conn, account: account} do
+      add_room_keys_with_2_backups_to_user(account.user_id)
 
       conn = delete(conn, ~p"/_matrix/client/v3/room_keys/version/2", %{})
 
@@ -107,8 +107,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       assert 0 = map_size(response)
     end
 
-    test "returns M_NOT_FOUND (404) when the backup has never existed", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user.id)
+    test "returns M_NOT_FOUND (404) when the backup has never existed", %{conn: conn, account: account} do
+      add_room_keys_with_2_backups_to_user(account.user_id)
 
       conn = delete(conn, ~p"/_matrix/client/v3/room_keys/version/3", %{})
 
@@ -128,8 +128,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       }
     }
 
-    test "successfully puts keys under a backup", %{conn: conn, user: user} do
-      add_room_keys_with_2_backups_to_user(user.id)
+    test "successfully puts keys under a backup", %{conn: conn, account: account} do
+      add_room_keys_with_2_backups_to_user(account.user_id)
 
       room_id1 = Fixtures.room_id()
       room_id2 = Fixtures.room_id()
@@ -175,12 +175,12 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
   end
 
   describe "get_keys/2" do
-    test "successfully fetches the desired keys", %{conn: conn, user: user} do
+    test "successfully fetches the desired keys", %{conn: conn, account: account} do
       room_id = Fixtures.room_id()
       session_id = "abcde"
 
-      add_room_keys_with_2_backups_to_user(user.id)
-      add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
+      add_room_keys_with_2_backups_to_user(account.user_id)
+      add_e2ee_keys_to_backup(account.user_id, 2, %{room_id => %{session_id => @session_data}})
 
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/keys?version=2", %{})
       assert %{"rooms" => %{^room_id => %{"sessions" => %{^session_id => @session_data}}}} = json_response(conn, 200)
@@ -197,12 +197,12 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       assert %{"errcode" => "M_BAD_JSON", "error" => "'version' is required"} = json_response(conn, 400)
     end
 
-    test "errors (404) when the given backup version is not known", %{conn: conn, user: user} do
+    test "errors (404) when the given backup version is not known", %{conn: conn, account: account} do
       room_id = Fixtures.room_id()
       session_id = "abcde"
 
-      add_room_keys_with_2_backups_to_user(user.id)
-      add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
+      add_room_keys_with_2_backups_to_user(account.user_id)
+      add_e2ee_keys_to_backup(account.user_id, 2, %{room_id => %{session_id => @session_data}})
 
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/keys?version=6", %{})
       assert %{"errcode" => "M_NOT_FOUND", "error" => "Unknown backup version"} = json_response(conn, 404)
@@ -210,7 +210,7 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
   end
 
   describe "delete_keys/2" do
-    test "successfully deletes the specified keys", %{conn: conn, user: user} do
+    test "successfully deletes the specified keys", %{conn: conn, account: account} do
       paths =
         [
           fn _room_id, _session_id, version -> ~p"/_matrix/client/v3/room_keys/keys?version=#{version}" end,
@@ -229,8 +229,8 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
         session_id = Fixtures.random_string(16)
         path = path_fxn.(room_id, session_id, version)
 
-        add_room_keys_with_2_backups_to_user(user.id)
-        add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
+        add_room_keys_with_2_backups_to_user(account.user_id)
+        add_e2ee_keys_to_backup(account.user_id, 2, %{room_id => %{session_id => @session_data}})
 
         conn = delete(conn, path, %{})
         assert %{"count" => 0, "etag" => "2"} = json_response(conn, 200)
@@ -242,12 +242,12 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
       assert %{"errcode" => "M_BAD_JSON", "error" => "'version' is required"} = json_response(conn, 400)
     end
 
-    test "errors (404) when the given backup version is not known", %{conn: conn, user: user} do
+    test "errors (404) when the given backup version is not known", %{conn: conn, account: account} do
       room_id = Fixtures.room_id()
       session_id = "abcde"
 
-      add_room_keys_with_2_backups_to_user(user.id)
-      add_e2ee_keys_to_backup(user.id, 2, %{room_id => %{session_id => @session_data}})
+      add_room_keys_with_2_backups_to_user(account.user_id)
+      add_e2ee_keys_to_backup(account.user_id, 2, %{room_id => %{session_id => @session_data}})
 
       conn = get(conn, ~p"/_matrix/client/v3/room_keys/keys?version=6", %{})
       assert %{"errcode" => "M_NOT_FOUND", "error" => "Unknown backup version"} = json_response(conn, 404)

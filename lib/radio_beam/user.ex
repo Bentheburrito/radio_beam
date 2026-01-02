@@ -1,20 +1,8 @@
 defmodule RadioBeam.User do
   @moduledoc """
-  A user registered on this homeserver.
+  API for interacting with local user accounts, E2EE key storage, and matrix
+  user data.
   """
-  @types [
-    id: :string,
-    cross_signing_key_ring: :map,
-    last_cross_signing_change_at: :integer,
-    room_keys: :map
-  ]
-  @attrs Keyword.keys(@types)
-
-  @type id() :: String.t()
-
-  defstruct @attrs
-
-  import Ecto.Changeset
 
   alias RadioBeam.Room
   alias RadioBeam.User.ClientConfig
@@ -22,39 +10,7 @@ defmodule RadioBeam.User do
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
 
-  @type t() :: %__MODULE__{}
-
-  def new(id) do
-    params = %{
-      id: id
-    }
-
-    {%__MODULE__{}, Map.new(@types)}
-    |> cast(params, @attrs)
-    |> validate_required([:id])
-    |> validate_length(:id, max: 255)
-    |> validate_user_id()
-    |> apply_action(:update)
-  end
-
-  def validate_user_id(id) when is_binary(id) do
-    case String.split(id, ":") do
-      ["@" <> localpart, _server_name] when localpart != "" -> validate_localpart(localpart)
-      _invalid_format -> [id: "User IDs must be of the form @localpart:servername"]
-    end
-  end
-
-  def validate_user_id(changeset) do
-    validate_change(changeset, :id, fn :id, id -> validate_user_id(id) end)
-  end
-
-  defp validate_localpart(localpart) do
-    if Regex.match?(~r|^[a-z0-9\._=/+-]+$|, localpart) do
-      []
-    else
-      [id: "localpart can only contain lowercase alphanumeric characters, or the symbols ._=-/+"]
-    end
-  end
+  @type id() :: String.t()
 
   def exists?(user_id) do
     case Database.fetch_user_account(user_id) do

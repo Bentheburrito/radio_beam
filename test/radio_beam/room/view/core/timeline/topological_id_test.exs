@@ -5,8 +5,8 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalIDTest do
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   setup do
-    creator = Fixtures.user()
-    room = Fixtures.room("11", creator.id)
+    creator = Fixtures.create_account()
+    room = Fixtures.room("11", creator.user_id)
     %{room: room}
   end
 

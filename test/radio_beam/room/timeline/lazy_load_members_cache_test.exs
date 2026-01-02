@@ -5,17 +5,18 @@ defmodule RadioBeam.Room.Timeline.LazyLoadMembersCacheTest do
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
 
   setup do
-    {user, device} = Fixtures.device(Fixtures.user())
-    {:ok, room_id} = Room.create(user)
-    %{user: user, device: device, room_id: room_id}
+    account = Fixtures.create_account()
+    device = Fixtures.create_device(account.user_id)
+    {:ok, room_id} = Room.create(account.user_id)
+    %{account: account, device: device, room_id: room_id}
   end
 
   describe "get/2" do
-    test "works", %{user: user, device: device, room_id: room_id} do
+    test "works", %{account: account, device: device, room_id: room_id} do
       another_device_id = "helloimadevice"
 
       {user_ids1, user_ids2} =
-        [user.id, "@iamauser:id", "@hello:world", "@testing:onetwothree"]
+        [account.user_id, "@iamauser:id", "@hello:world", "@testing:onetwothree"]
         |> Enum.shuffle()
         |> Enum.split(2)
 
@@ -36,14 +37,14 @@ defmodule RadioBeam.Room.Timeline.LazyLoadMembersCacheTest do
 
   describe "mark_dirty/2" do
     test "marks the given user IDs room memberships as dirty by removing their entries", %{
-      user: user,
+      account: account,
       device: device,
       room_id: room_id
     } do
       another_device_id = "weirddevice"
 
-      user_ids1 = [user.id, "@reallyweirdguy:id"]
-      user_ids2 = user.id
+      user_ids1 = [account.user_id, "@reallyweirdguy:id"]
+      user_ids2 = account.user_id
 
       room_ids = [room_id, "!oddroom"]
 
@@ -55,7 +56,7 @@ defmodule RadioBeam.Room.Timeline.LazyLoadMembersCacheTest do
       assert %{^room_id => usermapset} = LazyLoadMembersCache.get(room_ids, device.id)
       assert Enum.sort(user_ids1) == usermapset |> MapSet.to_list() |> Enum.sort()
 
-      true = LazyLoadMembersCache.mark_dirty(room_id, user.id)
+      true = LazyLoadMembersCache.mark_dirty(room_id, account.user_id)
 
       assert %{^room_id => usermapset, "!oddroom" => usermapset2} = LazyLoadMembersCache.get(room_ids, device.id)
       assert ["@reallyweirdguy:id"] == MapSet.to_list(usermapset)
@@ -63,14 +64,14 @@ defmodule RadioBeam.Room.Timeline.LazyLoadMembersCacheTest do
 
       assert %{"!oddroom" => usermapset} = room_map = LazyLoadMembersCache.get(room_ids, another_device_id)
       refute is_map_key(room_map, room_id)
-      assert [user.id] == MapSet.to_list(usermapset)
+      assert [account.user_id] == MapSet.to_list(usermapset)
 
       true = LazyLoadMembersCache.mark_dirty("!oddroom", "@reallyweirdguy:id")
 
       assert %{"!oddroom" => ^usermapset} = ^room_map = LazyLoadMembersCache.get(room_ids, another_device_id)
 
       %{"!oddroom" => usermapset} = LazyLoadMembersCache.get(room_ids, device.id)
-      assert [user.id] == MapSet.to_list(usermapset)
+      assert [account.user_id] == MapSet.to_list(usermapset)
     end
   end
 end

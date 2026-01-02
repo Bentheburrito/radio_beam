@@ -7,20 +7,21 @@ defmodule RadioBeamWeb.KeysControllerTest do
   alias RadioBeam.User.KeyStore
 
   describe "changes/2" do
-    test "returns users who have made changes to their keys", %{conn: conn, user: user} do
-      {user, user_device} = Fixtures.device(user)
-      {someone, device} = Fixtures.device(Fixtures.user())
-      {:ok, room_id} = RadioBeam.Room.create(someone)
-      %RadioBeam.Sync{next_batch: since} = RadioBeam.Sync.perform_v2(user.id, user_device.id, [])
+    test "returns users who have made changes to their keys", %{conn: conn, account: account} do
+      user_device = Fixtures.create_device(account.user_id)
+      someone = Fixtures.create_account()
+      device = Fixtures.create_device(someone.user_id)
+      {:ok, room_id} = RadioBeam.Room.create(someone.user_id)
+      %RadioBeam.Sync{next_batch: since} = RadioBeam.Sync.perform_v2(account.user_id, user_device.id, [])
 
-      {:ok, _} = RadioBeam.Room.invite(room_id, someone.id, user.id)
-      {:ok, _} = RadioBeam.Room.join(room_id, user.id)
-      {someone, _device} = Fixtures.create_and_put_device_keys(someone, device)
+      {:ok, _} = RadioBeam.Room.invite(room_id, someone.user_id, account.user_id)
+      {:ok, _} = RadioBeam.Room.join(room_id, account.user_id)
+      Fixtures.create_and_put_device_keys(someone.user_id, device.id)
 
       since_encoded = RadioBeam.Room.Events.PaginationToken.encode(since)
       conn = get(conn, ~p"/_matrix/client/v3/keys/changes?from=#{since_encoded}", %{})
 
-      someone_id = someone.id
+      someone_id = someone.user_id
       assert %{"changed" => [^someone_id], "left" => []} = json_response(conn, 200)
     end
   end
@@ -55,18 +56,18 @@ defmodule RadioBeamWeb.KeysControllerTest do
   describe "upload_cross_signing/2" do
     test "returns an empty object (200) when the keys pass all checks and are successfully uploaded", %{
       conn: conn,
-      user: user
+      account: account
     } do
-      conn = post(conn, ~p"/_matrix/client/v3/keys/device_signing/upload", csk_request(user.id))
+      conn = post(conn, ~p"/_matrix/client/v3/keys/device_signing/upload", csk_request(account.user_id))
 
       assert response = json_response(conn, 200)
       assert 0 = map_size(response)
     end
 
     test "returns M_INVALID_PARAM (400) when the device/user do not match the access ID", %{conn: conn} do
-      user = Fixtures.user()
+      account = Fixtures.create_account()
 
-      conn = post(conn, ~p"/_matrix/client/v3/keys/device_signing/upload", csk_request(user.id))
+      conn = post(conn, ~p"/_matrix/client/v3/keys/device_signing/upload", csk_request(account.user_id))
 
       assert %{"errcode" => "M_INVALID_PARAM", "error" => error} = json_response(conn, 400)
       assert error =~ "do not match the owner of the device"
@@ -122,17 +123,17 @@ defmodule RadioBeamWeb.KeysControllerTest do
   end
 
   describe "upload_signatures/2" do
-    setup %{user: user, device: device} do
-      {csks, privkeys} = Fixtures.create_cross_signing_keys(user.id)
-      {:ok, key_store} = KeyStore.put_cross_signing_keys(user.id, csks)
+    setup %{account: account, device: device} do
+      {csks, privkeys} = Fixtures.create_cross_signing_keys(account.user_id)
+      {:ok, key_store} = KeyStore.put_cross_signing_keys(account.user_id, csks)
 
-      {device_key, device_signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
+      {device_key, device_signingkey} = Fixtures.device_keys(device.id, account.user_id)
+      {:ok, _otk_counts} = User.put_device_keys(account.user_id, device.id, identity_keys: device_key)
 
-      {:ok, device} = RadioBeam.User.Database.fetch_user_device(user.id, device.id)
+      {:ok, device} = RadioBeam.User.Database.fetch_user_device(account.user_id, device.id)
 
       %{
-        user: user,
+        account: account,
         key_store: key_store,
         device: device,
         user_priv_csks: privkeys,
@@ -144,14 +145,14 @@ defmodule RadioBeamWeb.KeysControllerTest do
       conn: conn,
       device_signingkey: device_signingkey,
       key_store: key_store,
-      user: user
+      account: account
     } do
-      master_key = User.CrossSigningKey.to_map(key_store.cross_signing_key_ring.master, user.id)
+      master_key = User.CrossSigningKey.to_map(key_store.cross_signing_key_ring.master, account.user_id)
       master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
 
-      {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
+      {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, account.user_id, device_signingkey)
 
-      request_body = %{user.id => %{master_pubkeyb64 => master_key}}
+      request_body = %{account.user_id => %{master_pubkeyb64 => master_key}}
       conn = post(conn, ~p"/_matrix/client/v3/keys/signatures/upload", request_body)
 
       assert %{} = failures = json_response(conn, 200)
@@ -160,7 +161,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
 
     test "returns a failures object (200) if the uploaded signature is invalid", %{
       conn: conn,
-      user: user,
+      account: account,
       key_store: key_store,
       device: device
     } do
@@ -169,31 +170,34 @@ defmodule RadioBeamWeb.KeysControllerTest do
       device_signingkey =
         Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(random_privkey, padding: false), device.id)
 
-      master_key = User.CrossSigningKey.to_map(key_store.cross_signing_key_ring.master, user.id)
+      master_key = User.CrossSigningKey.to_map(key_store.cross_signing_key_ring.master, account.user_id)
       master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
 
-      {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
+      {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, account.user_id, device_signingkey)
 
-      request_body = %{user.id => %{master_pubkeyb64 => master_key}}
+      request_body = %{account.user_id => %{master_pubkeyb64 => master_key}}
       conn = post(conn, ~p"/_matrix/client/v3/keys/signatures/upload", request_body)
 
       assert %{} = failures = json_response(conn, 200)
       assert 1 = map_size(failures)
-      assert %{"errcode" => "M_INVALID_SIGNATURE", "error" => error} = failures["failures"][user.id][master_pubkeyb64]
+
+      assert %{"errcode" => "M_INVALID_SIGNATURE", "error" => error} =
+               failures["failures"][account.user_id][master_pubkeyb64]
+
       assert error =~ "signature failed verification"
     end
   end
 
   describe "claim/2" do
-    test "returns a one-time key (200) that matches the given query", %{conn: conn, user: user, device: device} do
-      {:ok, _device} = User.put_device_keys(user.id, device.id, one_time_keys: @otk_keys)
+    test "returns a one-time key (200) that matches the given query", %{conn: conn, account: account, device: device} do
+      {:ok, _device} = User.put_device_keys(account.user_id, device.id, one_time_keys: @otk_keys)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/keys/claim", %{
-          one_time_keys: %{user.id => %{device.id => "signed_curve25519"}}
+          one_time_keys: %{account.user_id => %{device.id => "signed_curve25519"}}
         })
 
-      user_id = user.id
+      user_id = account.user_id
       device_id = device.id
       assert %{"one_time_keys" => %{^user_id => %{^device_id => key_obj}}} = json_response(conn, 200)
       [key_obj] = Map.values(key_obj)
@@ -203,14 +207,14 @@ defmodule RadioBeamWeb.KeysControllerTest do
 
   describe "query/2" do
     test "returns the queried keys (200)", %{conn: conn} do
-      %{id: user_id} = user = Fixtures.user()
-      {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(user.id)
-      {:ok, _key_store} = KeyStore.put_cross_signing_keys(user.id, cross_signing_keys)
+      %{user_id: user_id} = account = Fixtures.create_account()
+      {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(account.user_id)
+      {:ok, _key_store} = KeyStore.put_cross_signing_keys(account.user_id, cross_signing_keys)
 
-      {user, %{id: device_id} = device} = Fixtures.device(user)
-      {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
-      {:ok, _device} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
-      conn = post(conn, ~p"/_matrix/client/v3/keys/query", %{device_keys: %{user.id => []}})
+      %{id: device_id} = device = Fixtures.create_device(account.user_id)
+      {device_key, _signingkey} = Fixtures.device_keys(device.id, account.user_id)
+      {:ok, _device} = User.put_device_keys(account.user_id, device.id, identity_keys: device_key)
+      conn = post(conn, ~p"/_matrix/client/v3/keys/query", %{device_keys: %{account.user_id => []}})
 
       assert %{} = response = json_response(conn, 200)
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["master"]}} = response["master_keys"]

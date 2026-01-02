@@ -13,15 +13,15 @@ defmodule RadioBeam.ContentRepoTest do
   describe "get/2" do
     @describetag :tmp_dir
     setup %{tmp_dir: tmp_dir} do
-      user = Fixtures.user()
-      {:ok, upload} = ContentRepo.create(user.id)
+      account = Fixtures.create_account()
+      {:ok, upload} = ContentRepo.create(account.user_id)
       content = "A,B,C\nval1,val2,val3"
       file_info = Fixtures.file_info(content)
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
       {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, tmp_dir)
 
-      %{user: user, upload_id: upload.id, content: content}
+      %{account: account, upload_id: upload.id, content: content}
     end
 
     test "returns its upload and file content", %{upload_id: upload_id, content: content, tmp_dir: tmp_dir} do
@@ -31,8 +31,8 @@ defmodule RadioBeam.ContentRepoTest do
       assert ^content = upload |> ContentRepo.upload_file_path(tmp_dir) |> File.read!()
     end
 
-    test "returns :not_yet_uploaded for a reserved upload", %{user: user, tmp_dir: tmp_dir} do
-      {:ok, %Upload{id: upload_id}} = ContentRepo.create(user.id)
+    test "returns :not_yet_uploaded for a reserved upload", %{account: account, tmp_dir: tmp_dir} do
+      {:ok, %Upload{id: upload_id}} = ContentRepo.create(account.user_id)
       assert {:error, :not_yet_uploaded} = ContentRepo.get(upload_id, repo_path: tmp_dir)
     end
 
@@ -45,13 +45,13 @@ defmodule RadioBeam.ContentRepoTest do
     @describetag :tmp_dir
 
     setup do
-      %{user: Fixtures.user()}
+      %{account: Fixtures.create_account()}
     end
 
     @width 1000
     @height 1000
-    test "successfully thumbnails an upload for all allowed specs", %{tmp_dir: repo_path, user: user} do
-      upload = Fixtures.jpg_upload(user, @width, @height, repo_path, repo_path)
+    test "successfully thumbnails an upload for all allowed specs", %{tmp_dir: repo_path, account: account} do
+      upload = Fixtures.jpg_upload(account.user_id, @width, @height, repo_path, repo_path)
 
       for {w, h, method} = spec <- Thumbnail.allowed_specs() do
         assert {:ok, thumbnail_path} = ContentRepo.get_thumbnail(upload, spec, repo_path: repo_path)
@@ -79,9 +79,9 @@ defmodule RadioBeam.ContentRepoTest do
     @height 500
     test "returns the original image when one or both dimensions are smaller than the og media dimensions", %{
       tmp_dir: repo_path,
-      user: user
+      account: account
     } do
-      upload = Fixtures.jpg_upload(user, @width, @height, repo_path, repo_path)
+      upload = Fixtures.jpg_upload(account.user_id, @width, @height, repo_path, repo_path)
 
       for {w, h, _method} = spec <- Thumbnail.allowed_specs(), @width < w or @height < h do
         assert {:ok, thumbnail_path} = ContentRepo.get_thumbnail(upload, spec, repo_path: repo_path)
@@ -93,53 +93,53 @@ defmodule RadioBeam.ContentRepoTest do
 
   describe "reserve/2" do
     setup do
-      %{user: Fixtures.user()}
+      %{account: Fixtures.create_account()}
     end
 
-    test "succeeds with an :ok tuple of a reserved upload", %{user: %{id: user_id} = user} do
-      assert {:ok, %Upload{file: :reserved, uploaded_by_id: ^user_id}} = ContentRepo.create(user.id)
+    test "succeeds with an :ok tuple of a reserved upload", %{account: %{user_id: user_id} = account} do
+      assert {:ok, %Upload{file: :reserved, uploaded_by_id: ^user_id}} = ContentRepo.create(account.user_id)
     end
 
-    test "errors when max reserved uploads quota is reached", %{user: user} do
+    test "errors when max reserved uploads quota is reached", %{account: account} do
       %{max_reserved: max_reserved} = ContentRepo.user_upload_limits()
-      for _i <- 1..max_reserved, do: ContentRepo.create(user.id)
-      assert {:error, {:quota_reached, :max_reserved}} = ContentRepo.create(user.id)
+      for _i <- 1..max_reserved, do: ContentRepo.create(account.user_id)
+      assert {:error, {:quota_reached, :max_reserved}} = ContentRepo.create(account.user_id)
     end
 
     @file_info Fixtures.file_info(Fixtures.random_string(12))
-    test "errors when max uploaded files quota is reached", %{user: user} do
+    test "errors when max uploaded files quota is reached", %{account: account} do
       %{max_files: max_files} = ContentRepo.user_upload_limits()
 
       for _i <- 1..max_files,
-          do: user.id |> Upload.new() |> Upload.put_file(@file_info) |> ContentRepo.Database.upsert_upload()
+          do: account.user_id |> Upload.new() |> Upload.put_file(@file_info) |> ContentRepo.Database.upsert_upload()
 
-      assert {:error, {:quota_reached, :max_files}} = ContentRepo.create(user.id)
+      assert {:error, {:quota_reached, :max_files}} = ContentRepo.create(account.user_id)
     end
 
-    test "reserved uploads count towards max_files quota", %{user: user} do
+    test "reserved uploads count towards max_files quota", %{account: account} do
       %{max_reserved: max_reserved, max_files: max_files} = ContentRepo.user_upload_limits()
       num_to_reserve = max_reserved - 2
-      for _i <- 1..num_to_reserve, do: ContentRepo.create(user.id)
+      for _i <- 1..num_to_reserve, do: ContentRepo.create(account.user_id)
 
       for _i <- 1..(max_files - num_to_reserve),
-          do: user.id |> Upload.new() |> Upload.put_file(@file_info) |> ContentRepo.Database.upsert_upload()
+          do: account.user_id |> Upload.new() |> Upload.put_file(@file_info) |> ContentRepo.Database.upsert_upload()
 
-      assert {:error, {:quota_reached, :max_files}} = ContentRepo.create(user.id)
+      assert {:error, {:quota_reached, :max_files}} = ContentRepo.create(account.user_id)
     end
   end
 
   describe "upload/3" do
     @describetag :tmp_dir
     setup %{tmp_dir: tmp_dir} do
-      user = Fixtures.user()
-      {:ok, %Upload{} = upload} = ContentRepo.create(user.id)
+      account = Fixtures.create_account()
+      {:ok, %Upload{} = upload} = ContentRepo.create(account.user_id)
 
       content = Fixtures.random_string(20)
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
       file_info = Fixtures.file_info(content)
 
-      %{upload: upload, file_info: file_info, tmp_upload_path: tmp_upload_path, iodata: content, user: user}
+      %{upload: upload, file_info: file_info, tmp_upload_path: tmp_upload_path, iodata: content, account: account}
     end
 
     test "successfully saves a user's first upload", %{
@@ -159,7 +159,7 @@ defmodule RadioBeam.ContentRepoTest do
       tmp_dir: tmp_dir,
       tmp_upload_path: tmp_upload_path,
       upload: upload,
-      user: user
+      account: account
     } do
       max_bytes = ContentRepo.user_upload_limits().max_bytes
 
@@ -167,7 +167,7 @@ defmodule RadioBeam.ContentRepoTest do
 
       for _i <- 1..num_init_files do
         iodata = Fixtures.random_string(div(max_bytes, num_init_files))
-        {:ok, %Upload{} = upload} = ContentRepo.create(user.id)
+        {:ok, %Upload{} = upload} = ContentRepo.create(account.user_id)
         tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
         File.write!(tmp_upload_path, iodata)
         ContentRepo.upload(upload, Fixtures.file_info(iodata), tmp_upload_path, tmp_dir)
@@ -180,10 +180,10 @@ defmodule RadioBeam.ContentRepoTest do
     test "errors when a file exceeds the max single file upload limit", %{
       tmp_dir: tmp_dir,
       tmp_upload_path: tmp_upload_path,
-      user: user
+      account: account
     } do
       iodata = "A,B,C\nval1,val2,#{Fixtures.random_string(ContentRepo.max_upload_size_bytes())}"
-      {:ok, %Upload{} = upload} = ContentRepo.create(user.id)
+      {:ok, %Upload{} = upload} = ContentRepo.create(account.user_id)
 
       assert {:error, :too_large} = ContentRepo.upload(upload, Fixtures.file_info(iodata), tmp_upload_path, tmp_dir)
     end

@@ -14,7 +14,7 @@ defmodule RadioBeam.Room.Sync do
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
-  defstruct ~w|user account_data ignored_user_ids device_id filter start room_ids known_memberships full_state? timeout functions|a
+  defstruct ~w|client_config ignored_user_ids device_id filter start room_ids known_memberships full_state? timeout functions|a
 
   @opaque t() :: %__MODULE__{}
 
@@ -27,7 +27,7 @@ defmodule RadioBeam.Room.Sync do
   ]
 
   # credo:disable-for-lines:52 Credo.Check.Refactor.CyclomaticComplexity
-  def init(user, device_id, opts \\ []) do
+  def init(client_config, device_id, opts \\ []) do
     since = Keyword.get(opts, :since)
 
     filter =
@@ -42,19 +42,13 @@ defmodule RadioBeam.Room.Sync do
           EventFilter.new(%{})
 
         filter_id ->
-          case User.get_event_filter(user, filter_id) do
+          case User.get_event_filter(client_config.user_id, filter_id) do
             {:ok, filter} -> filter
             {:error, :not_found} -> EventFilter.new(%{})
           end
       end
 
-    account_data =
-      case User.get_account_data(user.id) do
-        {:ok, data} -> data
-        _else -> %{}
-      end
-
-    %{ignored_user_ids: ignored_user_ids} = User.get_timeline_preferences(user.id)
+    %{ignored_user_ids: ignored_user_ids} = User.get_timeline_preferences(client_config.user_id)
 
     sync_room_id? =
       case filter.rooms do
@@ -67,14 +61,13 @@ defmodule RadioBeam.Room.Sync do
       Keyword.get(opts, :get_room_ids_to_sync, &Room.all_where_has_membership/1)
 
     room_ids =
-      user.id
+      client_config.user_id
       |> get_room_ids_with_membership.()
       |> Stream.filter(sync_room_id?)
       |> MapSet.new()
 
     %__MODULE__{
-      user: user,
-      account_data: account_data,
+      client_config: client_config,
       ignored_user_ids: ignored_user_ids,
       device_id: device_id,
       filter: filter,
@@ -84,15 +77,15 @@ defmodule RadioBeam.Room.Sync do
       full_state?: Keyword.get(opts, :full_state?, false),
       timeout: Keyword.get(opts, :timeout, 0),
       functions: %{
-        event_stream: &Room.View.timeline_event_stream!(&1, user.id, :tip),
-        get_events_for_user: &Room.View.get_events!(&1, user.id, &2),
+        event_stream: &Room.View.timeline_event_stream!(&1, client_config.user_id, :tip),
+        get_events_for_user: &Room.View.get_events!(&1, client_config.user_id, &2),
         typing_user_ids: &Room.EphemeralState.all_typing/1
       }
     }
   end
 
   def perform(%__MODULE__{} = sync) do
-    PubSub.subscribe(PubSub.invite_events(sync.user.id))
+    PubSub.subscribe(PubSub.invite_events(sync.client_config.user_id))
     for room_id <- sync.room_ids, do: PubSub.subscribe(PubSub.all_room_events(room_id))
 
     # read any events that occurred since the last sync
@@ -174,11 +167,11 @@ defmodule RadioBeam.Room.Sync do
           case Database.fetch_room(room_id) do
             {:ok, room} ->
               room_sync_result =
-                case Room.State.fetch(room.state, "m.room.member", sync.user.id) do
+                case Room.State.fetch(room.state, "m.room.member", sync.client_config.user_id) do
                   {:ok, %{event: %{content: %{"membership" => "join"}}}} ->
                     JoinedRoomResult.new_ephemeral(
                       room_id,
-                      sync.account_data,
+                      sync.client_config.account_data,
                       "join",
                       EphemeralState.Core.all_typing(state)
                     )
@@ -206,7 +199,7 @@ defmodule RadioBeam.Room.Sync do
   defp perform_side_effects(sync_result, sync) do
     sync_result.data
     |> Stream.filter(&match?(%JoinedRoomResult{}, &1))
-    |> Stream.map(&{&1.room_id, &1.sender_ids |> MapSet.delete(sync.user.id) |> MapSet.to_list()})
+    |> Stream.map(&{&1.room_id, &1.sender_ids |> MapSet.delete(sync.client_config.user_id) |> MapSet.to_list()})
     |> Enum.each(fn {room_id, sender_ids} -> LazyLoadMembersCache.put(sync.device_id, room_id, sender_ids) end)
 
     sync_result

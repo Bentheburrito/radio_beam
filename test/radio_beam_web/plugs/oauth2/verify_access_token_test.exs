@@ -8,14 +8,15 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
 
   describe "call/2" do
     setup do
-      {user, device} = Fixtures.device(Fixtures.user())
+      account = Fixtures.create_account()
+      device = Fixtures.create_device(account.user_id)
 
-      %{user: user, device: device}
+      %{account: account, device: device}
     end
 
     test "returns the conn with a :user_id and :device_id assign when given a valid access token", %{
       device: %{id: device_id} = device,
-      user: %{id: user_id}
+      account: %{user_id: user_id}
     } do
       {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(device)
 

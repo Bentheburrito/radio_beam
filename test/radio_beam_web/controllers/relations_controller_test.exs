@@ -15,13 +15,13 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
   end
 
   describe "get_children/2" do
-    setup %{user: user} do
-      {:ok, room_id} = Room.create(user)
-      {:ok, event_id} = Room.send_text_message(room_id, user.id, "this is the parent event")
+    setup %{account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "this is the parent event")
 
       %{
         room_id: room_id,
-        user: user,
+        account: account,
         parent_event_id: event_id
       }
     end
@@ -38,13 +38,13 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
     test "returns all child events of the given event if they are authz'd", %{
       conn: conn,
       room_id: room_id,
-      user: user,
+      account: account,
       parent_event_id: parent_event_id
     } do
       content = relates_to(parent_event_id, "hello starting a thread here")
-      {:ok, child_id1} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, child_id1} = Room.send(room_id, account.user_id, "m.room.message", content)
       content = relates_to(parent_event_id, "details coming soon")
-      {:ok, child_id2} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, child_id2} = Room.send(room_id, account.user_id, "m.room.message", content)
 
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
       assert %{"chunk" => [%{"event_id" => ^child_id2}, %{"event_id" => ^child_id1}]} = json_response(conn, 200)
@@ -53,13 +53,13 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
     test "returns all child events of the given rel_type if they are authz'd", %{
       conn: conn,
       room_id: room_id,
-      user: user,
+      account: account,
       parent_event_id: parent_event_id
     } do
       content = relates_to(parent_event_id, "hello starting a thread here")
-      {:ok, child_id1} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, child_id1} = Room.send(room_id, account.user_id, "m.room.message", content)
       content = relates_to(parent_event_id, "details coming soon")
-      {:ok, child_id2} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, child_id2} = Room.send(room_id, account.user_id, "m.room.message", content)
 
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.thread", %{})
       assert %{"chunk" => [%{"event_id" => ^child_id2}, %{"event_id" => ^child_id1}]} = json_response(conn, 200)
@@ -70,13 +70,13 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
     test "returns all child events of the given rel_type + event_type if they are authz'd", %{
       conn: conn,
       room_id: room_id,
-      user: user,
+      account: account,
       parent_event_id: parent_event_id
     } do
       content = relates_to(parent_event_id, "hello starting a thread here")
-      {:ok, child_id1} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, child_id1} = Room.send(room_id, account.user_id, "m.room.message", content)
       content = relates_to(parent_event_id, "details coming soon")
-      {:ok, child_id2} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, child_id2} = Room.send(room_id, account.user_id, "m.room.message", content)
 
       conn =
         get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}/m.thread/m.room.message", %{})
@@ -94,9 +94,9 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
     end
 
     test "returns M_NOT_FOUND when the user is not authz'd to see the parent", %{conn: conn} do
-      other_user = Fixtures.user()
-      {:ok, room_id} = Room.create(other_user)
-      {:ok, parent_event_id} = Room.send_text_message(room_id, other_user.id, "this is another parent event")
+      other_account = Fixtures.create_account()
+      {:ok, room_id} = Room.create(other_account.user_id)
+      {:ok, parent_event_id} = Room.send_text_message(room_id, other_account.user_id, "this is another parent event")
 
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
 
@@ -113,24 +113,24 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
 
     test "does not return children which the user is not authz'd to see (after they left the room)", %{
       conn: conn,
-      user: user
+      account: account
     } do
-      user2 = Fixtures.user()
-      {:ok, room_id} = Room.create(user2)
-      {:ok, parent_event_id} = Room.send_text_message(room_id, user2.id, "this is another parent event")
+      account2 = Fixtures.create_account()
+      {:ok, room_id} = Room.create(account2.user_id)
+      {:ok, parent_event_id} = Room.send_text_message(room_id, account2.user_id, "this is another parent event")
 
-      {:ok, _} = Room.invite(room_id, user2.id, user.id)
-      {:ok, _} = Room.join(room_id, user.id)
+      {:ok, _} = Room.invite(room_id, account2.user_id, account.user_id)
+      {:ok, _} = Room.join(room_id, account.user_id)
 
       content = relates_to(parent_event_id, "hello starting a thread here")
-      {:ok, _child_id1} = Room.send(room_id, user.id, "m.room.message", content)
+      {:ok, _child_id1} = Room.send(room_id, account.user_id, "m.room.message", content)
       content = relates_to(parent_event_id, "details coming soon")
-      {:ok, _child_id2} = Room.send(room_id, user2.id, "m.room.message", content)
+      {:ok, _child_id2} = Room.send(room_id, account2.user_id, "m.room.message", content)
 
-      {:ok, _} = Room.leave(room_id, user.id, "details never came :/")
+      {:ok, _} = Room.leave(room_id, account.user_id, "details never came :/")
 
       content = relates_to(parent_event_id, "so impatient :/")
-      {:ok, child_id3} = Room.send(room_id, user2.id, "m.room.message", content)
+      {:ok, child_id3} = Room.send(room_id, account2.user_id, "m.room.message", content)
 
       conn =
         get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})

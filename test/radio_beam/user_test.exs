@@ -6,33 +6,6 @@ defmodule RadioBeam.UserTest do
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
 
-  describe "new/1" do
-    test "can create a new user from params with a valid user ID" do
-      valid_ids = [
-        "@hello:world",
-        "@greetings_sir123:inter.net",
-        "@_xcoolguy9x_:servername",
-        "@+=-_/somehowvalid:ok.com",
-        "@snowful:matrix.org"
-      ]
-
-      for id <- valid_ids, do: assert({:ok, %User{id: ^id}} = User.new(id))
-    end
-
-    test "will not create users with invalid user IDs" do
-      invalid_ids = [
-        "hello:world",
-        "@:servername",
-        "@Hello:world",
-        "@hi!there:inter.net",
-        "@hello :world",
-        super_long_user_id()
-      ]
-
-      for id <- invalid_ids, do: assert({:error, _} = User.new(id))
-    end
-  end
-
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
       "key" => "key1",
@@ -55,13 +28,14 @@ defmodule RadioBeam.UserTest do
   }
   describe "put_device_keys/3" do
     setup do
-      {user, device} = Fixtures.device(Fixtures.user())
-      %{user: user, device: device}
+      account = Fixtures.create_account()
+      device = Fixtures.create_device(account.user_id)
+      %{account: account, device: device}
     end
 
-    test "adds the given one-time keys to a device", %{user: user, device: device} do
-      {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, one_time_keys: @otk_keys)
-      {:ok, device} = Database.fetch_user_device(user.id, device.id)
+    test "adds the given one-time keys to a device", %{account: account, device: device} do
+      {:ok, _otk_counts} = User.put_device_keys(account.user_id, device.id, one_time_keys: @otk_keys)
+      {:ok, device} = Database.fetch_user_device(account.user_id, device.id)
 
       assert %{"signed_curve25519" => 2} = User.Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)
     end
@@ -78,19 +52,19 @@ defmodule RadioBeam.UserTest do
         }
       }
     }
-    test "adds the given fallback key to a device", %{user: user, device: device} do
-      {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, fallback_keys: @fallback_key)
-      {:ok, device} = Database.fetch_user_device(user.id, device.id)
+    test "adds the given fallback key to a device", %{account: account, device: device} do
+      {:ok, _otk_counts} = User.put_device_keys(account.user_id, device.id, fallback_keys: @fallback_key)
+      {:ok, device} = Database.fetch_user_device(account.user_id, device.id)
 
       assert {:ok, {"AAAAGj", %{"key" => "fallback1"}, _}} =
                Device.OneTimeKeyRing.claim_otk(device.one_time_key_ring, "signed_curve25519")
     end
 
-    test "adds the given device identity keys to a device", %{user: user, device: device} do
-      {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
+    test "adds the given device identity keys to a device", %{account: account, device: device} do
+      {device_key, _signingkey} = Fixtures.device_keys(device.id, account.user_id)
 
-      {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
-      {:ok, device} = Database.fetch_user_device(user.id, device.id)
+      {:ok, _otk_counts} = User.put_device_keys(account.user_id, device.id, identity_keys: device_key)
+      {:ok, device} = Database.fetch_user_device(account.user_id, device.id)
 
       expected_ed_key = "ed25519:#{device.id}"
       expected_ed_value = device_key["keys"] |> Map.values() |> hd()
@@ -99,60 +73,64 @@ defmodule RadioBeam.UserTest do
     end
 
     test "errors when the user or device ID on the given device identity keys map don't match the device's ID or its owner's user ID",
-         %{user: user, device: device} do
+         %{account: account, device: device} do
       for device_id <- ["blah", device.id],
-          user_id <- ["blah", user.id],
-          device_id != device.id or user_id != user.id do
+          user_id <- ["blah", account.user_id],
+          device_id != device.id or user_id != account.user_id do
         {device_key, _signingkey} = Fixtures.device_keys(device_id, user_id)
 
         assert {:error, :invalid_user_or_device_id} =
-                 User.put_device_keys(user.id, device.id, identity_keys: device_key)
+                 User.put_device_keys(account.user_id, device.id, identity_keys: device_key)
       end
     end
   end
 
   describe "put_account_data/4" do
     setup do
-      %{user: Fixtures.user()}
+      %{account: Fixtures.create_account()}
     end
 
-    test "successfully puts global account data", %{user: user} do
-      assert :ok = User.put_account_data(user.id, :global, "m.some_config", %{"key" => "value"})
+    test "successfully puts global account data", %{account: account} do
+      assert :ok = User.put_account_data(account.user_id, :global, "m.some_config", %{"key" => "value"})
 
-      assert {:ok, %{global: %{"m.some_config" => %{"key" => "value"}}}} = User.get_account_data(user.id)
+      assert {:ok, %{global: %{"m.some_config" => %{"key" => "value"}}}} = User.get_account_data(account.user_id)
     end
 
-    test "successfully puts room account data", %{user: user} do
-      {:ok, room_id} = Room.create(user)
+    test "successfully puts room account data", %{account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
 
-      assert :ok = User.put_account_data(user.id, room_id, "m.some_config", %{"other" => "value"})
+      assert :ok = User.put_account_data(account.user_id, room_id, "m.some_config", %{"other" => "value"})
     end
 
-    test "cannot put m.fully_read or m.push_rules for any scope", %{user: user} do
-      assert {:error, :invalid_type} = User.put_account_data(user.id, :global, "m.fully_read", %{"key" => "value"})
-      assert {:error, :invalid_type} = User.put_account_data(user.id, :global, "m.push_rules", %{"key" => "value"})
-      {:ok, room_id} = Room.create(user)
-      assert {:error, :invalid_type} = User.put_account_data(user.id, room_id, "m.fully_read", %{"other" => "value"})
-      assert {:error, :invalid_type} = User.put_account_data(user.id, room_id, "m.push_rules", %{"other" => "value"})
+    test "cannot put m.fully_read or m.push_rules for any scope", %{account: account} do
+      assert {:error, :invalid_type} =
+               User.put_account_data(account.user_id, :global, "m.fully_read", %{"key" => "value"})
+
+      assert {:error, :invalid_type} =
+               User.put_account_data(account.user_id, :global, "m.push_rules", %{"key" => "value"})
+
+      {:ok, room_id} = Room.create(account.user_id)
+
+      assert {:error, :invalid_type} =
+               User.put_account_data(account.user_id, room_id, "m.fully_read", %{"other" => "value"})
+
+      assert {:error, :invalid_type} =
+               User.put_account_data(account.user_id, room_id, "m.push_rules", %{"other" => "value"})
     end
 
-    test "cannot put room account data under a room that doesn't exist", %{user: user} do
+    test "cannot put room account data under a room that doesn't exist", %{account: account} do
       assert {:error, :invalid_room_id} =
-               User.put_account_data(user.id, "!huh@localhost", "m.some_config", %{"other" => "value"})
+               User.put_account_data(account.user_id, "!huh@localhost", "m.some_config", %{"other" => "value"})
     end
 
-    test "cannot put any account data for an unknown user", %{user: user} do
+    test "cannot put any account data for an unknown user", %{account: account} do
       assert {:error, :not_found} =
                User.put_account_data("@hellooo:localhost", :global, "m.some_config", %{"key" => "value"})
 
-      {:ok, room_id} = Room.create(user)
+      {:ok, room_id} = Room.create(account.user_id)
 
       assert {:error, :not_found} =
                User.put_account_data("@hellooo:localhost", room_id, "m.some_config", %{"other" => "value"})
     end
-  end
-
-  defp super_long_user_id do
-    "@behold_a_bunch_of_underscores_to_get_over_255_chars#{String.duplicate("_", 193)}:servername"
   end
 end

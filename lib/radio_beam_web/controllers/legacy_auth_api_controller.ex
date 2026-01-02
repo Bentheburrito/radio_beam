@@ -4,7 +4,6 @@ defmodule RadioBeamWeb.LegacyAuthAPIController do
   import RadioBeamWeb.Utils, only: [json_error: 4]
 
   alias RadioBeam.Errors
-  alias RadioBeam.User
   alias RadioBeam.User.Authentication.LegacyAPI
 
   require Logger
@@ -22,19 +21,19 @@ defmodule RadioBeamWeb.LegacyAuthAPIController do
     %{"username" => {_version, localpart}, "password" => pwd, "inhibit_login" => inhibit_login?} = conn.assigns.request
 
     case LegacyAPI.register(localpart, pwd) do
-      {:ok, %User{} = user} ->
+      {:ok, user_id} ->
         if inhibit_login? do
-          json(conn, %{user_id: user.id})
+          json(conn, %{user_id: user_id})
         else
           device_id = Map.get_lazy(conn.assigns.request, "device_id", &LegacyAPI.generate_device_id/0)
           display_name = Map.fetch!(conn.assigns.request, "initial_device_display_name")
 
           {:ok, access_token, refresh_token, _scope, expires_in} =
-            LegacyAPI.password_login(user.id, pwd, device_id, display_name)
+            LegacyAPI.password_login(user_id, pwd, device_id, display_name)
 
           json(conn, %{
             device_id: device_id,
-            user_id: user.id,
+            user_id: user_id,
             access_token: access_token,
             refresh_token: refresh_token,
             expires_in_ms: expires_in

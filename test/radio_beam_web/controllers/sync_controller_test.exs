@@ -6,7 +6,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
   alias RadioBeam.Room
 
   setup do
-    %{creator: Fixtures.user()}
+    %{creator: Fixtures.create_account()}
   end
 
   @otk_keys %{
@@ -42,7 +42,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
     }
   }
   describe "sync/2" do
-    test "successfully syncs with a room", %{conn: conn, creator: creator, user: user, device: device} do
+    test "successfully syncs with a room", %{conn: conn, creator: creator, account: account, device: device} do
       conn = get(conn, ~p"/_matrix/client/v3/sync", %{})
 
       assert %{"account_data" => account_data, "rooms" => rooms, "next_batch" => since} = json_response(conn, 200)
@@ -52,13 +52,13 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       # ---
 
-      {:ok, room_id1} = Room.create(creator, name: "name one")
-      {:ok, _event_id} = Room.invite(room_id1, creator.id, user.id)
-      :ok = User.put_account_data(user.id, :global, "m.some_config", %{"hello" => "world"})
-      :ok = User.put_account_data(user.id, room_id1, "m.some_config", %{"hello" => "room"})
+      {:ok, room_id1} = Room.create(creator.user_id, name: "name one")
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      :ok = User.put_account_data(account.user_id, :global, "m.some_config", %{"hello" => "world"})
+      :ok = User.put_account_data(account.user_id, room_id1, "m.some_config", %{"hello" => "room"})
 
       User.send_to_devices(
-        %{user.id => %{device.id => %{"hello" => "world"}}},
+        %{account.user_id => %{device.id => %{"hello" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.new_release"
       )
@@ -79,7 +79,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert 0 = map_size(join_map)
       assert 0 = map_size(leave_map)
 
-      user_id = user.id
+      user_id = account.user_id
 
       assert 4 = length(invite_state)
       assert Enum.any?(invite_state, &match?(%{"type" => "m.room.create"}, &1))
@@ -92,30 +92,30 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       # ---
 
-      {creator, creator_device} = Fixtures.device(creator)
-      {creator, _} = Fixtures.create_and_put_device_keys(creator, creator_device)
+      creator_device = Fixtures.create_device(creator.user_id)
+      Fixtures.create_and_put_device_keys(creator.user_id, creator_device.id)
 
-      {:ok, _event_id} = Room.join(room_id1, user.id)
-      {:ok, _event_id} = Room.set_name(room_id1, creator.id, "yo")
+      {:ok, _event_id} = Room.join(room_id1, account.user_id)
+      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "yo")
 
       User.send_to_devices(
-        %{user.id => %{device.id => %{"hello" => "world"}}},
+        %{account.user_id => %{device.id => %{"hello" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.new_release"
       )
 
       User.send_to_devices(
-        %{user.id => %{device.id => %{"hello2" => "world"}}},
+        %{account.user_id => %{device.id => %{"hello2" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.notification"
       )
 
       {:ok, _otk_counts} =
-        User.put_device_keys(user.id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
+        User.put_device_keys(account.user_id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
 
       filter = JSON.encode!(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
-      creator_id = creator.id
+      creator_id = creator.user_id
 
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}&filter=#{filter}", %{})
 
@@ -144,7 +144,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert 0 = map_size(invite_map)
       assert 0 = map_size(leave_map)
 
-      user_id = user.id
+      user_id = account.user_id
 
       assert %{
                "limited" => false,
@@ -161,14 +161,17 @@ defmodule RadioBeamWeb.SyncControllerTest do
   end
 
   describe "get_messages/2" do
-    test "successfully fetches events when user is a member of the room", %{conn: conn, user: creator} do
-      {:ok, room_id} = Room.create(creator, name: "This is a cool room")
+    test "successfully fetches events when user is a member of the room", %{conn: conn, account: creator} do
+      {:ok, room_id} = Room.create(creator.user_id, name: "This is a cool room")
 
       {:ok, _event_id} =
-        Room.send(room_id, creator.id, "m.room.message", %{"msgtype" => "m.text", "body" => "this place is so cool"})
+        Room.send(room_id, creator.user_id, "m.room.message", %{
+          "msgtype" => "m.text",
+          "body" => "this place is so cool"
+        })
 
       filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
-      {:ok, filter_id} = User.put_event_filter(creator.id, filter)
+      {:ok, filter_id} = User.put_event_filter(creator.user_id, filter)
 
       query_params = %{
         filter: filter_id,
@@ -206,7 +209,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       conn: conn,
       creator: creator
     } do
-      {:ok, room_id} = Room.create(creator, name: "This is a cool room")
+      {:ok, room_id} = Room.create(creator.user_id, name: "This is a cool room")
 
       query_params = %{
         dir: "b"

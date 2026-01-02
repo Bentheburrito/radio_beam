@@ -11,15 +11,15 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
   describe "download/2" do
     @describetag :tmp_dir
     setup %{tmp_dir: tmp_dir} do
-      user = Fixtures.user()
-      {:ok, %Upload{} = upload} = ContentRepo.create(user.id)
+      account = Fixtures.create_account()
+      {:ok, %Upload{} = upload} = ContentRepo.create(account.user_id)
 
       content = "A,B,C\nval1,val2,val2"
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
       ContentRepo.upload(upload, Fixtures.file_info(content, "csv", "a file to share"), tmp_upload_path)
 
-      %{user: user, upload: upload, content: content}
+      %{account: account, upload: upload, content: content}
     end
 
     test "returns an upload (200)", %{conn: conn, upload: %{id: mxc}, content: content} do
@@ -49,19 +49,19 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       assert %{"errcode" => "M_BAD_PARAM"} = json_response(conn, 400)
     end
 
-    test "returns M_NOT_YET_UPLOADED (504) when content is missing after waiting a bit", %{conn: conn, user: user} do
-      {:ok, %{id: mxc}} = ContentRepo.create(user.id)
+    test "returns M_NOT_YET_UPLOADED (504) when content is missing after waiting a bit", %{conn: conn, account: account} do
+      {:ok, %{id: mxc}} = ContentRepo.create(account.user_id)
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}?timeout_ms=200", %{})
       assert %{"errcode" => "M_NOT_YET_UPLOADED"} = json_response(conn, 504)
     end
 
     test "returns an upload (200), waiting a brief period for it to be uploaded", %{
       conn: conn,
-      user: user,
+      account: account,
       content: content,
       tmp_dir: tmp_dir
     } do
-      {:ok, %{id: mxc} = upload} = ContentRepo.create(user.id)
+      {:ok, %{id: mxc} = upload} = ContentRepo.create(account.user_id)
 
       timeout = :timer.seconds(2)
 
@@ -85,10 +85,10 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
                get_resp_header(conn, "content-disposition")
     end
 
-    test "returns M_TOO_LARGE (502) when content too large to serve", %{conn: conn, user: user, tmp_dir: tmp_dir} do
+    test "returns M_TOO_LARGE (502) when content too large to serve", %{conn: conn, account: account, tmp_dir: tmp_dir} do
       max_upload_size = ContentRepo.max_upload_size_bytes()
       content = Fixtures.random_string(max_upload_size)
-      {:ok, %{id: mxc} = upload} = ContentRepo.create(user.id)
+      {:ok, %{id: mxc} = upload} = ContentRepo.create(account.user_id)
 
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
@@ -105,10 +105,10 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     @width 350
     @height 350
     setup %{tmp_dir: tmp_dir} do
-      user = Fixtures.user()
-      upload = Fixtures.jpg_upload(user, @width, @height, tmp_dir)
+      account = Fixtures.create_account()
+      upload = Fixtures.jpg_upload(account.user_id, @width, @height, tmp_dir)
 
-      %{user: user, upload: upload, dimensions: {@width, @height}}
+      %{account: account, upload: upload, dimensions: {@width, @height}}
     end
 
     @width 200
@@ -158,9 +158,9 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       assert error =~ "not supported"
     end
 
-    test "will not thumbnail txt files (400)", %{conn: conn, tmp_dir: tmp_dir, user: user} do
+    test "will not thumbnail txt files (400)", %{conn: conn, tmp_dir: tmp_dir, account: account} do
       iodata = "this is not a picture !!!!!!"
-      {:ok, %Upload{id: mxc} = upload} = ContentRepo.create(user.id)
+      {:ok, %Upload{id: mxc} = upload} = ContentRepo.create(account.user_id)
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, iodata)
       ContentRepo.upload(upload, Fixtures.file_info(iodata, "txt"), tmp_upload_path)
@@ -182,9 +182,9 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
     test "returns M_NOT_YET_UPLOADED (504) if the upload has only been reserved (no content yet)", %{
       conn: conn,
-      user: user
+      account: account
     } do
-      {:ok, %{id: mxc}} = ContentRepo.create(user.id)
+      {:ok, %{id: mxc}} = ContentRepo.create(account.user_id)
       params = %{"width" => @width, "height" => @height, "method" => @method, "timeout_ms" => 5}
 
       conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{mxc.server_name}/#{mxc.id}", params)
@@ -263,7 +263,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       assert error =~ "Cannot upload files larger than"
     end
 
-    test "rejects (403) an upload when a user has reached a quota", %{conn: conn, user: user, tmp_dir: tmp_dir} do
+    test "rejects (403) an upload when a user has reached a quota", %{conn: conn, account: account, tmp_dir: tmp_dir} do
       max_bytes = ContentRepo.user_upload_limits().max_bytes
       max_upload_bytes = ContentRepo.max_upload_size_bytes()
       num_to_upload = div(max_bytes, max_upload_bytes)
@@ -271,7 +271,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       iodata = Fixtures.random_string(max_upload_bytes)
 
       for _i <- 1..num_to_upload do
-        {:ok, %Upload{} = upload} = ContentRepo.create(user.id)
+        {:ok, %Upload{} = upload} = ContentRepo.create(account.user_id)
         tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
         File.write!(tmp_upload_path, iodata)
         ContentRepo.upload(upload, Fixtures.file_info(iodata, "jpg"), tmp_upload_path)
@@ -289,8 +289,8 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
   describe "upload/2 (PUT, MXC URI reserved previously)" do
     @describetag :tmp_dir
-    setup %{user: user} do
-      {:ok, upload} = ContentRepo.create(user.id)
+    setup %{account: account} do
+      {:ok, upload} = ContentRepo.create(account.user_id)
       %{upload: upload}
     end
 
@@ -308,8 +308,8 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     end
 
     test "will not use a supplied mxc that was reserved by someone else", %{conn: conn} do
-      user = Fixtures.user()
-      {:ok, %{id: mxc}} = ContentRepo.create(user.id)
+      account = Fixtures.create_account()
+      {:ok, %{id: mxc}} = ContentRepo.create(account.user_id)
 
       conn = put(conn, ~p"/_matrix/media/v3/upload/#{mxc.server_name}/#{mxc.id}", nil)
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
@@ -351,9 +351,9 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       assert %{"content_uri" => "mxc://" <> ^server_name <> "/" <> _} = json_response(conn, 200)
     end
 
-    test "returns M_LIMIT_EXCEEDED (429) when the user has too many pending uploads", %{conn: conn, user: user} do
+    test "returns M_LIMIT_EXCEEDED (429) when the user has too many pending uploads", %{conn: conn, account: account} do
       %{max_reserved: max_reserved} = ContentRepo.user_upload_limits()
-      for _i <- 1..max_reserved, do: ContentRepo.create(user.id)
+      for _i <- 1..max_reserved, do: ContentRepo.create(account.user_id)
 
       conn = post(conn, ~p"/_matrix/media/v1/create", %{})
 

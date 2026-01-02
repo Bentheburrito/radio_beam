@@ -12,14 +12,14 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
     do: fn event_ids -> Room.View.Core.Timeline.get_visible_events(timeline, event_ids, user_id, fetch_pdu!) end
 
   setup do
-    user = Fixtures.user()
-    room = Fixtures.room("11", user.id)
-    {:sent, room, _pdu} = Fixtures.send_room_msg(room, user.id, "hellloooo")
-    %{user: user, room: room}
+    account = Fixtures.create_account()
+    room = Fixtures.room("11", account.user_id)
+    {:sent, room, _pdu} = Fixtures.send_room_msg(room, account.user_id, "hellloooo")
+    %{account: account, room: room}
   end
 
   describe "new/7" do
-    test "creates a new %Timeline.Chunk{} with the expected state events", %{room: room, user: %{id: user_id}} do
+    test "creates a new %Timeline.Chunk{} with the expected state events", %{room: room, account: %{user_id: user_id}} do
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
 
@@ -63,7 +63,7 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
   end
 
   describe "JSON.Encoder implementation encodes a suitable response for the C-S spec /messages API" do
-    test "for a complete %Chunk{}", %{room: room, user: %{id: user_id}} do
+    test "for a complete %Chunk{}", %{room: room, account: %{user_id: user_id}} do
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
 
@@ -102,7 +102,7 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
       assert 7 = length(decoded_response["chunk"])
     end
 
-    test "for a partial %Chunk{}", %{room: room, user: %{id: user_id}} do
+    test "for a partial %Chunk{}", %{room: room, account: %{user_id: user_id}} do
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
       fetch_pdu! = &Room.DAG.fetch!(room.dag, &1)
 
