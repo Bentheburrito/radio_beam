@@ -10,10 +10,17 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin.Guardian do
   def resource_from_claims(%{"sub" => composite_id}), do: lookup_user(composite_id)
   def resource_from_claims(_claims), do: {:error, :not_found}
 
-  defp lookup_user(composite_id) do
+  def parse_composite_id(composite_id) do
     case String.split(composite_id, "@", parts: 2) do
-      [device_id, user_id] -> RadioBeam.User.Database.fetch_user_device("@" <> user_id, device_id)
-      _ -> {:error, :not_found}
+      [device_id, user_id] -> {:ok, "@" <> user_id, device_id}
+      _else -> {:error, :invalid}
+    end
+  end
+
+  defp lookup_user(composite_id) do
+    case parse_composite_id(composite_id) do
+      {:ok, user_id, device_id} -> RadioBeam.User.Database.fetch_user_device(user_id, device_id)
+      {:error, :invalid} -> {:error, :not_found}
     end
   end
 end

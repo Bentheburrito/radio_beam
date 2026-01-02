@@ -37,9 +37,6 @@ defmodule RadioBeam.User.Database do
   @callback update_key_store(User.id(), (KeyStore.t() -> {:ok, KeyStore.t()} | {:error, term()})) ::
               {:ok, KeyStore.t()} | {:error, :not_found | term()}
 
-  # temp, should be able to update devices and things directly
-  @callback txn((-> term())) :: term()
-
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.User.Database, :backend])
   defdelegate insert_new_user_account(user_account), to: @database_backend
   defdelegate fetch_user_account(user_id), to: @database_backend
@@ -54,7 +51,4 @@ defmodule RadioBeam.User.Database do
   defdelegate fetch_key_store(user_id), to: @database_backend
   defdelegate insert_new_key_store(user_id, key_store), to: @database_backend
   defdelegate update_key_store(user_id, callback), to: @database_backend
-
-  # temp, should be able to update devices and things directly
-  defdelegate txn(callback), to: @database_backend
 end

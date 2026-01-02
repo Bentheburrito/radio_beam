@@ -389,11 +389,6 @@ defmodule RadioBeam.Database.Mnesia do
     end)
   end
 
-  @impl RadioBeam.User.Database
-  def txn(callback) do
-    transaction(callback)
-  end
-
   defp record_to_domain_struct(key_store(key_store: %KeyStore{} = key_store)), do: key_store
   defp record_to_domain_struct(user_client_config(client_config: %ClientConfig{} = config)), do: config
   defp record_to_domain_struct(device(device: %Device{} = device)), do: device

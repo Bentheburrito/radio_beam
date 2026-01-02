@@ -412,75 +412,71 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
 
   @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_access_token(token, device_ip) do
-    Database.txn(fn ->
-      with {:ok, claims} <- Guardian.decode_and_verify(token),
-           {:ok, device} <- Guardian.resource_from_claims(claims) do
+    with {:ok, %{"sub" => composite_id} = claims} <- Guardian.decode_and_verify(token),
+         {:ok, user_id, device_id} <- Guardian.parse_composite_id(composite_id) do
+      Database.update_user_device_with(user_id, device_id, fn %Device{} = device ->
         if claims["typ"] != "access" or claims["jti"] in device.revoked_unexpired_token_ids do
           {:error, :invalid_token}
         else
           perform_device_upkeep(device, device_ip)
         end
-      end
-    end)
+      end)
+    end
   end
 
   defp perform_device_upkeep(%Device{} = device, device_ip) do
-    upkeep_fxn = &(&1 |> Device.put_last_seen_at(device_ip) |> Device.put_retryable_refresh_token_id(nil))
-
-    Database.update_user_device_with(device.user_id, device.id, upkeep_fxn)
+    device |> Device.put_last_seen_at(device_ip) |> Device.put_retryable_refresh_token_id(nil)
   end
 
   @impl RadioBeam.User.Authentication.OAuth2
   def refresh_token(refresh_token) do
-    Database.txn(fn ->
-      with {:ok, new_access_token, new_refresh_token, scope, expires_at} <- refresh_tokens(refresh_token) do
-        {:ok, new_access_token, new_refresh_token, scope, expires_at - System.os_time(:second)}
-      end
-    end)
+    with {:ok, new_access_token, new_refresh_token, scope, expires_at} <- refresh_tokens(refresh_token) do
+      {:ok, new_access_token, new_refresh_token, scope, expires_at - System.os_time(:second)}
+    end
   end
 
   defp refresh_tokens(refresh_token) do
     access_opts = [ttl: Application.fetch_env!(:radio_beam, :access_token_lifetime)]
-    refresh_opts = [ttl: Application.fetch_env!(:radio_beam, :refresh_token_lifetime)]
 
-    with {:ok, {^refresh_token, old_claims}, {new_access_token, new_claims}} <-
-           exchange_for(refresh_token, "access", access_opts),
-         :ok <- validate_unrevoked_or_retryable(old_claims),
-         {:ok, {^refresh_token, _}, {new_refresh_token, %{"jti" => new_refresh_token_id}}} <-
-           exchange_for(refresh_token, "refresh", refresh_opts),
-         {:ok, device} <- Guardian.resource_from_claims(new_claims) do
-      updater = fn device ->
-        device
-        |> Device.rotate_token_ids(new_claims["jti"], new_refresh_token_id)
-        |> Device.put_retryable_refresh_token_id(old_claims["jti"])
-      end
-
-      {:ok, _} = Database.update_user_device_with(device.user_id, device.id, updater)
-
-      {:ok, new_access_token, new_refresh_token, new_claims["scope"], new_claims["exp"]}
+    with {:ok, old_claims, new_access_token, new_claims} <- exchange_for(refresh_token, "access", access_opts),
+         {:ok, user_id, device_id} <- Guardian.parse_composite_id(old_claims["sub"]),
+         {:ok, result} <-
+           Database.update_user_device_with(user_id, device_id, &do_refresh(&1, refresh_token, old_claims, new_claims)) do
+      {new_refresh_token, scope, expires_at} = result
+      {:ok, new_access_token, new_refresh_token, scope, expires_at}
     end
   end
 
-  defp exchange_for(token, new_token_type, opts) when new_token_type in ~w|access refresh| do
-    Guardian.exchange(token, "refresh", new_token_type, opts)
+  defp exchange_for(token, token_type, opts) when token_type in ~w|access refresh| do
+    with {:ok, {^token, old_claims}, {new_token, new_claims}} <- Guardian.exchange(token, "refresh", token_type, opts) do
+      {:ok, old_claims, new_token, new_claims}
+    end
   end
 
-  defp validate_unrevoked_or_retryable(claims) do
-    case Guardian.resource_from_claims(claims) do
-      {:ok, %Device{} = device} ->
-        cond do
-          claims["typ"] != "refresh" ->
-            {:error, :invalid_token}
+  defp do_refresh(device, refresh_token, old_claims, new_claims) do
+    opts = [ttl: Application.fetch_env!(:radio_beam, :refresh_token_lifetime)]
 
-          claims["jti"] in device.revoked_unexpired_token_ids and claims["jti"] != device.retryable_refresh_token_id ->
-            {:error, :invalid_token}
+    with :ok <- validate_unrevoked_or_retryable(device, old_claims),
+         {:ok, _, new_refresh_token, %{"jti" => new_refresh_token_id}} <- exchange_for(refresh_token, "refresh", opts) do
+      device =
+        device
+        |> Device.rotate_token_ids(new_claims["jti"], new_refresh_token_id)
+        |> Device.put_retryable_refresh_token_id(old_claims["jti"])
 
-          :else ->
-            :ok
-        end
+      {:ok, device, {new_refresh_token, new_claims["scope"], new_claims["exp"]}}
+    end
+  end
 
-      _else ->
+  defp validate_unrevoked_or_retryable(device, claims) do
+    cond do
+      claims["typ"] != "refresh" ->
         {:error, :invalid_token}
+
+      claims["jti"] in device.revoked_unexpired_token_ids and claims["jti"] != device.retryable_refresh_token_id ->
+        {:error, :invalid_token}
+
+      :else ->
+        :ok
     end
   end
 
