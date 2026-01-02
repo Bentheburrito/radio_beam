@@ -144,17 +144,9 @@ defmodule RadioBeam.User.Keys.Core do
     deps.update_keys.(signer_user_id, fn %Keys{} = keys ->
       case keys.cross_signing_key_ring do
         # MSK must be signed by a device...
-        %{master: %CrossSigningKey{id: ^maybe_key_id} = msk} ->
+        %{master: %CrossSigningKey{id: ^maybe_key_id}} ->
           # ...or more specifically, the signer_device_id that is POSTing this request
-          algo_and_device_id = "ed25519:#{signer_device_id}"
-
-          with :ok <- assert_signature_present(key_params, signer_user_id, algo_and_device_id),
-               {:ok, verify_key} <-
-                 make_verify_key_from_device_id_key(signer_user_id, signer_device_id, algo_and_device_id, deps),
-               {:ok, new_msk} <-
-                 CrossSigningKey.put_signature(msk, signer_user_id, key_params, signer_user_id, verify_key) do
-            {:ok, put_in(keys.cross_signing_key_ring.master, new_msk)}
-          end
+          try_update_msk_with_device_signature(keys, signer_user_id, signer_device_id, key_params, deps)
 
         # the SSK and USK must be signed by the MSK
         %{self: %CrossSigningKey{id: ^maybe_key_id} = ssk} ->
@@ -169,13 +161,24 @@ defmodule RadioBeam.User.Keys.Core do
     end)
   end
 
+  defp try_update_msk_with_device_signature(%Keys{} = keys, signer_user_id, signer_device_id, key_params, deps) do
+    %CrossSigningKey{} = msk = keys.cross_signing_key_ring.master
+    algo_and_device_id = "ed25519:#{signer_device_id}"
+
+    with :ok <- assert_signature_present(key_params, signer_user_id, algo_and_device_id),
+         {:ok, verify_key} <- make_verify_key_from_device(signer_user_id, signer_device_id, algo_and_device_id, deps),
+         {:ok, new_msk} <- CrossSigningKey.put_signature(msk, signer_user_id, key_params, signer_user_id, verify_key) do
+      {:ok, put_in(keys.cross_signing_key_ring.master, new_msk)}
+    end
+  end
+
   defp assert_signature_present(key_params, signer_user_id, signing_key_id_with_algo) do
     if is_binary(key_params["signatures"][signer_user_id][signing_key_id_with_algo]),
       do: :ok,
       else: {:error, :missing_signature}
   end
 
-  defp make_verify_key_from_device_id_key(user_id, device_id, algo_and_device_id, deps) do
+  defp make_verify_key_from_device(user_id, device_id, algo_and_device_id, deps) do
     with {:ok, device} <- deps.fetch_user_device.(user_id, device_id),
          %Device{identity_keys: %{"keys" => %{^algo_and_device_id => key}}} <- device do
       {:ok, Polyjuice.Util.make_verify_key(key, algo_and_device_id)}
