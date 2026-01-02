@@ -22,7 +22,7 @@ defmodule RadioBeamWeb.Schemas.RoomKeys do
 
   def create_backup do
     %{
-      "algorithm" => Schema.enum(RadioBeam.User.RoomKeys.allowed_algorithms()),
+      "algorithm" => Schema.enum(RadioBeam.User.KeyStore.allowed_room_key_algorithms()),
       "auth_data" => Schema.object_with_entries(:any, :any)
     }
   end

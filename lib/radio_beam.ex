@@ -21,8 +21,8 @@ defmodule RadioBeam do
       Sync,
       Transaction,
       User,
-      User.Authentication.OAuth2,
       User.Authentication.LegacyAPI,
+      User.Authentication.OAuth2,
       User.EventFilter,
       User.KeyStore,
       ### temp / leaky
@@ -30,13 +30,7 @@ defmodule RadioBeam do
       ContentRepo.Thumbnail,
       ContentRepo.Upload,
       ContentRepo.Upload.FileInfo,
-      User.CrossSigningKeyRing,
-      User.Device,
-      User.Device.Message,
-      User.Device.OneTimeKeyRing,
-      User.RoomKeys,
-      User.RoomKeys.Backup,
-      User.RoomKeys.Backup.KeyData
+      User.Device
     ]
 
   alias RadioBeam.Config

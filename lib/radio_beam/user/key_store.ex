@@ -33,6 +33,8 @@ defmodule RadioBeam.User.KeyStore do
 
   ### ROOM KEYS ###
 
+  defdelegate allowed_room_key_algorithms(), to: RoomKeys, as: :allowed_algorithms
+
   def create_room_keys_backup(user_id, algorithm, auth_data) do
     with {:ok, %__MODULE__{} = keys} <- update_room_keys(user_id, &RoomKeys.new_backup(&1, algorithm, auth_data)),
          {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_latest_backup(keys.room_keys) do
