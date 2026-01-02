@@ -21,13 +21,12 @@ defmodule RadioBeam.User.KeyStore do
   @type put_signatures_error() ::
           :unknown_key | :disallowed_key_type | :no_master_csk | :user_not_found | CrossSigningKey.put_signature_error()
 
-  defstruct ~w|cross_signing_key_ring last_cross_signing_change_at room_keys|a
+  defstruct ~w|cross_signing_key_ring room_keys|a
   @type t() :: %__MODULE__{}
 
   def new! do
     %__MODULE__{
       cross_signing_key_ring: CrossSigningKeyRing.new(),
-      last_cross_signing_change_at: 0,
       room_keys: RoomKeys.new!()
     }
   end
@@ -106,7 +105,15 @@ defmodule RadioBeam.User.KeyStore do
     end)
   end
 
-  ### DEVICE KEYS / CSKs
+  ### DEVICE KEYS / CSKs ###
+
+  def put_cross_signing_keys(user_id, kw_list) do
+    Database.update_key_store(user_id, fn %User.KeyStore{cross_signing_key_ring: csk_ring} = key_store ->
+      with {:ok, %CrossSigningKeyRing{} = csk_ring} <- CrossSigningKeyRing.put(csk_ring, user_id, kw_list) do
+        struct!(key_store, cross_signing_key_ring: csk_ring)
+      end
+    end)
+  end
 
   def claim_otks(user_device_algo_map) do
     user_device_algo_map

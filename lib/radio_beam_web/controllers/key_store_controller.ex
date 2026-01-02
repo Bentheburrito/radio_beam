@@ -9,7 +9,6 @@ defmodule RadioBeamWeb.KeyStoreController do
   alias RadioBeam.Errors
   alias RadioBeam.User.KeyStore
   alias RadioBeam.User
-  alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeamWeb.Schemas.KeyStore, as: KeyStoreSchema
 
   require Logger
@@ -63,7 +62,7 @@ defmodule RadioBeamWeb.KeyStoreController do
         {"user_signing_key", user_signing_key} -> {:user_signing_key, user_signing_key}
       end)
 
-    case CrossSigningKeyRing.put(user_id, opts) do
+    case KeyStore.put_cross_signing_keys(user_id, opts) do
       {:ok, %KeyStore{}} ->
         json(conn, %{})
 

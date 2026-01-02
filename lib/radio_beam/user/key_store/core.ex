@@ -18,17 +18,16 @@ defmodule RadioBeam.User.KeyStore.Core do
     since_created_at = PaginationToken.created_at(since)
 
     membership_event_stream
-    |> Stream.map(&zip_with_key_store_and_latest_id_key_change_at(&1, fetch_key_store, get_all_devices_of_user))
-    |> Stream.reject(fn {maybe_key_store, _, _, _} -> is_nil(maybe_key_store) end)
+    |> Stream.map(&zip_with_last_csk_and_last_device_key_change_at(&1, fetch_key_store, get_all_devices_of_user))
+    |> Stream.reject(fn {maybe_last_csk_change, _, _, _} -> is_nil(maybe_last_csk_change) end)
     |> Enum.group_by(
-      fn {key_store, user_id, last_device_id_key_change_at, _} ->
-        {key_store, user_id, last_device_id_key_change_at}
+      fn {last_csk_change, user_id, last_device_id_key_change_at, _} ->
+        {last_csk_change, user_id, last_device_id_key_change_at}
       end,
       fn {_, _, _, member_event} -> member_event end
     )
     |> Enum.reduce(%{changed: MapSet.new(), left: MapSet.new()}, fn
-      {{%{last_cross_signing_change_at: lcsca}, user_id, ldikca}, _}, acc
-      when lcsca > since_created_at or ldikca > since_created_at ->
+      {{lcsca, user_id, ldikca}, _}, acc when lcsca > since_created_at or ldikca > since_created_at ->
         Map.update!(acc, :changed, &MapSet.put(&1, user_id))
 
       {{_, user_id, _}, member_events}, acc ->
@@ -52,12 +51,13 @@ defmodule RadioBeam.User.KeyStore.Core do
     end)
   end
 
-  defp zip_with_key_store_and_latest_id_key_change_at(member_event, fetch_key_store, get_all_devices_of_user) do
+  defp zip_with_last_csk_and_last_device_key_change_at(member_event, fetch_key_store, get_all_devices_of_user) do
     user_id = member_event.state_key
 
     case fetch_key_store.(user_id) do
       {:ok, key_store} ->
-        {key_store, user_id, max_device_id_key_change_at(user_id, get_all_devices_of_user), member_event}
+        last_csk_change_at = key_store.cross_signing_key_ring.last_cross_signing_change_at
+        {last_csk_change_at, user_id, max_device_id_key_change_at(user_id, get_all_devices_of_user), member_event}
 
       {:error, :not_found} ->
         {nil, nil, member_event}

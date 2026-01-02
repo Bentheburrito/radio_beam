@@ -4,6 +4,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
   @moduletag [device_display_name: "da steam deck"]
 
   alias RadioBeam.User
+  alias RadioBeam.User.KeyStore
 
   describe "changes/2" do
     test "returns users who have made changes to their keys", %{conn: conn, user: user} do
@@ -123,23 +124,29 @@ defmodule RadioBeamWeb.KeysControllerTest do
   describe "upload_signatures/2" do
     setup %{user: user, device: device} do
       {csks, privkeys} = Fixtures.create_cross_signing_keys(user.id)
-      {:ok, keys} = User.CrossSigningKeyRing.put(user.id, csks)
+      {:ok, key_store} = KeyStore.put_cross_signing_keys(user.id, csks)
 
       {device_key, device_signingkey} = Fixtures.device_keys(device.id, user.id)
       {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
 
       {:ok, device} = RadioBeam.User.Database.fetch_user_device(user.id, device.id)
 
-      %{user: user, keys: keys, device: device, user_priv_csks: privkeys, device_signingkey: device_signingkey}
+      %{
+        user: user,
+        key_store: key_store,
+        device: device,
+        user_priv_csks: privkeys,
+        device_signingkey: device_signingkey
+      }
     end
 
     test "returns an empty object (200) when the signatures are successfully uploaded", %{
       conn: conn,
       device_signingkey: device_signingkey,
-      keys: keys,
+      key_store: key_store,
       user: user
     } do
-      master_key = User.CrossSigningKey.to_map(keys.cross_signing_key_ring.master, user.id)
+      master_key = User.CrossSigningKey.to_map(key_store.cross_signing_key_ring.master, user.id)
       master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
 
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
@@ -154,7 +161,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
     test "returns a failures object (200) if the uploaded signature is invalid", %{
       conn: conn,
       user: user,
-      keys: keys,
+      key_store: key_store,
       device: device
     } do
       {_random, random_privkey} = :crypto.generate_key(:eddsa, :ed25519)
@@ -162,7 +169,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
       device_signingkey =
         Polyjuice.Util.Ed25519.SigningKey.from_base64(Base.encode64(random_privkey, padding: false), device.id)
 
-      master_key = User.CrossSigningKey.to_map(keys.cross_signing_key_ring.master, user.id)
+      master_key = User.CrossSigningKey.to_map(key_store.cross_signing_key_ring.master, user.id)
       master_pubkeyb64 = master_key["keys"] |> Map.values() |> hd()
 
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
@@ -198,7 +205,7 @@ defmodule RadioBeamWeb.KeysControllerTest do
     test "returns the queried keys (200)", %{conn: conn} do
       %{id: user_id} = user = Fixtures.user()
       {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(user.id)
-      {:ok, _keys} = RadioBeam.User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
+      {:ok, _key_store} = KeyStore.put_cross_signing_keys(user.id, cross_signing_keys)
 
       {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
