@@ -7,7 +7,7 @@ defmodule RadioBeam.Sync do
   alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User
   alias RadioBeam.User.Device
-  alias RadioBeam.User.Keys
+  alias RadioBeam.User.KeyStore
 
   require Logger
 
@@ -59,7 +59,7 @@ defmodule RadioBeam.Sync do
   defp put_device_key_changes(sync, user, since) do
     changed_map =
       user.id
-      |> Keys.all_changed_since(since)
+      |> KeyStore.all_changed_since(since)
       |> Map.update!(:changed, &MapSet.to_list/1)
       |> Map.update!(:left, &MapSet.to_list/1)
 

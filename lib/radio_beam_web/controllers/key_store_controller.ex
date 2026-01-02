@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.KeysController do
+defmodule RadioBeamWeb.KeyStoreController do
   @moduledoc """
   Endpoints for retrieving and uploading media and files
   """
@@ -7,14 +7,14 @@ defmodule RadioBeamWeb.KeysController do
   import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4]
 
   alias RadioBeam.Errors
-  alias RadioBeam.User.Keys
+  alias RadioBeam.User.KeyStore
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKeyRing
-  alias RadioBeamWeb.Schemas.Keys, as: KeysSchema
+  alias RadioBeamWeb.Schemas.KeyStore, as: KeyStoreSchema
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.EnforceSchema, mod: KeysSchema
+  plug RadioBeamWeb.Plugs.EnforceSchema, mod: KeyStoreSchema
 
   @creds_dont_match_msg "The user/device ID specified in 'device_keys' do not match your session."
 
@@ -23,7 +23,7 @@ defmodule RadioBeamWeb.KeysController do
 
     changed_map =
       user_id
-      |> Keys.all_changed_since(request["from"])
+      |> KeyStore.all_changed_since(request["from"])
       |> Map.update!(:changed, &MapSet.to_list/1)
       |> Map.update!(:left, &MapSet.to_list/1)
 
@@ -64,7 +64,7 @@ defmodule RadioBeamWeb.KeysController do
       end)
 
     case CrossSigningKeyRing.put(user_id, opts) do
-      {:ok, %User.Keys{}} ->
+      {:ok, %KeyStore{}} ->
         json(conn, %{})
 
       {:error, error} when error in ~w|too_many_keys no_key_provided malformed_key|a ->
@@ -87,14 +87,14 @@ defmodule RadioBeamWeb.KeysController do
 
   @set_up_csk_msg "You must upload Cross-Signing Keys before you can upload signatures of other user's keys"
   def upload_signatures(conn, _params) do
-    case Keys.put_signatures(conn.assigns.user_id, conn.assigns.device_id, conn.assigns.request) do
+    case KeyStore.put_signatures(conn.assigns.user_id, conn.assigns.device_id, conn.assigns.request) do
       :ok -> json(conn, %{})
       {:error, :signer_has_no_user_csk} -> json_error(conn, 400, :bad_json, [@set_up_csk_msg])
       {:error, %{} = failures} -> json(conn, %{"failures" => map_nested_errors(failures)})
     end
   end
 
-  @spec map_nested_errors(%{String.t() => %{String.t() => Keys.put_signatures_error()}}) :: map()
+  @spec map_nested_errors(%{String.t() => %{String.t() => KeyStore.put_signatures_error()}}) :: map()
   defp map_nested_errors(nested_map_of_errors) do
     nested_map_of_errors
     |> Stream.flat_map(fn {user_id, error_map} ->
@@ -129,17 +129,17 @@ defmodule RadioBeamWeb.KeysController do
   end
 
   def claim(conn, _params) do
-    %{} = otks = Keys.claim_otks(conn.assigns.request["one_time_keys"])
+    %{} = otks = KeyStore.claim_otks(conn.assigns.request["one_time_keys"])
     json(conn, %{"one_time_keys" => otks})
   end
 
   def query(conn, _params) do
-    case Keys.query_all(conn.assigns.request["device_keys"], conn.assigns.user_id) do
+    case KeyStore.query_all(conn.assigns.request["device_keys"], conn.assigns.user_id) do
       %{} = user_key_map ->
         json(conn, user_key_map)
 
       error ->
-        Logger.error("Expected a map as the result of Keys.query_all, got: #{inspect(error)}")
+        Logger.error("Expected a map as the result of KeyStore.query_all, got: #{inspect(error)}")
         json_error(conn, 500, :unknown)
     end
   end

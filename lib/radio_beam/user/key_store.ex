@@ -1,4 +1,4 @@
-defmodule RadioBeam.User.Keys do
+defmodule RadioBeam.User.KeyStore do
   @moduledoc """
   Query a User's Device and CrossSigningKeys
 
@@ -13,7 +13,7 @@ defmodule RadioBeam.User.Keys do
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
-  alias RadioBeam.User.Keys.Core
+  alias RadioBeam.User.KeyStore.Core
   alias RadioBeam.User.RoomKeys
 
   require Logger
@@ -54,14 +54,14 @@ defmodule RadioBeam.User.Keys do
         version -> &RoomKeys.fetch_backup(&1, version)
       end
 
-    with {:ok, %__MODULE__{} = keys} <- Database.fetch_keys(user_id),
+    with {:ok, %__MODULE__{} = keys} <- Database.fetch_key_store(user_id),
          {:ok, %RoomKeys.Backup{} = backup} <- fetch_fxn.(keys.room_keys) do
       {:ok, RoomKeys.Backup.info_map(backup)}
     end
   end
 
   def fetch_room_keys_backup(user_id, version, room_id_or_all, session_id_or_all) do
-    with {:ok, %__MODULE__{} = keys} <- Database.fetch_keys(user_id),
+    with {:ok, %__MODULE__{} = keys} <- Database.fetch_key_store(user_id),
          {:ok, %RoomKeys.Backup{} = backup} <- RoomKeys.fetch_backup(keys.room_keys, version) do
       case {room_id_or_all, session_id_or_all} do
         {:all, :all} -> {:ok, backup}
@@ -97,7 +97,7 @@ defmodule RadioBeam.User.Keys do
   end
 
   defp update_room_keys(user_id, room_keys_updater) do
-    Database.update_keys(user_id, fn %__MODULE__{} = keys ->
+    Database.update_key_store(user_id, fn %__MODULE__{} = keys ->
       case room_keys_updater.(keys.room_keys) do
         {:ok, %RoomKeys{} = room_keys} -> put_in(keys.room_keys, room_keys)
         %RoomKeys{} = room_keys -> put_in(keys.room_keys, room_keys)
@@ -141,9 +141,9 @@ defmodule RadioBeam.User.Keys do
         end
       end)
 
-    fetch_keys = &Database.fetch_keys/1
+    fetch_key_store = &Database.fetch_key_store/1
     get_all_devices = &Database.get_all_devices_of_user/1
-    Core.all_changed_since(membership_event_stream, last_seen_event_by_room_id, since, fetch_keys, get_all_devices)
+    Core.all_changed_since(membership_event_stream, last_seen_event_by_room_id, since, fetch_key_store, get_all_devices)
   end
 
   @doc """
@@ -152,7 +152,7 @@ defmodule RadioBeam.User.Keys do
   """
   @spec query_all(%{User.id() => [Device.id()]}, User.id()) :: map()
   def query_all(query_map, querying_user_id) do
-    with {:ok, %__MODULE__{} = querying_user_keys} <- Database.fetch_keys(querying_user_id) do
+    with {:ok, %__MODULE__{} = querying_user_keys} <- Database.fetch_key_store(querying_user_id) do
       Enum.reduce(query_map, %{}, fn
         {^querying_user_id, device_ids}, key_results ->
           devices = Database.get_all_devices_of_user(querying_user_id)
@@ -160,7 +160,7 @@ defmodule RadioBeam.User.Keys do
           Core.add_all_keys(key_results, querying_user_id, querying_user_keys, device_ids, devices)
 
         {target_user_id, device_ids}, key_results ->
-          case Database.fetch_keys(target_user_id) do
+          case Database.fetch_key_store(target_user_id) do
             {:error, :not_found} ->
               key_results
 
@@ -189,9 +189,9 @@ defmodule RadioBeam.User.Keys do
 
   defp deps do
     %{
-      fetch_keys: &Database.fetch_keys/1,
+      fetch_key_store: &Database.fetch_key_store/1,
       fetch_user_device: &Database.fetch_user_device/2,
-      update_keys: &Database.update_keys/2,
+      update_key_store: &Database.update_key_store/2,
       update_user_device_with: &Database.update_user_device_with/3
     }
   end

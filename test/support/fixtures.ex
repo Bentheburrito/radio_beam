@@ -87,7 +87,7 @@ defmodule Fixtures do
     :ok = Database.insert_new_user(user)
     {:ok, local_account} = LocalAccount.new(user.id, strong_password())
     :ok = Database.insert_new_user_account(local_account)
-    :ok = Database.insert_new_keys(user_id, User.Keys.new!())
+    :ok = Database.insert_new_key_store(user_id, User.KeyStore.new!())
 
     user
   end

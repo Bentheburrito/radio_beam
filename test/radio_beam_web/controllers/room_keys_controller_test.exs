@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.RoomKeysControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.User.Keys
+  alias RadioBeam.User.KeyStore
 
   @algo "m.megolm_backup.v1.curve25519-aes-sha2"
   @auth_data %{
@@ -255,11 +255,11 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
   end
 
   defp add_room_keys_with_2_backups_to_user(user_id) do
-    {:ok, _backup} = Keys.create_room_keys_backup(user_id, @algo, @auth_data)
-    {:ok, _backup} = Keys.create_room_keys_backup(user_id, @algo, @auth_data)
+    {:ok, _backup} = KeyStore.create_room_keys_backup(user_id, @algo, @auth_data)
+    {:ok, _backup} = KeyStore.create_room_keys_backup(user_id, @algo, @auth_data)
   end
 
   defp add_e2ee_keys_to_backup(user_id, version, new_room_session_backups) do
-    Keys.put_room_keys_backup(user_id, version, new_room_session_backups)
+    KeyStore.put_room_keys_backup(user_id, version, new_room_session_backups)
   end
 end

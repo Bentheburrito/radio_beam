@@ -24,11 +24,11 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
 
   @doc "Put cross-signing keys for a user"
   @spec put(User.id(), put_opts()) ::
-          {:ok, User.Keys.t()}
+          {:ok, User.KeyStore.t()}
           | {:error, :not_found | :missing_master_key | :missing_or_invalid_master_key_signatures}
           | CrossSigningKey.parse_error()
   def put(user_id, opts) do
-    Database.update_keys(user_id, fn %User.Keys{} = keys ->
+    Database.update_key_store(user_id, fn %User.KeyStore{} = keys ->
       master_key = Keyword.get(opts, :master_key, keys.cross_signing_key_ring.master)
       self_signing_key = Keyword.get(opts, :self_signing_key, keys.cross_signing_key_ring.self)
       user_signing_key = Keyword.get(opts, :user_signing_key, keys.cross_signing_key_ring.user)

@@ -24,7 +24,7 @@ defmodule RadioBeam do
       User.Authentication.OAuth2,
       User.Authentication.LegacyAPI,
       User.EventFilter,
-      User.Keys,
+      User.KeyStore,
       ### temp / leaky
       ContentRepo.Database,
       ContentRepo.Thumbnail,

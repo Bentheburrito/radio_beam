@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.Schemas.Keys do
+defmodule RadioBeamWeb.Schemas.KeyStore do
   @moduledoc false
 
   import RadioBeamWeb.Schemas, only: [user_id: 1]

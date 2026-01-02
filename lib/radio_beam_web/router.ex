@@ -12,7 +12,7 @@ defmodule RadioBeamWeb.Router do
   alias RadioBeamWeb.ContentRepoController
   alias RadioBeamWeb.FilterController
   alias RadioBeamWeb.HomeserverInfoController
-  alias RadioBeamWeb.KeysController
+  alias RadioBeamWeb.KeyStoreController
   alias RadioBeamWeb.OAuth2Controller
   alias RadioBeamWeb.RelationsController
   alias RadioBeamWeb.RoomController
@@ -169,12 +169,12 @@ defmodule RadioBeamWeb.Router do
         put "/sendToDevice/:type/:transaction_id", ClientController, :send_to_device, rl(@user_metadata_write)
 
         scope "/keys" do
-          get "/changes", KeysController, :changes, rl(@user_metadata_read)
-          post "/claim", KeysController, :claim, rl(@user_metadata_write)
-          post "/device_signing/upload", KeysController, :upload_cross_signing, rl(@user_metadata_write)
-          post "/query", KeysController, :query, rl(@user_metadata_read)
-          post "/signatures/upload", KeysController, :upload_signatures, rl(@user_metadata_write)
-          post "/upload", KeysController, :upload, rl(@user_metadata_write)
+          get "/changes", KeyStoreController, :changes, rl(@user_metadata_read)
+          post "/claim", KeyStoreController, :claim, rl(@user_metadata_write)
+          post "/device_signing/upload", KeyStoreController, :upload_cross_signing, rl(@user_metadata_write)
+          post "/query", KeyStoreController, :query, rl(@user_metadata_read)
+          post "/signatures/upload", KeyStoreController, :upload_signatures, rl(@user_metadata_write)
+          post "/upload", KeyStoreController, :upload, rl(@user_metadata_write)
         end
 
         scope "/room_keys" do

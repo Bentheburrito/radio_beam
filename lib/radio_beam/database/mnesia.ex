@@ -10,7 +10,7 @@ defmodule RadioBeam.Database.Mnesia do
 
   import RadioBeam.Database.Mnesia.Tables.Device
   import RadioBeam.Database.Mnesia.Tables.DynamicOAuth2Client
-  import RadioBeam.Database.Mnesia.Tables.Keys
+  import RadioBeam.Database.Mnesia.Tables.KeyStore
   import RadioBeam.Database.Mnesia.Tables.LocalAccount
   import RadioBeam.Database.Mnesia.Tables.Room
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
@@ -26,7 +26,7 @@ defmodule RadioBeam.Database.Mnesia do
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Device
-  alias RadioBeam.User.Keys
+  alias RadioBeam.User.KeyStore
   alias RadioBeam.User.LocalAccount
 
   require Logger
@@ -34,7 +34,7 @@ defmodule RadioBeam.Database.Mnesia do
   @tables [
     Tables.Device,
     Tables.DynamicOAuth2Client,
-    Tables.Keys,
+    Tables.KeyStore,
     Tables.LocalAccount,
     Tables.Room,
     Tables.RoomAlias,
@@ -377,9 +377,9 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def fetch_keys(user_id) do
+  def fetch_key_store(user_id) do
     transaction(fn ->
-      case :mnesia.read(Tables.Keys, user_id, :read) do
+      case :mnesia.read(Tables.KeyStore, user_id, :read) do
         [] -> {:error, :not_found}
         [record] -> {:ok, record_to_domain_struct(record)}
       end
@@ -387,34 +387,34 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def insert_new_keys(user_id, %Keys{} = keys) do
-    keys_record = keys(user_id: user_id, keys: keys)
+  def insert_new_key_store(user_id, %KeyStore{} = key_store) do
+    key_store_record = key_store(user_id: user_id, key_store: key_store)
 
     transaction(fn ->
-      if user_keys_exists?(user_id),
+      if key_store_exists?(user_id),
         do: {:error, :already_exists},
-        else: :mnesia.write(Tables.Keys, keys_record, :write)
+        else: :mnesia.write(Tables.KeyStore, key_store_record, :write)
     end)
   end
 
-  defp user_keys_exists?(id), do: Tables.Keys |> :mnesia.read(id, :write) |> Enum.empty?() |> Kernel.not()
+  defp key_store_exists?(id), do: Tables.KeyStore |> :mnesia.read(id, :write) |> Enum.empty?() |> Kernel.not()
 
   @impl RadioBeam.User.Database
-  def update_keys(user_id, callback) do
+  def update_key_store(user_id, callback) do
     transaction(fn ->
-      case :mnesia.read(Tables.Keys, user_id, :write) do
+      case :mnesia.read(Tables.KeyStore, user_id, :write) do
         [] ->
           {:error, :not_found}
 
-        [keys(user_id: ^user_id) = record] ->
+        [key_store(user_id: ^user_id) = record] ->
           case record |> record_to_domain_struct() |> callback.() do
-            %Keys{} = keys ->
-              :mnesia.write(Tables.Keys, keys(user_id: user_id, keys: keys), :write)
-              {:ok, keys}
+            %KeyStore{} = key_store ->
+              :mnesia.write(Tables.KeyStore, key_store(user_id: user_id, key_store: key_store), :write)
+              {:ok, key_store}
 
-            {:ok, %Keys{} = keys} ->
-              :mnesia.write(Tables.Keys, keys(user_id: user_id, keys: keys), :write)
-              {:ok, keys}
+            {:ok, %KeyStore{} = key_store} ->
+              :mnesia.write(Tables.KeyStore, key_store(user_id: user_id, key_store: key_store), :write)
+              {:ok, key_store}
 
             error ->
               error
@@ -429,7 +429,7 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   defp record_to_domain_struct(user(user: %User{} = user)), do: user
-  defp record_to_domain_struct(keys(keys: %Keys{} = keys)), do: keys
+  defp record_to_domain_struct(key_store(key_store: %KeyStore{} = key_store)), do: key_store
   defp record_to_domain_struct(user_client_config(client_config: %ClientConfig{} = config)), do: config
   defp record_to_domain_struct(device(device: %Device{} = device)), do: device
   defp record_to_domain_struct(local_account(local_account: %LocalAccount{} = account)), do: account

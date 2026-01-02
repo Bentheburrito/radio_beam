@@ -8,7 +8,7 @@ defmodule RadioBeam.User.Database do
   alias RadioBeam.User.Authentication.OAuth2.Builtin.DynamicOAuth2Client
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Device
-  alias RadioBeam.User.Keys
+  alias RadioBeam.User.KeyStore
 
   @type return_value() :: term()
 
@@ -32,10 +32,10 @@ defmodule RadioBeam.User.Database do
   @callback upsert_oauth2_client(DynamicOAuth2Client.t()) :: :ok
   @callback fetch_oauth2_client(OAuth2.client_id()) :: {:ok, DynamicOAuth2Client.t()} | {:error, :not_found}
 
-  @callback fetch_keys(User.id()) :: {:ok, Keys.t()} | {:error, :not_found}
-  @callback insert_new_keys(User.id(), Keys.t()) :: :ok | {:error, :already_exists}
-  @callback update_keys(User.id(), (Keys.t() -> {:ok, Keys.t()} | {:error, term()})) ::
-              {:ok, Keys.t()} | {:error, :not_found | term()}
+  @callback fetch_key_store(User.id()) :: {:ok, KeyStore.t()} | {:error, :not_found}
+  @callback insert_new_key_store(User.id(), KeyStore.t()) :: :ok | {:error, :already_exists}
+  @callback update_key_store(User.id(), (KeyStore.t() -> {:ok, KeyStore.t()} | {:error, term()})) ::
+              {:ok, KeyStore.t()} | {:error, :not_found | term()}
 
   # deprecated
   @callback insert_new_user(User.t()) :: :ok | {:error, :already_exists}
@@ -56,9 +56,9 @@ defmodule RadioBeam.User.Database do
   defdelegate fetch_user_client_config(user_id), to: @database_backend
   defdelegate upsert_oauth2_client(oauth2_client_metadata), to: @database_backend
   defdelegate fetch_oauth2_client(client_id), to: @database_backend
-  defdelegate fetch_keys(user_id), to: @database_backend
-  defdelegate insert_new_keys(user_id, keys), to: @database_backend
-  defdelegate update_keys(user_id, callback), to: @database_backend
+  defdelegate fetch_key_store(user_id), to: @database_backend
+  defdelegate insert_new_key_store(user_id, key_store), to: @database_backend
+  defdelegate update_key_store(user_id, callback), to: @database_backend
 
   # deprecated
   defdelegate insert_new_user(user), to: @database_backend

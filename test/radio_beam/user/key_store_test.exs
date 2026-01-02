@@ -1,4 +1,4 @@
-defmodule RadioBeam.User.KeysTest do
+defmodule RadioBeam.User.KeyStoreTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room.Events.PaginationToken
@@ -6,7 +6,7 @@ defmodule RadioBeam.User.KeysTest do
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
-  alias RadioBeam.User.Keys
+  alias RadioBeam.User.KeyStore
   alias RadioBeam.Room
 
   @otk_keys %{
@@ -91,9 +91,11 @@ defmodule RadioBeam.User.KeysTest do
 
       assert %{^algo => 2} = Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)
 
-      task = Task.async(fn -> Keys.claim_otks(%{user.id => %{device.id => algo}}) end)
+      task = Task.async(fn -> KeyStore.claim_otks(%{user.id => %{device.id => algo}}) end)
 
-      assert %{^user_id => %{^device_id => key_id_to_key_obj1}} = Keys.claim_otks(%{user.id => %{device.id => algo}})
+      assert %{^user_id => %{^device_id => key_id_to_key_obj1}} =
+               KeyStore.claim_otks(%{user.id => %{device.id => algo}})
+
       assert %{^user_id => %{^device_id => key_id_to_key_obj2}} = Task.await(task)
 
       assert [{^algo <> ":" <> key_id1, key1}] = Map.to_list(key_id_to_key_obj1)
@@ -136,12 +138,12 @@ defmodule RadioBeam.User.KeysTest do
     test "returns an empty changed/left lists if the user is in no/empty rooms" do
       user = Fixtures.user()
       since_now = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user.id, since_now)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(user.id, since_now)
 
       {:ok, room_id} = Room.create(user)
       :pong = Room.Server.ping(room_id)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user.id, since_now)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(user.id, since_now)
     end
 
     test "does not include user's own key updates in changed" do
@@ -153,7 +155,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {user, _device} = Fixtures.create_and_put_device_keys(user, device)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user.id, before_update)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(user.id, before_update)
     end
 
     test "returns changed users who have added device identity keys since the given timestamp", %{
@@ -182,8 +184,8 @@ defmodule RadioBeam.User.KeysTest do
       Process.sleep(1)
 
       expected = MapSet.new([user1_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_change)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_change)
+      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.id, before_user1_change)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_user1_change)
 
       Process.sleep(1)
 
@@ -191,10 +193,10 @@ defmodule RadioBeam.User.KeysTest do
       after_user2_change = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id, user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_change)
+      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.id, before_user1_change)
       expected = MapSet.new([user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, after_user1_change)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user2_change)
+      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.id, after_user1_change)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_user2_change)
     end
 
     test "returns changed users who have joined the room since the given timestamp", %{
@@ -216,18 +218,18 @@ defmodule RadioBeam.User.KeysTest do
       after_user1_join = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_join)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_join)
+      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.id, before_user1_join)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_user1_join)
 
       {:ok, event_id} = Room.join(room_id, user2.id)
 
       after_user2_join = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id, user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, before_user1_join)
+      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.id, before_user1_join)
       expected = MapSet.new([user2_id])
-      assert %{changed: ^expected, left: @empty} = Keys.all_changed_since(creator.id, after_user1_join)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user2_join)
+      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.id, after_user1_join)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_user2_join)
     end
 
     test "does not return users for which we do not share a room", %{
@@ -245,11 +247,11 @@ defmodule RadioBeam.User.KeysTest do
 
       Fixtures.create_and_put_device_keys(user1, user1_device)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2.id, before_user1_change)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(user2.id, before_user1_change)
 
       {:ok, _} = Room.leave(room_id, user1.id)
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(user2.id, before_user1_change)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(user2.id, before_user1_change)
     end
 
     test "includes users in :left when they leave the last shared room", %{
@@ -273,18 +275,18 @@ defmodule RadioBeam.User.KeysTest do
       after_user1_leave = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_user1_leave)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_leave)
+      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.id, before_user1_leave)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_user1_leave)
 
       {:ok, event_id} = Room.leave(room_id, user2.id)
 
       after_user2_leave = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user1_id, user2_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_user1_leave)
+      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.id, before_user1_leave)
       expected = MapSet.new([user2_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, after_user1_leave)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user2_leave)
+      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.id, after_user1_leave)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_user2_leave)
     end
 
     test "does not include a user in :left if they still share other rooms", %{
@@ -315,8 +317,8 @@ defmodule RadioBeam.User.KeysTest do
         PaginationToken.new(%{room_id => event_id, room_id2 => event_id2}, :forward, System.os_time(:millisecond))
 
       expected = MapSet.new([user2_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_leave)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_leave)
+      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.id, before_leave)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_leave)
 
       before_leave2 =
         PaginationToken.new(%{room_id => event_id, room_id2 => event_id2}, :forward, System.os_time(:millisecond))
@@ -324,7 +326,7 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, _event_id} = Room.leave(room_id2, user1.id)
 
       expected = MapSet.new([user1_id])
-      assert %{changed: @empty, left: ^expected} = Keys.all_changed_since(creator.id, before_leave2)
+      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.id, before_leave2)
     end
 
     test "does not include a user in :changed if joined a room but previously shared another room", %{
@@ -345,8 +347,8 @@ defmodule RadioBeam.User.KeysTest do
 
       after_user1_join = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
 
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, before_user1_join)
-      assert %{changed: @empty, left: @empty} = Keys.all_changed_since(creator.id, after_user1_join)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, before_user1_join)
+      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.id, after_user1_join)
     end
   end
 
@@ -356,7 +358,7 @@ defmodule RadioBeam.User.KeysTest do
       {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(user.id)
       {:ok, _keys} = User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
 
-      assert %{} = query_result = Keys.query_all(%{user.id => []}, user.id)
+      assert %{} = query_result = KeyStore.query_all(%{user.id => []}, user.id)
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["master"]}} = query_result["master_keys"]
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["self_signing"]}} = query_result["self_signing_keys"]
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["user_signing"]}} = query_result["user_signing_keys"]
@@ -364,7 +366,7 @@ defmodule RadioBeam.User.KeysTest do
       {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
       {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
-      assert %{} = query_result = Keys.query_all(%{user.id => []}, user.id)
+      assert %{} = query_result = KeyStore.query_all(%{user.id => []}, user.id)
 
       assert %{
                ^user_id => %{
@@ -383,7 +385,7 @@ defmodule RadioBeam.User.KeysTest do
       {cross_signing_keys, _privkeys} = Fixtures.create_cross_signing_keys(user.id)
       {:ok, _user} = User.CrossSigningKeyRing.put(user.id, cross_signing_keys)
 
-      assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
+      assert %{} = query_result = KeyStore.query_all(%{user.id => []}, querying.id)
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["master"]}} = query_result["master_keys"]
       assert %{^user_id => %{"user_id" => ^user_id, "usage" => ["self_signing"]}} = query_result["self_signing_keys"]
       refute is_map_key(query_result, "user_signing_keys")
@@ -391,7 +393,7 @@ defmodule RadioBeam.User.KeysTest do
       {user, %{id: device_id} = device} = Fixtures.device(user)
       {device_key, _signingkey} = Fixtures.device_keys(device.id, user.id)
       {:ok, _otk_counts} = User.put_device_keys(user.id, device.id, identity_keys: device_key)
-      assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
+      assert %{} = query_result = KeyStore.query_all(%{user.id => []}, querying.id)
 
       assert %{
                ^user_id => %{
@@ -418,12 +420,12 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, _otk_counts} = User.put_device_keys(user.id, device1.id, identity_keys: device1_key)
       {:ok, _otk_counts} = User.put_device_keys(user.id, device2.id, identity_keys: device2_key)
       {:ok, _otk_counts} = User.put_device_keys(user.id, device3.id, identity_keys: device3_key)
-      assert %{} = query_result = Keys.query_all(%{user.id => []}, querying.id)
+      assert %{} = query_result = KeyStore.query_all(%{user.id => []}, querying.id)
 
       assert %{^user_id => device_keys_map} = query_result["device_keys"]
       assert 3 = map_size(device_keys_map)
 
-      assert %{} = query_result = Keys.query_all(%{user.id => [device_id1, device_id3]}, querying.id)
+      assert %{} = query_result = KeyStore.query_all(%{user.id => [device_id1, device_id3]}, querying.id)
 
       assert %{^user_id => device_keys_map} = query_result["device_keys"]
       assert 2 = map_size(device_keys_map)
@@ -456,7 +458,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
 
-      assert :ok = Keys.put_signatures(user.id, device.id, %{user.id => %{master_pubkeyb64 => master_key}})
+      assert :ok = KeyStore.put_signatures(user.id, device.id, %{user.id => %{master_pubkeyb64 => master_key}})
     end
 
     test "puts signatures for the user's own device keys", %{
@@ -473,7 +475,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, device_key} = Polyjuice.Util.JSON.sign(device.identity_keys, user.id, self_signingkey)
 
-      assert :ok = Keys.put_signatures(user.id, device.id, %{user.id => %{device.id => device_key}})
+      assert :ok = KeyStore.put_signatures(user.id, device.id, %{user.id => %{device.id => device_key}})
     end
 
     test "puts signatures for another user's master CSK", %{
@@ -497,7 +499,8 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
-      assert :ok = Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+      assert :ok =
+               KeyStore.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
     end
 
     test "errors with user_ids_do_not_match if CSKs do not belong to the given user" do
@@ -524,7 +527,7 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, master_key} = Polyjuice.Util.JSON.sign(master_key, user.id, device_signingkey)
 
       assert {:error, failures} =
-               Keys.put_signatures(user.id, device.id, %{user.id => %{master_pubkeyb64 => master_key}})
+               KeyStore.put_signatures(user.id, device.id, %{user.id => %{master_pubkeyb64 => master_key}})
 
       assert 1 = map_size(failures)
       assert failures[user.id][master_pubkeyb64] == :invalid_signature
@@ -545,7 +548,7 @@ defmodule RadioBeam.User.KeysTest do
 
       {:ok, device_key} = Polyjuice.Util.JSON.sign(device.identity_keys, user.id, self_signingkey)
 
-      assert {:error, failures} = Keys.put_signatures(user.id, device.id, %{user.id => %{device.id => device_key}})
+      assert {:error, failures} = KeyStore.put_signatures(user.id, device.id, %{user.id => %{device.id => device_key}})
       assert 1 = map_size(failures)
       assert failures[user.id][device.id] == :invalid_signature
     end
@@ -572,7 +575,7 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, glerp_self_key} = Polyjuice.Util.JSON.sign(glerp_self_key, user.id, user_signingkey)
 
       assert {:error, failures} =
-               Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_self_pubkeyb64 => glerp_self_key}})
+               KeyStore.put_signatures(user.id, device.id, %{glerp.id => %{glerp_self_pubkeyb64 => glerp_self_key}})
 
       assert 1 = map_size(failures)
       assert failures[glerp.id][glerp_self_pubkeyb64] == :signature_key_not_known
@@ -599,7 +602,7 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
       assert {:error, failures} =
-               Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+               KeyStore.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
 
       assert 1 = map_size(failures)
       assert failures[glerp.id][glerp_master_pubkeyb64] == :signature_key_not_known
@@ -607,7 +610,7 @@ defmodule RadioBeam.User.KeysTest do
 
     test "errors with :user_not_found when the user does not exist", %{user: user, device: device} do
       assert {:error, failures} =
-               Keys.put_signatures(user.id, device.id, %{"@whateverman:localhost" => %{"asdf" => %{}}})
+               KeyStore.put_signatures(user.id, device.id, %{"@whateverman:localhost" => %{"asdf" => %{}}})
 
       assert 1 = map_size(failures)
       assert failures["@whateverman:localhost"]["asdf"] == :user_not_found
@@ -637,7 +640,7 @@ defmodule RadioBeam.User.KeysTest do
       {:ok, glerp_master_key} = Polyjuice.Util.JSON.sign(glerp_master_key, user.id, user_signingkey)
 
       assert {:error, failures} =
-               Keys.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
+               KeyStore.put_signatures(user.id, device.id, %{glerp.id => %{glerp_master_pubkeyb64 => glerp_master_key}})
 
       assert 1 = map_size(failures)
       assert failures[glerp.id][glerp_master_pubkeyb64] == :different_keys
