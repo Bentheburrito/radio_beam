@@ -91,7 +91,7 @@ defmodule Fixtures do
     local_account
   end
 
-  def create_device(user_id, display_name \\ Device.default_device_name()) do
+  def create_device(user_id, display_name \\ Device.default_name()) do
     device = Device.new(user_id, device_id(), display_name: display_name)
     :ok = Database.insert_new_device(device)
 

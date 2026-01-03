@@ -29,8 +29,7 @@ defmodule RadioBeam do
       ContentRepo.Database,
       ContentRepo.Thumbnail,
       ContentRepo.Upload,
-      ContentRepo.Upload.FileInfo,
-      User.Device
+      ContentRepo.Upload.FileInfo
     ]
 
   alias RadioBeam.Config

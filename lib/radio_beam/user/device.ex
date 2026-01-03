@@ -28,7 +28,7 @@ defmodule RadioBeam.User.Device do
   def new(user_id, device_id, opts) do
     %__MODULE__{
       id: device_id,
-      display_name: Keyword.get(opts, :display_name, default_device_name()),
+      display_name: Keyword.get(opts, :display_name, default_name()),
       identity_keys: nil,
       identity_keys_last_updated_at: 0,
       last_issued_token_ids: %{access: nil, refresh: nil},
@@ -133,5 +133,5 @@ defmodule RadioBeam.User.Device do
     )
   end
 
-  def default_device_name, do: "New Device (added #{Date.to_string(Date.utc_today())})"
+  def default_name, do: "New Device (added #{Date.to_string(Date.utc_today())})"
 end

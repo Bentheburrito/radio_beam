@@ -10,7 +10,7 @@ defmodule RadioBeamWeb.Schemas.LegacyAuthAPI do
     %{
       "device_id" => [:string, :optional],
       "inhibit_login" => [:boolean, default: false],
-      "initial_device_display_name" => [:string, default: RadioBeam.User.Device.default_device_name()],
+      "initial_device_display_name" => [:string, default: RadioBeam.User.default_device_name()],
       "password" => :string,
       "username" => &Schema.user_localpart/1
     }
@@ -24,7 +24,7 @@ defmodule RadioBeamWeb.Schemas.LegacyAuthAPI do
         "type" => Schema.enum(["m.id.user"]),
         "user" => Schema.any_of([&Schema.user_localpart/1, &Schemas.user_id/1])
       },
-      "initial_device_display_name" => [:string, default: RadioBeam.User.Device.default_device_name()],
+      "initial_device_display_name" => [:string, default: RadioBeam.User.default_device_name()],
       "password" => :string,
       "type" => Schema.enum(["m.login.password"])
     }

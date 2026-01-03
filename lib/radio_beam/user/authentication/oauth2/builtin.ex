@@ -413,14 +413,18 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   @impl RadioBeam.User.Authentication.OAuth2
   def authenticate_user_by_access_token(token, device_ip) do
     with {:ok, %{"sub" => composite_id} = claims} <- Guardian.decode_and_verify(token),
-         {:ok, user_id, device_id} <- Guardian.parse_composite_id(composite_id) do
-      Database.update_user_device_with(user_id, device_id, fn %Device{} = device ->
-        if claims["typ"] != "access" or claims["jti"] in device.revoked_unexpired_token_ids do
-          {:error, :invalid_token}
-        else
-          perform_device_upkeep(device, device_ip)
-        end
-      end)
+         {:ok, user_id, device_id} <- Guardian.parse_composite_id(composite_id),
+         {:ok, device} <-
+           Database.update_user_device_with(user_id, device_id, &check_claims_and_upkeep(claims, &1, device_ip)) do
+      {:ok, device.user_id, device.id}
+    end
+  end
+
+  defp check_claims_and_upkeep(claims, %Device{} = device, device_ip) do
+    if claims["typ"] != "access" or claims["jti"] in device.revoked_unexpired_token_ids do
+      {:error, :invalid_token}
+    else
+      perform_device_upkeep(device, device_ip)
     end
   end
 

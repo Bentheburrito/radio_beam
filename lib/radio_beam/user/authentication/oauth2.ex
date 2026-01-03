@@ -87,7 +87,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
               {:ok, Guardian.Token.token(), Guardian.Token.token(), Guardian.Token.claims(), non_neg_integer()}
               | {:error, :invalid_grant | :not_found}
   @callback authenticate_user_by_access_token(Guardian.Token.token(), ip_tuple()) ::
-              {:ok, Device.t()} | {:error, :expired_token | :invalid_token | :not_found}
+              {:ok, User.id(), Device.id()} | {:error, :expired_token | :invalid_token | :not_found}
   @callback refresh_token(Guardian.Token.token()) ::
               {:ok, Guardian.Token.token(), Guardian.Token.token(), scope_urns :: String.t(), non_neg_integer()}
               | {:error, :expired_token | :invalid_token | :not_found}

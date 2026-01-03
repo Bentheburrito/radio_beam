@@ -21,6 +21,8 @@ defmodule RadioBeam.User do
 
   ### DEVICE ###
 
+  defdelegate default_device_name, to: Device, as: :default_name
+
   @doc "Gets metadata about a user's device"
   @spec get_device_info(id(), Device.id()) :: {:ok, map()} | {:error, :not_found}
   def get_device_info(user_id, device_id) do
