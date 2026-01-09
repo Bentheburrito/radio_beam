@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
-  import :timer, only: [minutes: 1, hours: 1]
+  import :timer, only: [seconds: 1, minutes: 1, hours: 1]
   import RadioBeam.RateLimit, only: [new!: 4, /: 2]
   import RadioBeamWeb.Utils, only: [rl: 1]
   import Kernel, except: [/: 2]
@@ -29,12 +29,12 @@ defmodule RadioBeamWeb.Router do
   @frequent_ephemeral_write new!(500 / minutes(1), 50 / minutes(2), 25 / minutes(2), 50 / minutes(3))
   @infrequent_cheap_static_read new!(100 / minutes(1), 25 / minutes(2), 10 / minutes(2), 50 / minutes(2))
   @room_event_read new!(500 / minutes(1), 50 / minutes(1), 25 / minutes(1), 100 / minutes(2))
-  @room_event_write new!(500 / minutes(1), 20 / minutes(1), 15 / minutes(1), 100 / minutes(2))
+  @room_event_write new!(500 / seconds(10), 20 / minutes(1), 15 / minutes(1), 100 / minutes(1))
   # for endpoints likely to be hit by scrapers (e.g. root "/") that we don't care get rate limited aggressively
   @unauth_heavily_restrict_ip new!(30 / minutes(5), 1 / minutes(1), 1 / minutes(1), 5 / minutes(2))
   @unauth_static_read new!(200 / minutes(1), 1 / minutes(1), 1 / minutes(1), 100 / minutes(2))
   @user_metadata_read new!(500 / minutes(1), 100 / minutes(2), 50 / minutes(2), 100 / minutes(2))
-  @user_metadata_write new!(100 / minutes(1), 20 / minutes(2), 15 / minutes(2), 50 / minutes(2))
+  @user_metadata_write new!(400 / minutes(1), 80 / minutes(1), 40 / minutes(1), 100 / minutes(2))
   @user_sync new!(5_000 / minutes(1), 100 / minutes(1), 80 / minutes(1), 100 / minutes(1))
 
   if Mix.env() == :test do

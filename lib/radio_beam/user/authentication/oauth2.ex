@@ -4,6 +4,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
   interface with dedicated authorization servers.
   """
   alias RadioBeam.User
+  alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.KeyStore
@@ -120,6 +121,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
   def authenticate_user_by_password(user_id, password, code_grant_values, oauth2_module \\ oauth2_module()) do
     if code_grant_values.prompt == :create do
       with {:ok, %LocalAccount{} = user_account} <- LocalAccount.new(user_id, password),
+           {:ok, _config} <- Database.upsert_user_client_config_with(user_id, &Function.identity/1),
            :ok <- Database.insert_new_key_store(user_id, KeyStore.new!()),
            :ok <- Database.insert_new_user_account(user_account) do
         oauth2_module.authenticate_user_by_password(user_id, password, code_grant_values)
