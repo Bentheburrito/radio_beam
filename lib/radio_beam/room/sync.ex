@@ -4,13 +4,13 @@ defmodule RadioBeam.Room.Sync do
   alias RadioBeam.Room.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.EphemeralState
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Sync.Core
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Sync.Source.NextBatch
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
@@ -124,8 +124,8 @@ defmodule RadioBeam.Room.Sync do
 
   defp use_last_sync_event_id_or_nil(nil, _room_id), do: nil
 
-  defp use_last_sync_event_id_or_nil(%PaginationToken{} = since, room_id) do
-    case PaginationToken.room_last_seen_event_id(since, room_id) do
+  defp use_last_sync_event_id_or_nil(%NextBatch{} = since, room_id) do
+    case NextBatch.fetch(since, room_id) do
       {:ok, event_id} -> event_id
       {:error, :not_found} -> nil
     end

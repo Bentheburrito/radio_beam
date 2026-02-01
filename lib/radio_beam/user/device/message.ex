@@ -45,7 +45,7 @@ defmodule RadioBeam.User.Device.Message do
       |> Enum.sort_by(
         fn
           :unsent -> 0
-          %{created_at_ms: created_at_ms} -> created_at_ms
+          num when is_integer(num) -> num
         end,
         :desc
       )

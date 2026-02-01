@@ -1,7 +1,7 @@
-defmodule RadioBeam.Room.Events.PaginationTokenTest do
+defmodule RadioBeam.Sync.Source.NextBatchTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room.Events.PaginationToken
+  alias RadioBeam.Sync.Source.NextBatch
 
   describe "new/3,4" do
     setup do
@@ -12,12 +12,12 @@ defmodule RadioBeam.Room.Events.PaginationTokenTest do
       %{room: room, event_id: event_id}
     end
 
-    test "creates a new %PaginationToken{}", %{room: room, event_id: event_id} do
+    test "creates a new %NextBatch{}", %{room: room, event_id: event_id} do
       now = System.os_time(:millisecond)
 
       for dir <- ~w|forward backward|a do
-        assert %PaginationToken{} = token = PaginationToken.new(%{room.id => event_id}, dir, now)
-        assert ^token = PaginationToken.new(room.id, event_id, dir, now)
+        assert %NextBatch{} = token = NextBatch.new!(now, %{room.id => event_id}, dir)
+        assert ^token = NextBatch.new!(now, %{room.id => event_id}, dir)
       end
     end
 
@@ -25,11 +25,11 @@ defmodule RadioBeam.Room.Events.PaginationTokenTest do
       now = System.os_time(:millisecond)
 
       assert_raise(FunctionClauseError, fn ->
-        PaginationToken.new(room.id, event_id, :invalid_direction, now)
+        NextBatch.new!(now, %{room.id => event_id}, :invalid_direction)
       end)
 
       assert_raise(FunctionClauseError, fn ->
-        PaginationToken.new(room.id, event_id, :forward, -123)
+        NextBatch.new!(-123, %{room.id => event_id}, :forward)
       end)
     end
   end
@@ -45,20 +45,20 @@ defmodule RadioBeam.Room.Events.PaginationTokenTest do
 
     test "fetches the saved event ID for the given room ID", %{room: room, event_id: event_id} do
       now = System.os_time(:millisecond)
-      token = PaginationToken.new(room.id, event_id, :forward, now)
+      token = NextBatch.new!(now, %{room.id => event_id}, :forward)
 
-      assert {:ok, ^event_id} = PaginationToken.room_last_seen_event_id(token, room.id)
+      assert {:ok, ^event_id} = NextBatch.fetch(token, room.id)
     end
 
     test "returns {:error, :not_found} when the room ID is unknown", %{room: room, event_id: event_id} do
       now = System.os_time(:millisecond)
-      token = PaginationToken.new(room.id, event_id, :forward, now)
+      token = NextBatch.new!(now, %{room.id => event_id}, :forward)
 
-      assert {:error, :not_found} = PaginationToken.room_last_seen_event_id(token, Fixtures.room_id())
+      assert {:error, :not_found} = NextBatch.fetch(token, Fixtures.room_id())
     end
   end
 
-  describe "encode/1" do
+  describe "JSON.encode!/1" do
     setup do
       creator_id = Fixtures.user_id()
       room = Fixtures.room("11", creator_id)
@@ -67,27 +67,29 @@ defmodule RadioBeam.Room.Events.PaginationTokenTest do
       %{room: room, event_id: event_id}
     end
 
-    test "successfully encodes %PaginationToken{}s", %{room: room, event_id: event_id} do
+    test "successfully encodes %NextBatch{}s", %{room: room, event_id: event_id} do
       now = System.os_time(:millisecond)
       other_room_id = Fixtures.room_id()
       pairs = %{room.id => event_id, other_room_id => event_id}
 
       for dir <- ~w|forward backward|a do
-        prefix = "batch:#{dir}:#{now}:"
-        token = PaginationToken.new(pairs, dir, now)
-        encoded_token = PaginationToken.encode(token)
+        token = NextBatch.new!(now, pairs, dir)
+        encoded_token = JSON.encode!(token)
 
-        assert ^prefix <> rest = encoded_token
-        assert [b64_room_id, ^event_id, b64_other_room_id, ^event_id] = String.split(rest, ":")
+        assert encoded_token =~ "#{dir}"
+        assert encoded_token =~ "#{now}"
 
-        for b64_room_id <- [b64_room_id, b64_other_room_id] do
-          assert Base.url_decode64!(b64_room_id) in [room.id, other_room_id]
+        assert %{} = decoded_map = URI.decode_query(encoded_token)
+
+        for "!" <> _ = room_id <- Map.keys(decoded_map) do
+          assert room_id in [room.id, other_room_id]
+          assert Map.fetch!(decoded_map, room_id) == event_id
         end
       end
     end
   end
 
-  describe "parse/1" do
+  describe "decode/1" do
     setup do
       creator_id = Fixtures.user_id()
       room = Fixtures.room("11", creator_id)
@@ -96,15 +98,15 @@ defmodule RadioBeam.Room.Events.PaginationTokenTest do
       %{room: room, event_id: event_id}
     end
 
-    test "successfully decodes an encoded %PaginationToken{}", %{room: room, event_id: event_id} do
+    test "successfully decodes an encoded %NextBatch{}", %{room: room, event_id: event_id} do
       now = System.os_time(:millisecond)
       other_room_id = Fixtures.room_id()
       pairs = %{room.id => event_id, other_room_id => event_id}
 
-      token = PaginationToken.new(pairs, :forward, now)
-      encoded_token = PaginationToken.encode(token)
+      token = NextBatch.new!(now, pairs, :forward)
+      encoded_token = to_string(token)
 
-      assert {:ok, ^token} = PaginationToken.parse(encoded_token)
+      assert {:ok, ^token} = NextBatch.decode(encoded_token)
     end
   end
 end

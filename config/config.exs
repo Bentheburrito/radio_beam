@@ -30,7 +30,7 @@ config :radio_beam,
   registration_enabled: true,
   sync: %{
     concurrency: 5,
-    timeout: :timer.seconds(15)
+    timeout: :timer.minutes(1)
   },
   versions: %{
     unstable_features: %{},

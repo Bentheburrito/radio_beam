@@ -7,11 +7,11 @@ defmodule RadioBeam.Room.Timeline do
   require Logger
 
   alias RadioBeam.Room.Database
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Participating
+  alias RadioBeam.Sync.Source.NextBatch
   alias RadioBeam.Room
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
@@ -23,7 +23,7 @@ defmodule RadioBeam.Room.Timeline do
 
   ### Options
 
-  - `to`: A `PaginationToken` to return events up to.
+  - `to`: A `NextBatch` token to return events up to.
   - `filter`: A `User.EventFilter` to apply to returned events.
   - `limit`: If `filter` is not supplied, this will apply a maximum limit of
     events returned. Otherwise the `EventFilter`'s limits will be applied.
@@ -37,8 +37,8 @@ defmodule RadioBeam.Room.Timeline do
       %{filter: filter, ignored_user_ids: ignored_user_ids} = get_user_timeline_preferences(user_id, opts)
 
       maybe_to_event =
-        with %PaginationToken{} = since <- Keyword.get(opts, :to, :none),
-             {:ok, to_event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
+        with %NextBatch{} = since <- Keyword.get(opts, :to, :none),
+             {:ok, to_event_id} <- NextBatch.fetch(since, room.id),
              {:ok, to_event_stream} <- Room.View.get_events(room.id, user_id, [to_event_id]),
              [to_event] <- Enum.take(to_event_stream, 1) do
           to_event
@@ -55,8 +55,8 @@ defmodule RadioBeam.Room.Timeline do
 
       event_stream =
         case from_token do
-          {%PaginationToken{} = from, _dir} ->
-            if PaginationToken.direction(from) != direction do
+          {%NextBatch{} = from, _dir} ->
+            if NextBatch.direction(from) != direction do
               user_event_stream
             else
               Stream.drop(user_event_stream, 1)
@@ -87,23 +87,23 @@ defmodule RadioBeam.Room.Timeline do
 
       start_direction =
         case from_token do
-          {%PaginationToken{} = from, _dir} -> PaginationToken.direction(from)
+          {%NextBatch{} = from, _dir} -> NextBatch.direction(from)
           _else -> if direction == :forward, do: :backward, else: :forward
         end
 
       start_token =
         case Enum.take(user_event_stream, 1) do
           [first_event | _] ->
-            PaginationToken.new(room_id, first_event.id, start_direction, System.os_time(:millisecond))
+            NextBatch.new!(System.os_time(:millisecond), %{room_id => first_event.id}, start_direction)
 
           [] ->
-            PaginationToken.new(%{}, start_direction, System.os_time(:millisecond))
+            NextBatch.new!(System.os_time(:millisecond), %{}, start_direction)
         end
 
       end_token =
         if maybe_next_event_id == :no_more_events,
           do: :no_more_events,
-          else: PaginationToken.new(room_id, maybe_next_event_id, direction, System.os_time(:millisecond))
+          else: NextBatch.new!(System.os_time(:millisecond), %{room_id => maybe_next_event_id}, direction)
 
       {:ok,
        Chunk.new(
@@ -137,8 +137,8 @@ defmodule RadioBeam.Room.Timeline do
   defp map_from_pagination_token(:root, _room_id), do: {:ok, :root, :forward}
   defp map_from_pagination_token(:tip, _room_id), do: {:ok, :tip, :backward}
 
-  defp map_from_pagination_token({%PaginationToken{} = token, direction}, room_id) do
-    case PaginationToken.room_last_seen_event_id(token, room_id) do
+  defp map_from_pagination_token({%NextBatch{} = token, direction}, room_id) do
+    case NextBatch.fetch(token, room_id) do
       {:ok, event_id} -> {:ok, {event_id, direction}, direction}
       {:error, :not_found} -> {:error, :from_token_missing_room_id}
     end

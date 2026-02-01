@@ -4,7 +4,7 @@ defmodule RadioBeamWeb.OAuth2ControllerTest do
   describe "whoami/2" do
     test "successfully gets a known users's info", %{
       conn: conn,
-      device: %{id: device_id},
+      device_id: device_id,
       account: %{user_id: user_id}
     } do
       conn = get(conn, ~p"/_matrix/client/v3/account/whoami", %{})

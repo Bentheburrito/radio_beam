@@ -284,7 +284,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     if pdu.event.type == "m.room.member" and pdu.event.content["membership"] == "invite" do
       [
         new_event_message,
-        {PubSub.invite_events(pdu.event.state_key), {:room_invite, room_id}}
+        {PubSub.invite_events(pdu.event.state_key), {:room_invite, pdu.event.state_key, pdu.event.sender, room_id}}
       ]
     else
       [new_event_message]

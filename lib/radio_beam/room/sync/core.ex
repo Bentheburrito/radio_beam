@@ -2,21 +2,18 @@ defmodule RadioBeam.Room.Sync.Core do
   @moduledoc false
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
-  alias RadioBeam.Room.Events.PaginationToken
-  alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
-  def perform(%Sync{} = sync, %Room{} = room) do
-    {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", sync.client_config.user_id)
+  def perform(%{} = inputs, %Room{} = room) do
+    {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", inputs.user_id)
     user_membership = user_membership_pdu.event.content["membership"]
 
     maybe_last_sync_room_state_pdus =
-      with %PaginationToken{} = since <- sync.start,
-           {:ok, event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
+      with "$" <> _ = event_id <- inputs.last_batch,
            {:ok, %PDU{} = pdu} <- Room.DAG.fetch(room.dag, event_id),
            %{} = state_at_last_sync <- Room.State.get_all_at(room.state, pdu) do
         Map.values(state_at_last_sync)
@@ -25,32 +22,31 @@ defmodule RadioBeam.Room.Sync.Core do
       end
 
     case user_membership do
-      "leave" when not sync.filter.include_leave? ->
+      "leave" when not inputs.event_filter.include_leave? ->
         :no_update
 
       membership when membership in ~w|ban join leave| ->
-        event_stream = sync.functions.event_stream.(room.id)
-        typing_user_ids = sync.functions.typing_user_ids.(room.id)
+        event_stream = inputs.functions.event_stream.(room.id)
+        typing_user_ids = inputs.functions.typing_user_ids.(room.id)
 
         if Enum.empty?(event_stream) do
           :no_update
         else
           joined_room_result(
-            sync,
+            inputs,
             room,
             membership,
             event_stream,
-            sync.ignored_user_ids,
             maybe_last_sync_room_state_pdus,
             typing_user_ids
           )
         end
 
       "invite" when maybe_last_sync_room_state_pdus == :initial ->
-        if user_membership_pdu.event.sender in sync.ignored_user_ids do
+        if user_membership_pdu.event.sender in inputs.ignored_user_ids do
           :no_update
         else
-          InvitedRoomResult.new!(room, sync.client_config.user_id, user_membership_pdu.event.id)
+          InvitedRoomResult.new!(room, inputs.user_id)
         end
 
       "invite" ->
@@ -63,18 +59,16 @@ defmodule RadioBeam.Room.Sync.Core do
   end
 
   defp joined_room_result(
-         sync,
+         inputs,
          room,
          membership,
          event_stream,
-         ignored_user_ids,
          maybe_last_sync_room_state_pdus,
          typing_user_ids
        ) do
     maybe_to_event =
-      with %PaginationToken{} = since <- sync.start,
-           {:ok, to_event_id} <- PaginationToken.room_last_seen_event_id(since, room.id),
-           to_event_stream <- sync.functions.get_events_for_user.(room.id, [to_event_id]),
+      with "$" <> _ = to_event_id <- inputs.last_batch,
+           to_event_stream <- inputs.functions.get_events_for_user.(room.id, [to_event_id]),
            [to_event] <- Enum.take(to_event_stream, 1) do
         to_event
       else
@@ -90,8 +84,10 @@ defmodule RadioBeam.Room.Sync.Core do
 
     {timeline_events, maybe_next_event_id} =
       event_stream
-      |> Stream.filter(&Timeline.allow_event_for_user?(&1, sync.filter, ignored_user_ids, maybe_to_event))
-      |> Stream.take(sync.filter.timeline.limit)
+      |> Stream.filter(
+        &Timeline.allow_event_for_user?(&1, inputs.event_filter, inputs.ignored_user_ids, maybe_to_event)
+      )
+      |> Stream.take(inputs.event_filter.timeline.limit)
       |> Stream.take_while(not_passed_to)
       |> Enum.flat_map_reduce(first_event.id, fn event, _last_event_id ->
         cond do
@@ -104,18 +100,18 @@ defmodule RadioBeam.Room.Sync.Core do
     opts = [
       next_event_id: maybe_next_event_id,
       maybe_last_sync_room_state_pdus: maybe_last_sync_room_state_pdus,
-      full_state?: sync.full_state?,
-      known_memberships: sync.known_memberships,
-      filter: sync.filter,
+      full_state?: inputs.full_state?,
+      known_memberships: inputs.known_memberships,
+      filter: inputs.event_filter,
       typing: typing_user_ids
     ]
 
     JoinedRoomResult.new(
       room,
-      sync.client_config.user_id,
-      sync.client_config.account_data,
+      inputs.user_id,
+      inputs.account_data,
       timeline_events,
-      sync.functions.get_events_for_user,
+      inputs.functions.get_events_for_user,
       membership,
       opts
     )

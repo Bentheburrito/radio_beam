@@ -4,18 +4,18 @@ defmodule RadioBeamWeb.ClientControllerTest do
   @moduletag [device_display_name: "da steam deck"]
 
   describe "get_device/2" do
-    test "returns a list of devices", %{conn: conn, device: device} do
+    test "returns a list of devices", %{conn: conn, device_id: device_id} do
       conn = get(conn, ~p"/_matrix/client/v3/devices", %{})
 
-      expected_device = %{"device_id" => device.id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"}
+      expected_device = %{"device_id" => device_id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"}
       assert %{"devices" => [actual_device]} = json_response(conn, 200)
       assert ^expected_device = Map.delete(actual_device, "last_seen_ts")
     end
 
-    test "returns a device under the given device ID", %{conn: conn, device: device} do
-      conn = get(conn, ~p"/_matrix/client/v3/devices/#{device.id}", %{})
+    test "returns a device under the given device ID", %{conn: conn, device_id: device_id} do
+      conn = get(conn, ~p"/_matrix/client/v3/devices/#{device_id}", %{})
 
-      expected_device = %{"device_id" => device.id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"}
+      expected_device = %{"device_id" => device_id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"}
       assert actual_device = json_response(conn, 200)
       assert ^expected_device = Map.delete(actual_device, "last_seen_ts")
     end
@@ -28,15 +28,15 @@ defmodule RadioBeamWeb.ClientControllerTest do
   end
 
   describe "put_device_display_name/2" do
-    test "returns empty object (200) when given a new display name", %{conn: conn, device: device} do
-      conn = put(conn, ~p"/_matrix/client/v3/devices/#{device.id}", %{"display_name" => "da steam machine"})
+    test "returns empty object (200) when given a new display name", %{conn: conn, device_id: device_id} do
+      conn = put(conn, ~p"/_matrix/client/v3/devices/#{device_id}", %{"display_name" => "da steam machine"})
 
       assert response = json_response(conn, 200)
       assert 0 = map_size(response)
     end
 
-    test "returns empty object (200) even when no new display name is given", %{conn: conn, device: device} do
-      conn = put(conn, ~p"/_matrix/client/v3/devices/#{device.id}", %{})
+    test "returns empty object (200) even when no new display name is given", %{conn: conn, device_id: device_id} do
+      conn = put(conn, ~p"/_matrix/client/v3/devices/#{device_id}", %{})
 
       assert response = json_response(conn, 200)
       assert 0 = map_size(response)
@@ -44,10 +44,10 @@ defmodule RadioBeamWeb.ClientControllerTest do
   end
 
   describe "send_to_device/2" do
-    test "returns an empty object on success (200)", %{conn: conn, account: account, device: device} do
+    test "returns an empty object on success (200)", %{conn: conn, account: account, device_id: device_id} do
       messages = %{
         account.user_id => %{
-          device.id => %{"content" => %{"hello" => "world"}, "sender" => account.user_id, "type" => "org.some.hello"}
+          device_id => %{"content" => %{"hello" => "world"}, "sender" => account.user_id, "type" => "org.some.hello"}
         }
       }
 
@@ -77,13 +77,13 @@ defmodule RadioBeamWeb.ClientControllerTest do
     test "returns an empty object (200) and even when a message coudn't be delivered because a device is not found", %{
       conn: conn,
       account: account,
-      device: device
+      device_id: device_id
     } do
       message = %{"content" => %{"hello" => "world"}, "sender" => account.user_id, "type" => "org.some.hello"}
 
       messages = %{
         account.user_id => %{
-          device.id => message,
+          device_id => message,
           "idontexist" => message
         }
       }

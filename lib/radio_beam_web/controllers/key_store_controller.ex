@@ -7,8 +7,9 @@ defmodule RadioBeamWeb.KeyStoreController do
   import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4]
 
   alias RadioBeam.Errors
-  alias RadioBeam.User.KeyStore
+  alias RadioBeam.Sync
   alias RadioBeam.User
+  alias RadioBeam.User.KeyStore
   alias RadioBeamWeb.Schemas.KeyStore, as: KeyStoreSchema
 
   require Logger
@@ -20,9 +21,12 @@ defmodule RadioBeamWeb.KeyStoreController do
   def changes(conn, _params) do
     %{user_id: user_id, request: request} = conn.assigns
 
+    fetch_last_seen_event_id = Sync.batch_token_to_latest_event_id_fetcher(request["from"])
+    since_timestamp = Sync.batch_token_timestamp(request["from"])
+
     changed_map =
       user_id
-      |> KeyStore.all_changed_since(request["from"])
+      |> KeyStore.all_changed_since(fetch_last_seen_event_id, since_timestamp)
       |> Map.update!(:changed, &MapSet.to_list/1)
       |> Map.update!(:left, &MapSet.to_list/1)
 

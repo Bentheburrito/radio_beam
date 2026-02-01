@@ -1,13 +1,12 @@
 defmodule RadioBeam.User.KeyStoreTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room.Events.PaginationToken
+  alias RadioBeam.Room
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.KeyStore
-  alias RadioBeam.Room
 
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
@@ -110,7 +109,7 @@ defmodule RadioBeam.User.KeyStoreTest do
     end
   end
 
-  describe "all_changed_since/2" do
+  describe "all_changed_since/3" do
     setup do
       creator = Fixtures.create_account()
       account1 = Fixtures.create_account()
@@ -134,20 +133,29 @@ defmodule RadioBeam.User.KeyStoreTest do
       }
     end
 
+    defp always_not_found(_room_id), do: {:error, :not_found}
+
+    defp fetcher(fetch_map) do
+      fn room_id -> with :error <- Map.fetch(fetch_map, room_id), do: {:error, :not_found} end
+    end
+
     @empty MapSet.new()
     test "returns an empty changed/left lists if the user is in no/empty rooms" do
       account = Fixtures.create_account()
-      since_now = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(account.user_id, since_now)
+      since_now = System.os_time(:millisecond)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(account.user_id, &always_not_found/1, since_now)
 
       {:ok, room_id} = Room.create(account.user_id)
       :pong = Room.Server.ping(room_id)
 
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(account.user_id, since_now)
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(account.user_id, &always_not_found/1, since_now)
     end
 
     test "does not include user's own key updates in changed" do
-      before_update = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
+      before_update = System.os_time(:millisecond)
 
       account = Fixtures.create_account()
       device = Fixtures.create_device(account.user_id)
@@ -155,7 +163,8 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       _device = Fixtures.create_and_put_device_keys(account.user_id, device.id)
 
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(account.user_id, before_update)
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(account.user_id, &always_not_found/1, before_update)
     end
 
     test "returns changed users who have added device identity keys since the given timestamp", %{
@@ -171,7 +180,8 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       Process.sleep(1)
 
-      before_account1_change = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      before_account1_change = System.os_time(:millisecond)
+      fetcher = fetcher(%{room_id => event_id})
 
       Process.sleep(1)
 
@@ -179,24 +189,35 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       Process.sleep(1)
 
-      after_account1_change = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      after_account1_change = System.os_time(:millisecond)
 
       Process.sleep(1)
 
       expected = MapSet.new([account1_id])
-      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.user_id, before_account1_change)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account1_change)
+
+      assert %{changed: ^expected, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, fetcher, before_account1_change)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, fetcher, after_account1_change)
 
       Process.sleep(1)
 
       Fixtures.create_and_put_device_keys(account2.user_id, account2_device.id)
-      after_account2_change = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      after_account2_change = System.os_time(:millisecond)
 
       expected = MapSet.new([account1_id, account2_id])
-      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.user_id, before_account1_change)
+
+      assert %{changed: ^expected, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, fetcher, before_account1_change)
+
       expected = MapSet.new([account2_id])
-      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account1_change)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account2_change)
+
+      assert %{changed: ^expected, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, fetcher, after_account1_change)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, fetcher, after_account2_change)
     end
 
     test "returns changed users who have joined the room since the given timestamp", %{
@@ -211,25 +232,39 @@ defmodule RadioBeam.User.KeyStoreTest do
       Fixtures.create_and_put_device_keys(account1.user_id, account1_device.id)
       Fixtures.create_and_put_device_keys(account2.user_id, account2_device.id)
 
-      before_account1_join = PaginationToken.new(room_id, last_event_id, :forward, System.os_time(:millisecond))
+      before_account1_join = System.os_time(:millisecond)
+      before_account1_join_fetcher = fetcher(%{room_id => last_event_id})
 
       {:ok, event_id} = Room.join(room_id, account1.user_id)
 
-      after_account1_join = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      after_account1_join = System.os_time(:millisecond)
+      after_account1_join_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id])
-      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.user_id, before_account1_join)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account1_join)
+
+      assert %{changed: ^expected, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, before_account1_join_fetcher, before_account1_join)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, after_account1_join_fetcher, after_account1_join)
 
       {:ok, event_id} = Room.join(room_id, account2.user_id)
 
-      after_account2_join = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      after_account2_join = System.os_time(:millisecond)
+      after_account2_join_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id, account2_id])
-      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.user_id, before_account1_join)
+
+      assert %{changed: ^expected, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, before_account1_join_fetcher, before_account1_join)
+
       expected = MapSet.new([account2_id])
-      assert %{changed: ^expected, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account1_join)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account2_join)
+
+      assert %{changed: ^expected, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, after_account1_join_fetcher, after_account1_join)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, after_account2_join_fetcher, after_account2_join)
     end
 
     test "does not return users for which we do not share a room", %{
@@ -239,7 +274,8 @@ defmodule RadioBeam.User.KeyStoreTest do
       account2: account2,
       account1_device: account1_device
     } do
-      before_account1_change = PaginationToken.new(room_id, last_event_id, :forward, System.os_time(:millisecond))
+      before_account1_change = System.os_time(:millisecond)
+      before_account1_change_fetcher = fetcher(%{room_id => last_event_id})
 
       {:ok, _} = Room.join(room_id, account1.user_id)
       # account2 not joining!
@@ -247,11 +283,13 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       Fixtures.create_and_put_device_keys(account1.user_id, account1_device.id)
 
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(account2.user_id, before_account1_change)
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(account2.user_id, before_account1_change_fetcher, before_account1_change)
 
       {:ok, _} = Room.leave(room_id, account1.user_id)
 
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(account2.user_id, before_account1_change)
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(account2.user_id, before_account1_change_fetcher, before_account1_change)
     end
 
     test "includes users in :left when they leave the last shared room", %{
@@ -268,25 +306,39 @@ defmodule RadioBeam.User.KeyStoreTest do
       {:ok, _} = Room.join(room_id, account1.user_id)
       {:ok, event_id} = Room.join(room_id, account2.user_id)
 
-      before_account1_leave = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      before_account1_leave = System.os_time(:millisecond)
+      before_account1_leave_fetcher = fetcher(%{room_id => event_id})
 
       {:ok, event_id} = Room.leave(room_id, account1.user_id)
 
-      after_account1_leave = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      after_account1_leave = System.os_time(:millisecond)
+      after_account1_leave_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id])
-      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.user_id, before_account1_leave)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account1_leave)
+
+      assert %{changed: @empty, left: ^expected} =
+               KeyStore.all_changed_since(creator.user_id, before_account1_leave_fetcher, before_account1_leave)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, after_account1_leave_fetcher, after_account1_leave)
 
       {:ok, event_id} = Room.leave(room_id, account2.user_id)
 
-      after_account2_leave = PaginationToken.new(room_id, event_id, :forward, System.os_time(:millisecond))
+      after_account2_leave = System.os_time(:millisecond)
+      after_account2_leave_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id, account2_id])
-      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.user_id, before_account1_leave)
+
+      assert %{changed: @empty, left: ^expected} =
+               KeyStore.all_changed_since(creator.user_id, before_account1_leave_fetcher, before_account1_leave)
+
       expected = MapSet.new([account2_id])
-      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.user_id, after_account1_leave)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account2_leave)
+
+      assert %{changed: @empty, left: ^expected} =
+               KeyStore.all_changed_since(creator.user_id, after_account1_leave_fetcher, after_account1_leave)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, after_account2_leave_fetcher, after_account2_leave)
     end
 
     test "does not include a user in :left if they still share other rooms", %{
@@ -307,26 +359,32 @@ defmodule RadioBeam.User.KeyStoreTest do
       {:ok, _} = Room.invite(room_id2, creator.user_id, account1.user_id)
       {:ok, event_id2} = Room.join(room_id2, account1.user_id)
 
-      before_leave =
-        PaginationToken.new(%{room_id => event_id, room_id2 => event_id2}, :forward, System.os_time(:millisecond))
+      before_leave = System.os_time(:millisecond)
+      before_leave_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
 
       {:ok, _} = Room.leave(room_id, account1.user_id)
       {:ok, event_id} = Room.leave(room_id, account2.user_id)
 
-      after_leave =
-        PaginationToken.new(%{room_id => event_id, room_id2 => event_id2}, :forward, System.os_time(:millisecond))
+      after_leave = System.os_time(:millisecond)
+      after_leave_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
 
       expected = MapSet.new([account2_id])
-      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.user_id, before_leave)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_leave)
 
-      before_leave2 =
-        PaginationToken.new(%{room_id => event_id, room_id2 => event_id2}, :forward, System.os_time(:millisecond))
+      assert %{changed: @empty, left: ^expected} =
+               KeyStore.all_changed_since(creator.user_id, before_leave_fetcher, before_leave)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, after_leave_fetcher, after_leave)
+
+      before_leave2 = System.os_time(:millisecond)
+      before_leave2_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
 
       {:ok, _event_id} = Room.leave(room_id2, account1.user_id)
 
       expected = MapSet.new([account1_id])
-      assert %{changed: @empty, left: ^expected} = KeyStore.all_changed_since(creator.user_id, before_leave2)
+
+      assert %{changed: @empty, left: ^expected} =
+               KeyStore.all_changed_since(creator.user_id, before_leave2_fetcher, before_leave2)
     end
 
     test "does not include a user in :changed if joined a room but previously shared another room", %{
@@ -341,14 +399,17 @@ defmodule RadioBeam.User.KeyStoreTest do
       {:ok, _} = Room.invite(room_id2, creator.user_id, account1.user_id)
       {:ok, _} = Room.join(room_id2, account1.user_id)
 
-      before_account1_join = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
+      before_account1_join = System.os_time(:millisecond)
 
       {:ok, _} = Room.join(room_id, account1.user_id)
 
-      after_account1_join = PaginationToken.new(%{}, :forward, System.os_time(:millisecond))
+      after_account1_join = System.os_time(:millisecond)
 
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, before_account1_join)
-      assert %{changed: @empty, left: @empty} = KeyStore.all_changed_since(creator.user_id, after_account1_join)
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, &always_not_found/1, before_account1_join)
+
+      assert %{changed: @empty, left: @empty} =
+               KeyStore.all_changed_since(creator.user_id, &always_not_found/1, after_account1_join)
     end
   end
 

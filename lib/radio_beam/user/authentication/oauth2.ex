@@ -4,7 +4,6 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
   interface with dedicated authorization servers.
   """
   alias RadioBeam.User
-  alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.KeyStore

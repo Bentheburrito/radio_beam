@@ -1,8 +1,8 @@
 defmodule RadioBeamWeb.RoomControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room
+  alias RadioBeam.Sync.Source.NextBatch
 
   describe "create/2" do
     test "successfully creates a room with the spec's example req body", %{conn: conn} do
@@ -453,14 +453,14 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "hi hi hello")
 
-      pagination_token_string =
-        room_id |> PaginationToken.new(event_id, :forward, System.os_time(:millisecond)) |> PaginationToken.encode()
+      batch_token_string =
+        :millisecond |> System.os_time() |> NextBatch.new!(%{room_id => event_id}, :forward) |> to_string()
 
       account2 = Fixtures.create_account()
       {:ok, _event_id} = Room.invite(room_id, account.user_id, account2.user_id)
       {:ok, _event_id} = Room.join(room_id, account2.user_id)
 
-      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"at" => pagination_token_string})
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"at" => batch_token_string})
 
       assert %{"chunk" => chunk} = json_response(conn, 200)
       assert 1 = length(chunk)

@@ -12,13 +12,13 @@ defmodule RadioBeamWeb.KeysControllerTest do
       someone = Fixtures.create_account()
       device = Fixtures.create_device(someone.user_id)
       {:ok, room_id} = RadioBeam.Room.create(someone.user_id)
-      %RadioBeam.Sync{next_batch: since} = RadioBeam.Sync.perform_v2(account.user_id, user_device.id, [])
+      %{"next_batch" => since} = RadioBeam.Sync.perform_v2(account.user_id, user_device.id, [])
 
       {:ok, _} = RadioBeam.Room.invite(room_id, someone.user_id, account.user_id)
       {:ok, _} = RadioBeam.Room.join(room_id, account.user_id)
       Fixtures.create_and_put_device_keys(someone.user_id, device.id)
 
-      since_encoded = RadioBeam.Room.Events.PaginationToken.encode(since)
+      since_encoded = to_string(since)
       conn = get(conn, ~p"/_matrix/client/v3/keys/changes?from=#{since_encoded}", %{})
 
       someone_id = someone.user_id
@@ -123,14 +123,14 @@ defmodule RadioBeamWeb.KeysControllerTest do
   end
 
   describe "upload_signatures/2" do
-    setup %{account: account, device: device} do
+    setup %{account: account, device_id: device_id} do
       {csks, privkeys} = Fixtures.create_cross_signing_keys(account.user_id)
       {:ok, key_store} = KeyStore.put_cross_signing_keys(account.user_id, csks)
 
-      {device_key, device_signingkey} = Fixtures.device_keys(device.id, account.user_id)
-      {:ok, _otk_counts} = User.put_device_keys(account.user_id, device.id, identity_keys: device_key)
+      {device_key, device_signingkey} = Fixtures.device_keys(device_id, account.user_id)
+      {:ok, _otk_counts} = User.put_device_keys(account.user_id, device_id, identity_keys: device_key)
 
-      {:ok, device} = RadioBeam.User.Database.fetch_user_device(account.user_id, device.id)
+      {:ok, device} = RadioBeam.User.Database.fetch_user_device(account.user_id, device_id)
 
       %{
         account: account,
@@ -189,16 +189,19 @@ defmodule RadioBeamWeb.KeysControllerTest do
   end
 
   describe "claim/2" do
-    test "returns a one-time key (200) that matches the given query", %{conn: conn, account: account, device: device} do
-      {:ok, _device} = User.put_device_keys(account.user_id, device.id, one_time_keys: @otk_keys)
+    test "returns a one-time key (200) that matches the given query", %{
+      conn: conn,
+      account: account,
+      device_id: device_id
+    } do
+      {:ok, _device} = User.put_device_keys(account.user_id, device_id, one_time_keys: @otk_keys)
 
       conn =
         post(conn, ~p"/_matrix/client/v3/keys/claim", %{
-          one_time_keys: %{account.user_id => %{device.id => "signed_curve25519"}}
+          one_time_keys: %{account.user_id => %{device_id => "signed_curve25519"}}
         })
 
       user_id = account.user_id
-      device_id = device.id
       assert %{"one_time_keys" => %{^user_id => %{^device_id => key_obj}}} = json_response(conn, 200)
       [key_obj] = Map.values(key_obj)
       assert key_obj["key"] in ~w|key1 key2|

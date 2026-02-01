@@ -1,9 +1,9 @@
 defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
-  alias RadioBeam.Room.Events.PaginationToken
-  alias RadioBeam.User
   alias RadioBeam.Room
+  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.User
 
   setup do
     %{creator: Fixtures.create_account()}
@@ -42,11 +42,11 @@ defmodule RadioBeamWeb.SyncControllerTest do
     }
   }
   describe "sync/2" do
-    test "successfully syncs with a room", %{conn: conn, creator: creator, account: account, device: device} do
+    test "successfully syncs with a room", %{conn: conn, creator: creator, account: account, device_id: device_id} do
       conn = get(conn, ~p"/_matrix/client/v3/sync", %{})
 
-      assert %{"account_data" => account_data, "rooms" => rooms, "next_batch" => since} = json_response(conn, 200)
-      for {_room_type, sync_update} <- rooms, do: assert(0 = map_size(sync_update))
+      assert %{"account_data" => account_data, "next_batch" => since} = response = json_response(conn, 200)
+      refute is_map_key(response, "rooms")
 
       assert 0 = map_size(account_data)
 
@@ -58,7 +58,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       :ok = User.put_account_data(account.user_id, room_id1, "m.some_config", %{"hello" => "room"})
 
       User.send_to_devices(
-        %{account.user_id => %{device.id => %{"hello" => "world"}}},
+        %{account.user_id => %{device_id => %{"hello" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.new_release"
       )
@@ -68,16 +68,15 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert %{
                "account_data" => account_data,
                "to_device" => %{"events" => [%{"content" => %{"hello" => "world"}}]},
-               "rooms" => %{
-                 "join" => join_map,
-                 "invite" => %{^room_id1 => %{"invite_state" => %{"events" => invite_state}}},
-                 "leave" => leave_map
-               },
+               "rooms" =>
+                 %{
+                   "invite" => %{^room_id1 => %{"invite_state" => %{"events" => invite_state}}}
+                 } = rooms,
                "next_batch" => since
              } = json_response(conn, 200)
 
-      assert 0 = map_size(join_map)
-      assert 0 = map_size(leave_map)
+      refute is_map_key(rooms, "join")
+      refute is_map_key(rooms, "leave")
 
       user_id = account.user_id
 
@@ -99,19 +98,19 @@ defmodule RadioBeamWeb.SyncControllerTest do
       {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "yo")
 
       User.send_to_devices(
-        %{account.user_id => %{device.id => %{"hello" => "world"}}},
+        %{account.user_id => %{device_id => %{"hello" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.new_release"
       )
 
       User.send_to_devices(
-        %{account.user_id => %{device.id => %{"hello2" => "world"}}},
+        %{account.user_id => %{device_id => %{"hello2" => "world"}}},
         "@hello:world",
         "com.spectrum.corncobtv.notification"
       )
 
       {:ok, _otk_counts} =
-        User.put_device_keys(account.user_id, device.id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
+        User.put_device_keys(account.user_id, device_id, one_time_keys: @otk_keys, fallback_keys: @fallback_key)
 
       filter = JSON.encode!(%{"room" => %{"timeline" => %{"limit" => 3}}})
 
@@ -127,28 +126,33 @@ defmodule RadioBeamWeb.SyncControllerTest do
                "device_one_time_keys_count" => %{"signed_curve25519" => 2},
                "device_unused_fallback_key_types" => ["signed_curve25519"],
                "device_lists" => %{"changed" => [^creator_id], "left" => []},
-               "rooms" => %{
-                 "join" => %{
-                   ^room_id1 => %{
-                     "account_data" => room_account_data,
-                     "state" => %{"events" => []},
-                     "timeline" => timeline
+               "rooms" =>
+                 %{
+                   "join" => %{
+                     ^room_id1 => %{
+                       "account_data" => room_account_data,
+                       # "state" => %{"events" => []},
+                       "state" => %{"events" => state_events},
+                       "timeline" => timeline
+                     }
                    }
-                 },
-                 "invite" => invite_map,
-                 "leave" => leave_map
-               },
+                 } = rooms,
                "next_batch" => _since
              } = json_response(conn, 200)
 
-      assert 0 = map_size(invite_map)
-      assert 0 = map_size(leave_map)
+      refute is_map_key(rooms, "invite")
+      refute is_map_key(rooms, "leave")
+
+      assert 7 = length(state_events)
 
       user_id = account.user_id
 
       assert %{
-               "limited" => false,
+               # "limited" => false,
+               "limited" => true,
+               "prev_batch" => _,
                "events" => [
+                 %{"type" => "m.room.member", "content" => %{"membership" => "invite"}, "sender" => ^creator_id},
                  %{"type" => "m.room.member", "content" => %{"membership" => "join"}, "sender" => ^user_id},
                  %{"type" => "m.room.name", "content" => %{"name" => "yo"}}
                ]
@@ -180,7 +184,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/messages?#{query_params}", %{})
 
-      assert %{"chunk" => chunk, "end" => next, "start" => "batch:" <> _, "state" => state} =
+      assert %{"chunk" => chunk, "end" => next, "start" => _, "state" => state} =
                json_response(conn, 200)
 
       assert 1 = length(state)
@@ -197,9 +201,9 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert %{"chunk" => chunk, "end" => _next2, "start" => next2, "state" => state} =
                json_response(conn, 200)
 
-      {:ok, next} = PaginationToken.parse(next)
-      {:ok, next2} = PaginationToken.parse(next2)
-      assert PaginationToken.topologically_equal?(next, next2)
+      {:ok, next} = NextBatch.decode(next)
+      {:ok, next2} = NextBatch.decode(next2)
+      assert NextBatch.topologically_equal?(next, next2)
 
       assert 1 = length(state)
       assert [%{"type" => "m.room.history_visibility"}, %{"type" => "m.room.join_rules"}, _] = chunk

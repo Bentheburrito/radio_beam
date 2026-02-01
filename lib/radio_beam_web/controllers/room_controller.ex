@@ -235,8 +235,8 @@ defmodule RadioBeamWeb.RoomController do
 
   def get_members(conn, %{"room_id" => room_id} = params) do
     at_event_id =
-      with %{"at" => pagination_token_str} <- params,
-           {:ok, at_event_id} <- RadioBeam.Sync.parse_event_id_at(pagination_token_str, room_id) do
+      with %{"at" => batch_str} <- params,
+           {:ok, at_event_id} <- RadioBeam.Sync.parse_event_id_at(batch_str, room_id) do
         at_event_id
       else
         _ -> :latest_visible

@@ -24,7 +24,7 @@ defmodule RadioBeamWeb.SyncController do
         _, opts -> opts
       end)
 
-    %Sync{} = sync_result = Sync.perform_v2(user_id, device_id, opts)
+    sync_result = Sync.perform_v2(user_id, device_id, opts)
 
     json(conn, sync_result)
   end

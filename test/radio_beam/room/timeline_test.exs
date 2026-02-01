@@ -2,10 +2,10 @@ defmodule RadioBeam.Room.TimelineTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Sync.Source.NextBatch
   alias RadioBeam.User.EventFilter
 
   setup do
@@ -40,7 +40,7 @@ defmodule RadioBeam.Room.TimelineTest do
       %{room_id: room_id}
     end
 
-    test "can successfully paginate backwards through events in a room using a PaginationToken", %{
+    test "can successfully paginate backwards through events in a room using a NextBatch token", %{
       room_id: room_id,
       creator: %{user_id: creator_id} = creator,
       account: %{user_id: user_id}
@@ -52,12 +52,12 @@ defmodule RadioBeam.Room.TimelineTest do
       now = System.os_time(:millisecond)
 
       [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
-      start_token = PaginationToken.new(room_id, tip_event_id, :forward, now)
+      start_token = NextBatch.new!(now, %{room_id => tip_event_id}, :forward)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token, start_token2)
+      assert NextBatch.topologically_equal?(start_token, start_token2)
 
       assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state, Event)
@@ -72,7 +72,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token2}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(end_token, start_token3)
+      assert NextBatch.topologically_equal?(end_token, start_token3)
 
       assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state, Event)
@@ -86,7 +86,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token3}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(end_token2, start_token4)
+      assert NextBatch.topologically_equal?(end_token2, start_token4)
 
       assert 1 = Enum.count(state)
 
@@ -101,7 +101,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token5, end: :no_more_events}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :backward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(end_token3, start_token5)
+      assert NextBatch.topologically_equal?(end_token3, start_token5)
 
       assert 12 = Enum.count(events)
       assert 2 = Enum.count(state)
@@ -118,12 +118,12 @@ defmodule RadioBeam.Room.TimelineTest do
       now = System.os_time(:millisecond)
 
       [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
-      start_token = PaginationToken.new(room_id, tip_event_id, :forward, now)
+      start_token = NextBatch.new!(now, %{room_id => tip_event_id}, :forward)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token, start_token2)
+      assert NextBatch.topologically_equal?(start_token, start_token2)
 
       assert [
                %{type: "m.room.member"},
@@ -137,7 +137,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token2, end: end_token3}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward})
 
-      assert PaginationToken.topologically_equal?(end_token, end_token2)
+      assert NextBatch.topologically_equal?(end_token, end_token2)
 
       assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state, Event)
@@ -153,7 +153,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: _state, start: end_token4, end: _}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward})
 
-      assert PaginationToken.topologically_equal?(end_token, end_token4)
+      assert NextBatch.topologically_equal?(end_token, end_token4)
 
       assert [
                %{type: "m.room.message"},
@@ -165,7 +165,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: _state, start: end_token5, end: end_token6}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward})
 
-      assert PaginationToken.topologically_equal?(end_token3, end_token5)
+      assert NextBatch.topologically_equal?(end_token3, end_token5)
 
       refute end_token6 == :no_more_events
 
@@ -183,12 +183,12 @@ defmodule RadioBeam.Room.TimelineTest do
       now = System.os_time(:millisecond)
 
       [%{id: root_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :root) |> Enum.take(1)
-      start_token = PaginationToken.new(room_id, root_event_id, :backward, now)
+      start_token = NextBatch.new!(now, %{room_id => root_event_id}, :backward)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :root, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token, start_token2)
+      assert NextBatch.topologically_equal?(start_token, start_token2)
 
       assert 2 = Enum.count(state)
 
@@ -208,7 +208,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token2, end: end_token3}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(end_token, end_token2)
+      assert NextBatch.topologically_equal?(end_token, end_token2)
 
       assert 2 = Enum.count(state)
 
@@ -225,11 +225,10 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}}
              ] = events
 
-      assert {:ok,
-              %Chunk{timeline_events: events, state_events: state, start: end_token4, end: %PaginationToken{} = _next}} =
+      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token4, end: %NextBatch{} = _next}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(end_token3, end_token4)
+      assert NextBatch.topologically_equal?(end_token3, end_token4)
 
       assert 1 = Enum.count(state)
       [%{type: "m.room.member", content: %{"membership" => "leave"}}] = events
@@ -246,12 +245,12 @@ defmodule RadioBeam.Room.TimelineTest do
       now = System.os_time(:millisecond)
 
       [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
-      start_token = PaginationToken.new(room_id, tip_event_id, :forward, now)
+      start_token = NextBatch.new!(now, %{room_id => tip_event_id}, :forward)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token, start_token2)
+      assert NextBatch.topologically_equal?(start_token, start_token2)
 
       assert 2 = Enum.count(state)
 
@@ -271,7 +270,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token2}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token3, end_token)
+      assert NextBatch.topologically_equal?(start_token3, end_token)
 
       assert 2 = Enum.count(state)
 
@@ -291,7 +290,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: :no_more_events}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token4, end_token2)
+      assert NextBatch.topologically_equal?(start_token4, end_token2)
 
       assert 1 = Enum.count(state)
       [%{type: "m.room.create"}] = events
@@ -301,13 +300,13 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       device = Fixtures.create_device(creator.user_id)
 
-      assert {:ok, %Chunk{timeline_events: _events, state_events: _state, start: %PaginationToken{}, end: end_token}} =
+      assert {:ok, %Chunk{timeline_events: _events, state_events: _state, start: %NextBatch{}, end: end_token}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token, end: end_token2}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token, end_token)
+      assert NextBatch.topologically_equal?(start_token, end_token)
 
       assert 2 = Enum.count(state)
 
@@ -320,7 +319,7 @@ defmodule RadioBeam.Room.TimelineTest do
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token3}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token2, end_token2)
+      assert NextBatch.topologically_equal?(start_token2, end_token2)
 
       assert 1 = Enum.count(state)
 
@@ -330,13 +329,13 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}}
              ] = events
 
-      expected_end_token4 = PaginationToken.new(room_id, event_id2, :forward, System.os_time(:millisecond))
+      expected_end_token4 = NextBatch.new!(System.os_time(:millisecond), %{room_id => event_id2}, :forward)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token4}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token3, end_token3)
-      assert PaginationToken.topologically_equal?(expected_end_token4, end_token4)
+      assert NextBatch.topologically_equal?(start_token3, end_token3)
+      assert NextBatch.topologically_equal?(expected_end_token4, end_token4)
 
       assert 1 = Enum.count(state)
 
@@ -346,13 +345,13 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "there we go"}}
              ] = events
 
-      expected_end_token5 = PaginationToken.new(room_id, event_id1, :forward, System.os_time(:millisecond))
+      expected_end_token5 = NextBatch.new!(System.os_time(:millisecond), %{room_id => event_id1}, :forward)
 
       assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token5}} =
                Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :forward}, filter: filter)
 
-      assert PaginationToken.topologically_equal?(start_token4, end_token2)
-      assert PaginationToken.topologically_equal?(expected_end_token5, end_token5)
+      assert NextBatch.topologically_equal?(start_token4, end_token2)
+      assert NextBatch.topologically_equal?(expected_end_token5, end_token5)
 
       assert 2 = Enum.count(state)
 

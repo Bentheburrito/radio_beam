@@ -1,7 +1,6 @@
 defmodule RadioBeam.User.Authentication.LegacyAPITest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.User.Device
   alias RadioBeam.User.Authentication.LegacyAPI
 
   describe "password_login/3" do
@@ -25,7 +24,9 @@ defmodule RadioBeam.User.Authentication.LegacyAPITest do
       assert {:ok, "" <> _ = at, "" <> _, _scope, _expires_in} =
                LegacyAPI.password_login(account.user_id, Fixtures.strong_password(), device_id, display_name)
 
-      assert {:ok, %Device{id: ^device_id, display_name: ^display_name}} =
+      user_id = account.user_id
+
+      assert {:ok, ^user_id, ^device_id} =
                RadioBeam.User.Authentication.OAuth2.authenticate_user_by_access_token(at, {127, 0, 0, 1})
     end
   end

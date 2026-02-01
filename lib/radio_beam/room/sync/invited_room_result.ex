@@ -7,17 +7,13 @@ defmodule RadioBeam.Room.Sync.InvitedRoomResult do
 
   @type t() :: %__MODULE__{room_id: Room.id(), stripped_state_events: [map()], user_invite_event_id: Room.event_id()}
 
-  def new!(room, user_id, user_invite_event_id) do
+  def new!(room, user_id) do
     stripped_state_events =
       room.state
       |> Room.State.get_invite_state_pdus(user_id)
       |> Stream.map(&Event.new!(:unknown, &1, []))
 
-    %__MODULE__{
-      room_id: room.id,
-      stripped_state_events: stripped_state_events,
-      user_invite_event_id: user_invite_event_id
-    }
+    %__MODULE__{room_id: room.id, stripped_state_events: stripped_state_events}
   end
 
   defimpl JSON.Encoder do

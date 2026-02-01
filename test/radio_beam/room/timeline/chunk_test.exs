@@ -2,9 +2,9 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.Events.PaginationToken
-  alias RadioBeam.User.EventFilter
   alias RadioBeam.Room.Timeline.Chunk
+  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.User.EventFilter
 
   defp get_known_memberships, do: []
 
@@ -34,8 +34,8 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
       filter = EventFilter.new(%{})
 
       now = System.os_time(:millisecond)
-      start_token = PaginationToken.new(room.id, tip_event_id, :forward, now)
-      end_token = PaginationToken.new(room.id, last_event_id, :backward, now)
+      start_token = NextBatch.new!(now, %{room.id => tip_event_id}, :forward)
+      end_token = NextBatch.new!(now, %{room.id => last_event_id}, :backward)
 
       chunk =
         Chunk.new(
@@ -51,14 +51,14 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
       assert %Chunk{
                timeline_events: ^timeline_events,
                state_events: state_event_stream,
-               start: %PaginationToken{} = start_token,
-               end: %PaginationToken{} = end_token
+               start: %NextBatch{} = start_token,
+               end: %NextBatch{} = end_token
              } = chunk
 
       assert [%{type: "m.room.member", state_key: ^user_id}] = Enum.to_list(state_event_stream)
 
-      assert {:ok, ^tip_event_id} = PaginationToken.room_last_seen_event_id(start_token, room.id)
-      assert {:ok, ^last_event_id} = PaginationToken.room_last_seen_event_id(end_token, room.id)
+      assert {:ok, ^tip_event_id} = NextBatch.fetch(start_token, room.id)
+      assert {:ok, ^last_event_id} = NextBatch.fetch(end_token, room.id)
     end
   end
 
@@ -77,7 +77,7 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
       filter = EventFilter.new(%{})
 
       now = System.os_time(:millisecond)
-      start_token = PaginationToken.new(room.id, tip_event_id, :forward, now)
+      start_token = NextBatch.new!(now, %{room.id => tip_event_id}, :forward)
 
       chunk =
         Chunk.new(
@@ -93,7 +93,7 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
       assert json = JSON.encode!(chunk)
       assert json =~ ~s|"chunk":[|
       assert json =~ ~s|"state":[|
-      assert json =~ ~s|"start":"batch:|
+      assert json =~ ~s|"start":"%21|
       refute json =~ ~s|"end":|
 
       decoded_response = JSON.decode!(json)
@@ -117,8 +117,8 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
       filter = EventFilter.new(%{})
 
       now = System.os_time(:millisecond)
-      start_token = PaginationToken.new(room.id, tip_event_id, :forward, now)
-      end_token = PaginationToken.new(room.id, last_event_id, :backward, now)
+      start_token = NextBatch.new!(now, %{room.id => tip_event_id}, :forward)
+      end_token = NextBatch.new!(now, %{room.id => last_event_id}, :backward)
 
       chunk =
         Chunk.new(
@@ -134,8 +134,8 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
       assert json = JSON.encode!(chunk)
       assert json =~ ~s|"chunk":[|
       assert json =~ ~s|"state":[|
-      assert json =~ ~s|"start":"batch:|
-      assert json =~ ~s|"end":"batch:|
+      assert json =~ ~s|"start":"%21|
+      assert json =~ ~s|"end":"%21|
 
       decoded_response = JSON.decode!(json)
       assert 4 = map_size(decoded_response)

@@ -1,13 +1,10 @@
 defmodule RadioBeam.User.KeyStore do
   @moduledoc """
   Query a User's Device and CrossSigningKeys
-
-  TODO: rename to User.KeyStore
   """
   import RadioBeam.AccessExtras, only: [put_nested: 3]
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.CrossSigningKeyRing
@@ -109,6 +106,21 @@ defmodule RadioBeam.User.KeyStore do
 
   ### DEVICE KEYS / CSKs ###
 
+  def one_time_key_info(user_id, device_id) do
+    with {:ok, device} <- Database.fetch_user_device(user_id, device_id) do
+      info =
+        case Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring) do
+          counts when map_size(counts) > 0 -> %{device_one_time_keys_count: counts}
+          _else -> %{}
+        end
+
+      unused_fallback_algos =
+        Map.keys(device.one_time_key_ring.fallback_keys) -- MapSet.to_list(device.one_time_key_ring.used_fallback_algos)
+
+      {:ok, put_in(info, [:device_unused_fallback_key_types], unused_fallback_algos)}
+    end
+  end
+
   def put_cross_signing_keys(user_id, kw_list) do
     Database.update_key_store(user_id, fn %__MODULE__{cross_signing_key_ring: csk_ring} = key_store ->
       with {:ok, %CrossSigningKeyRing{} = csk_ring} <- CrossSigningKeyRing.put(csk_ring, user_id, kw_list) do
@@ -130,7 +142,7 @@ defmodule RadioBeam.User.KeyStore do
     end)
   end
 
-  def all_changed_since(user_id, %PaginationToken{} = since) do
+  def all_changed_since(user_id, fetch_last_seen_event_id, since_ts) do
     room_ids = Room.joined(user_id)
 
     membership_event_stream =
@@ -143,7 +155,7 @@ defmodule RadioBeam.User.KeyStore do
 
     last_seen_event_by_room_id =
       Map.new(room_ids, fn room_id ->
-        with {:ok, since_event_id} <- PaginationToken.room_last_seen_event_id(since, room_id),
+        with {:ok, "$" <> _ = since_event_id} <- fetch_last_seen_event_id.(room_id),
              {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [since_event_id]),
              [since_event] <- Enum.take(event_stream, 1) do
           {room_id, since_event}
@@ -152,7 +164,14 @@ defmodule RadioBeam.User.KeyStore do
 
     fetch_key_store = &Database.fetch_key_store/1
     get_all_devices = &Database.get_all_devices_of_user/1
-    Core.all_changed_since(membership_event_stream, last_seen_event_by_room_id, since, fetch_key_store, get_all_devices)
+
+    Core.all_changed_since(
+      membership_event_stream,
+      last_seen_event_by_room_id,
+      since_ts,
+      fetch_key_store,
+      get_all_devices
+    )
   end
 
   @doc """

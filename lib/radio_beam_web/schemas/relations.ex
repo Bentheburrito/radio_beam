@@ -18,6 +18,6 @@ defmodule RadioBeamWeb.Schemas.Relations do
   end
 
   # TODO these are in schemas/sync.ex too, extract into helper fxns
-  defp pagination_token(token), do: RadioBeam.Sync.parse_pagination_token(token)
+  defp pagination_token(token), do: RadioBeam.Sync.parse_batch_token(token)
   defp optional(type), do: [type, :optional]
 end

@@ -24,7 +24,7 @@ defmodule RadioBeamWeb.RelationsController do
     case Room.get_children(room_id, user_id, event_id, opts) do
       {:ok, child_events, recurse_depth} ->
         # TOIMPL: this endpoint can take a from/to token returned from /messages
-        # and /sync (so a PaginationToken). Room.get_children does not currently
+        # and /sync (so a NextBatch). Room.get_children does not currently
         # support this (nor a `limit`), so just returning all children for now -
         # need to come back to do this properly
 

@@ -5,9 +5,9 @@ defmodule RadioBeamWeb.Schemas.KeyStore do
 
   alias Polyjuice.Util.Schema
 
-  def changes, do: %{"from" => &pagination_token/1}
+  def changes, do: %{"from" => &since_token/1}
 
-  defp pagination_token(token), do: RadioBeam.Sync.parse_pagination_token(token)
+  defp since_token(token), do: RadioBeam.Sync.parse_batch_token(token)
 
   def upload do
     %{

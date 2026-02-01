@@ -2,7 +2,6 @@ defmodule RadioBeam.User.KeyStore.Core do
   @moduledoc """
   Functional core for key store operations
   """
-  alias RadioBeam.Room.Events.PaginationToken
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.Device
@@ -11,12 +10,10 @@ defmodule RadioBeam.User.KeyStore.Core do
   def all_changed_since(
         membership_event_stream,
         last_seen_event_by_room_id,
-        since,
+        since_ts,
         fetch_key_store,
         get_all_devices_of_user
       ) do
-    since_created_at = PaginationToken.created_at(since)
-
     membership_event_stream
     |> Stream.map(&zip_with_last_csk_and_last_device_key_change_at(&1, fetch_key_store, get_all_devices_of_user))
     |> Stream.reject(fn {maybe_last_csk_change, _, _, _} -> is_nil(maybe_last_csk_change) end)
@@ -27,7 +24,7 @@ defmodule RadioBeam.User.KeyStore.Core do
       fn {_, _, _, member_event} -> member_event end
     )
     |> Enum.reduce(%{changed: MapSet.new(), left: MapSet.new()}, fn
-      {{lcsca, user_id, ldikca}, _}, acc when lcsca > since_created_at or ldikca > since_created_at ->
+      {{lcsca, user_id, ldikca}, _}, acc when lcsca > since_ts or ldikca > since_ts ->
         Map.update!(acc, :changed, &MapSet.put(&1, user_id))
 
       {{_, user_id, _}, member_events}, acc ->
@@ -60,7 +57,7 @@ defmodule RadioBeam.User.KeyStore.Core do
         {last_csk_change_at, user_id, max_device_id_key_change_at(user_id, get_all_devices_of_user), member_event}
 
       {:error, :not_found} ->
-        {nil, nil, member_event}
+        {nil, nil, 0, member_event}
     end
   end
 
@@ -68,7 +65,7 @@ defmodule RadioBeam.User.KeyStore.Core do
     user_id
     |> get_all_devices_of_user.()
     |> Stream.map(& &1.identity_keys_last_updated_at)
-    |> Enum.max()
+    |> Enum.max(&>=/2, fn -> 0 end)
   end
 
   defp event_occurred_later?(_event, nil), do: false

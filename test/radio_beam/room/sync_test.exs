@@ -1,11 +1,11 @@
-defmodule RadioBeam.Room.SyncTest do
+defmodule RadioBeam.SyncTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.Events.PaginationToken
-  alias RadioBeam.Room.Sync
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
+  alias RadioBeam.Sync
+  alias RadioBeam.Sync.Source.NextBatch
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
@@ -25,13 +25,11 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id1, account.user_id)
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
-
-      assert 2 = map_size(next_batch_map)
-      join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
+      assert 2 = map_size(next_batch.kvs)
+      {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
                room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
@@ -41,19 +39,23 @@ defmodule RadioBeam.Room.SyncTest do
       # user shouldn't be able to see even their own invited membership event.
       # only the stripped state event can be viewed
       assert {:error, :unauthorized} = Room.get_state(room_id2, account.user_id, "m.room.member", user_id)
-      {:ok, %{id: invite_next_batch_event_id}} = Room.get_state(room_id2, creator.user_id, "m.room.member", user_id)
+      {:ok, %{id: _invite_next_batch_event_id}} = Room.get_state(room_id2, creator.user_id, "m.room.member", user_id)
 
-      assert ^invite_next_batch_event_id = Map.fetch!(next_batch_map, room_id2)
+      assert {:ok, "sent"} = NextBatch.fetch(next_batch, room_id2)
 
-      assert [
-               %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream},
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "invite" => %{
+                 ^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream}
+               },
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] = Enum.sort(result_data)
+             } = room_results
 
       assert [] = Enum.to_list(state_event_stream)
 
@@ -91,30 +93,29 @@ defmodule RadioBeam.Room.SyncTest do
       }
 
       Room.send(room_id1, account.user_id, "m.room.message", content)
-      # Process.sleep(1)
 
       {:ok, latest_event_id} =
         Room.send(room_id1, creator.user_id, "m.room.message", put_in(content["content"], "happy bday @bob!!!!!"))
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
-
-      assert 1 = map_size(next_batch_map)
-      join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
+      assert 1 = map_size(next_batch.kvs)
+      {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
                room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] = Enum.sort(result_data)
+             } = room_results
 
       assert [] = Enum.to_list(state_event_stream)
 
@@ -149,12 +150,10 @@ defmodule RadioBeam.Room.SyncTest do
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 5}}})
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, filter: filter)
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id, filter: filter) |> Sync.perform()
-
-      assert 2 = map_size(next_batch_map)
+      assert 2 = map_size(next_batch.kvs)
 
       user_id = account.user_id
 
@@ -162,25 +161,26 @@ defmodule RadioBeam.Room.SyncTest do
       # only the stripped state event can be viewed
       assert {:error, :unauthorized} = Room.get_state(room_id2, account.user_id, "m.room.member", user_id)
 
-      {:ok, %{id: invite_next_batch_event_id}} =
-        Room.get_state(room_id2, creator.user_id, "m.room.member", user_id)
+      assert {:ok, "sent"} = NextBatch.fetch(next_batch, room_id2)
 
-      assert ^invite_next_batch_event_id = Map.fetch!(next_batch_map, room_id2)
-
-      join_next_batch_event_id = Map.fetch!(next_batch_map, room_id1)
+      {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
                room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
 
-      assert [
-               %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream},
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: next_event_id
+      assert %{
+               "invite" => %{
+                 ^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream}
+               },
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: next_event_id
+                 }
                }
-             ] = Enum.sort(result_data)
+             } = room_results
 
       state = Enum.to_list(state_event_stream)
 
@@ -228,12 +228,10 @@ defmodule RadioBeam.Room.SyncTest do
       Room.send_text_message(room_id, annoying_account.user_id, "blah blah blah")
       Room.send_text_message(room_id, annoying_account.user_id, "you shouldn't see this")
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
-
-      assert [%JoinedRoomResult{room_id: ^room_id, timeline_events: events}] = result_data
+      assert %{"join" => %{^room_id => %JoinedRoomResult{room_id: ^room_id, timeline_events: events}}} = room_results
 
       annoying_user_id = annoying_account.user_id
       refute Enum.any?(events, &match?(%{sender: ^annoying_user_id, state_key: nil}, &1))
@@ -243,15 +241,10 @@ defmodule RadioBeam.Room.SyncTest do
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 1}}})
 
-      assert %Sync.Result{data: result_data} =
-               config
-               |> Sync.init(device.id,
-                 filter: filter,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results} =
+               Sync.perform_v2(account.user_id, device.id, filter: filter, since: next_batch)
 
-      assert [%JoinedRoomResult{room_id: ^room_id, state_events: state_events}] = result_data
+      assert %{"join" => %{^room_id => %JoinedRoomResult{room_id: ^room_id, state_events: state_events}}} = room_results
 
       assert Enum.any?(state_events, &match?(%{sender: ^annoying_user_id}, &1))
     end
@@ -267,22 +260,19 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, room_id} = Room.create(annoying_account.user_id)
       {:ok, _event_id} = Room.invite(room_id, annoying_account.user_id, account.user_id)
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"next_batch" => %NextBatch{} = next_batch} =
+               sync_res =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: [], next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
+      refute is_map_key(sync_res, "rooms")
 
       :ok = User.put_account_data(account.user_id, :global, "m.ignored_user_list", %{"ignored_users" => %{}})
 
-      assert %Sync.Result{data: [%InvitedRoomResult{room_id: ^room_id}]} =
-               config
-               |> Sync.init(device.id,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => %{"invite" => %{^room_id => %InvitedRoomResult{}}}} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch)
 
-      assert %Sync.Result{data: [%InvitedRoomResult{room_id: ^room_id}]} =
-               config |> Sync.init(device.id) |> Sync.perform()
+      assert %{"rooms" => %{"invite" => %{^room_id => %InvitedRoomResult{}}}} =
+               Sync.perform_v2(account.user_id, device.id, [])
     end
   end
 
@@ -292,10 +282,7 @@ defmodule RadioBeam.Room.SyncTest do
       account: account,
       device: device
     } do
-      config = User.ClientConfig.new!(account.user_id)
-
-      assert %Sync.Result{next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
+      assert %{"next_batch" => %NextBatch{} = next_batch} = Sync.perform_v2(account.user_id, device.id, [])
 
       # ---
 
@@ -303,21 +290,19 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id1, account.user_id)
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config
-               |> Sync.init(device.id,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 timeline_events: events,
-                 state_events: state_event_stream,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   timeline_events: events,
+                   state_events: state_event_stream,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] = result_data
+             } = room_results
 
       assert [] = Enum.to_list(state_event_stream)
 
@@ -340,15 +325,14 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, room_id2} = Room.create(creator.user_id, name: "Notes")
       {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config
-               |> Sync.init(device.id,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch)
 
-      assert [%InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream}] =
-               Enum.sort(result_data)
+      assert %{
+               "invite" => %{
+                 ^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream}
+               }
+             } = room_results
 
       # assert 0 = map_size(join_map)
 
@@ -367,15 +351,18 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, rando_id)
       {:ok, _event_id} = Room.join(room_id1, rando_id)
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config
-               |> Sync.init(device.id,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch)
 
-      assert [%JoinedRoomResult{room_id: ^room_id1, state_events: state_event_stream, timeline_events: events}] =
-               result_data
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   timeline_events: events,
+                   state_events: state_event_stream
+                 }
+               }
+             } = room_results
 
       assert [] = Enum.to_list(state_event_stream)
 
@@ -392,22 +379,19 @@ defmodule RadioBeam.Room.SyncTest do
 
       filter = EventFilter.new(%{"room" => %{"include_leave" => true}})
 
-      assert %Sync.Result{data: result_data} =
-               config
-               |> Sync.init(device.id,
-                 filter: filter,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results} =
+               Sync.perform_v2(account.user_id, device.id, filter: filter, since: next_batch)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 current_membership: "leave"
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   current_membership: "leave"
+                 }
                }
-             ] = result_data
+             } = room_results
 
       refute state_event_stream
              |> Stream.filter(&(&1.type == "m.room.name"))
@@ -431,22 +415,19 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id1, account.user_id)
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config
-               |> Sync.init(device.id)
-               |> Sync.perform()
-
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       assert [] = Enum.to_list(state_event_stream)
 
@@ -472,23 +453,19 @@ defmodule RadioBeam.Room.SyncTest do
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config
-               |> Sync.init(device.id,
-                 filter: filter,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch, filter: filter)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: next_event_id
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: next_event_id
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       assert [%{type: "m.room.name"}] = Enum.to_list(state_event_stream)
 
@@ -511,23 +488,19 @@ defmodule RadioBeam.Room.SyncTest do
 
       Room.send(room_id1, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
 
-      assert %Sync.Result{data: result_data} =
-               config
-               |> Sync.init(device.id,
-                 filter: filter,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch, filter: filter)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       assert [%{type: "m.room.name"}] = Enum.to_list(state_event_stream)
 
@@ -537,24 +510,19 @@ defmodule RadioBeam.Room.SyncTest do
              ] =
                events
 
-      assert %Sync.Result{data: result_data} =
-               config
-               |> Sync.init(device.id,
-                 filter: filter,
-                 full_state?: true,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      assert %{"rooms" => room_results} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch, filter: filter, full_state?: true)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       assert 8 = Enum.count(state_event_stream)
 
@@ -584,18 +552,19 @@ defmodule RadioBeam.Room.SyncTest do
 
       filter = EventFilter.new(%{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}})
 
-      config = User.ClientConfig.new!(account.user_id)
-      assert %Sync.Result{data: result_data} = config |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      assert %{"rooms" => room_results} =
+               Sync.perform_v2(account.user_id, device.id, filter: filter)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id2,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id2 => %JoinedRoomResult{
+                   room_id: ^room_id2,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       assert 0 = Enum.count(state_event_stream)
 
@@ -624,20 +593,18 @@ defmodule RadioBeam.Room.SyncTest do
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
       %{id: account3_device_id} = Fixtures.create_device(account3.user_id)
 
-      config3 = User.ClientConfig.new!(account3.user_id)
+      assert %{"rooms" => room_results} = Sync.perform_v2(account3.user_id, account3_device_id, filter: filter)
 
-      assert %Sync.Result{data: result_data} =
-               config3 |> Sync.init(account3_device_id, filter: filter) |> Sync.perform()
-
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: [_one, _two],
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: [_one, _two],
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
@@ -649,20 +616,18 @@ defmodule RadioBeam.Room.SyncTest do
 
       %{id: creator_device_id} = Fixtures.create_device(creator.user_id)
 
-      creator_config = User.ClientConfig.new!(creator.user_id)
+      assert %{"rooms" => room_results} = Sync.perform_v2(creator.user_id, creator_device_id, filter: filter)
 
-      assert %Sync.Result{data: result_data} =
-               creator_config |> Sync.init(creator_device_id, filter: filter) |> Sync.perform()
-
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: [_one, _two],
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: [_one, _two],
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
       assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
@@ -692,20 +657,20 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.send_text_message(room_id1, account3.user_id, "yo")
 
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
-      device = Fixtures.create_device(account.user_id)
+      device = Fixtures.create_device(account3.user_id)
 
-      config3 = User.ClientConfig.new!(account3.user_id)
-      assert %Sync.Result{data: result_data} = config3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      assert %{"rooms" => room_results} = Sync.perform_v2(account3.user_id, device.id, filter: filter)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: [_one, _two],
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: [_one, _two],
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
@@ -719,17 +684,18 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.send_text_message(room_id1, account2.user_id, "so what is the plan")
       {:ok, _event_id} = Room.send_text_message(room_id1, account.user_id, "brunch tomorrow @ 11")
 
-      assert %Sync.Result{data: result_data} = config3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      assert %{"rooms" => room_results} = Sync.perform_v2(account3.user_id, device.id, filter: filter)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: [_one, _two],
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: [_one, _two],
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account2.user_id))
@@ -747,18 +713,18 @@ defmodule RadioBeam.Room.SyncTest do
           }
         })
 
-      assert %Sync.Result{data: result_data} =
-               config3 |> Sync.init(device.id, filter: redundant_filter) |> Sync.perform()
+      assert %{"rooms" => room_results} = Sync.perform_v2(account3.user_id, device.id, filter: redundant_filter)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: [_one, _two],
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: [_one, _two],
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
 
@@ -767,17 +733,18 @@ defmodule RadioBeam.Room.SyncTest do
       assert Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account3.user_id))
 
       # and once more without redundant members...should only be the syncing user
-      assert %Sync.Result{data: result_data} = config3 |> Sync.init(device.id, filter: filter) |> Sync.perform()
+      assert %{"rooms" => room_results} = Sync.perform_v2(account3.user_id, device.id, filter: filter)
 
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id1,
-                 state_events: state_event_stream,
-                 timeline_events: [_one, _two],
-                 maybe_next_event_id: "$" <> _
+      assert %{
+               "join" => %{
+                 ^room_id1 => %JoinedRoomResult{
+                   room_id: ^room_id1,
+                   state_events: state_event_stream,
+                   timeline_events: [_one, _two],
+                   maybe_next_event_id: "$" <> _
+                 }
                }
-             ] =
-               result_data
+             } = room_results
 
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == creator.user_id))
       refute Enum.find(state_event_stream, &(&1.type == "m.room.member" and &1.state_key == account.user_id))
@@ -793,19 +760,19 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id, account.user_id)
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
-
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id => %JoinedRoomResult{
+                   room_id: ^room_id,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] = result_data
+             } = room_results
 
       assert 0 = Enum.count(state_event_stream)
 
@@ -826,28 +793,22 @@ defmodule RadioBeam.Room.SyncTest do
       wait_for = div(timeout, 2)
       time_before_wait = System.os_time(:millisecond)
 
-      sync_task =
-        Task.async(fn ->
-          config
-          |> Sync.init(device.id,
-            timeout: timeout,
-            since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-          )
-          |> Sync.perform()
-        end)
+      sync_task = Task.async(fn -> Sync.perform_v2(account.user_id, device.id, timeout: timeout, since: next_batch) end)
 
       Process.sleep(wait_for)
       Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello!!"})
 
-      assert %Sync.Result{
-               data: [
-                 %JoinedRoomResult{
-                   room_id: ^room_id,
-                   state_events: state_event_stream,
-                   timeline_events: [%{type: "m.room.message"}],
-                   maybe_next_event_id: :no_more_events
+      assert %{
+               "rooms" => %{
+                 "join" => %{
+                   ^room_id => %JoinedRoomResult{
+                     room_id: ^room_id,
+                     state_events: state_event_stream,
+                     timeline_events: [%{type: "m.room.message"}],
+                     maybe_next_event_id: :no_more_events
+                   }
                  }
-               ]
+               }
              } = Task.await(sync_task)
 
       assert 0 = Enum.count(state_event_stream)
@@ -860,19 +821,19 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id, account.user_id)
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
-
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id,
-                 state_events: state_event_stream,
-                 timeline_events: events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id => %JoinedRoomResult{
+                   room_id: ^room_id,
+                   state_events: state_event_stream,
+                   timeline_events: events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] = result_data
+             } = room_results
 
       assert 0 = Enum.count(state_event_stream)
 
@@ -893,22 +854,15 @@ defmodule RadioBeam.Room.SyncTest do
       wait_for = div(timeout, 2)
       time_before_wait = System.os_time(:millisecond)
 
-      sync_task =
-        Task.async(fn ->
-          config
-          |> Sync.init(device.id,
-            timeout: timeout,
-            since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-          )
-          |> Sync.perform()
-        end)
-
+      sync_task = Task.async(fn -> Sync.perform_v2(account.user_id, device.id, timeout: timeout, since: next_batch) end)
       Process.sleep(wait_for)
       {:ok, room_id2} = Room.create(creator.user_id)
       {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
 
-      assert %Sync.Result{
-               data: [%InvitedRoomResult{room_id: ^room_id2, stripped_state_events: _events}]
+      assert %{
+               "rooms" => %{
+                 "invite" => %{^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: _events}}
+               }
              } = Task.await(sync_task)
 
       assert System.os_time(:millisecond) - time_before_wait >= wait_for
@@ -923,19 +877,19 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id, account.user_id)
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
-
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id,
-                 state_events: state_event_stream,
-                 timeline_events: _events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id => %JoinedRoomResult{
+                   room_id: ^room_id,
+                   state_events: state_event_stream,
+                   timeline_events: _events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] = result_data
+             } = room_results
 
       assert 0 = Enum.count(state_event_stream)
 
@@ -946,13 +900,7 @@ defmodule RadioBeam.Room.SyncTest do
 
       sync_task =
         Task.async(fn ->
-          config
-          |> Sync.init(device.id,
-            filter: filter,
-            timeout: 1000,
-            since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-          )
-          |> Sync.perform()
+          Sync.perform_v2(account.user_id, device.id, filter: filter, timeout: 1000, since: next_batch)
         end)
 
       Process.sleep(100)
@@ -965,15 +913,17 @@ defmodule RadioBeam.Room.SyncTest do
 
       Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
 
-      assert %Sync.Result{
-               data: [
-                 %JoinedRoomResult{
-                   room_id: ^room_id,
-                   state_events: state_event_stream,
-                   timeline_events: events,
-                   maybe_next_event_id: :no_more_events
+      assert %{
+               "rooms" => %{
+                 "join" => %{
+                   ^room_id => %JoinedRoomResult{
+                     room_id: ^room_id,
+                     state_events: state_event_stream,
+                     timeline_events: events,
+                     maybe_next_event_id: :no_more_events
+                   }
                  }
-               ]
+               }
              } = Task.await(sync_task)
 
       assert 0 = Enum.count(state_event_stream)
@@ -988,29 +938,24 @@ defmodule RadioBeam.Room.SyncTest do
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id, account.user_id)
 
-      config = User.ClientConfig.new!(account.user_id)
+      assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
+               Sync.perform_v2(account.user_id, device.id, [])
 
-      assert %Sync.Result{data: result_data, next_batch_map: next_batch_map} =
-               config |> Sync.init(device.id) |> Sync.perform()
-
-      assert [
-               %JoinedRoomResult{
-                 room_id: ^room_id,
-                 state_events: state_event_stream,
-                 timeline_events: _events,
-                 maybe_next_event_id: :no_more_events
+      assert %{
+               "join" => %{
+                 ^room_id => %JoinedRoomResult{
+                   room_id: ^room_id,
+                   state_events: state_event_stream,
+                   timeline_events: _events,
+                   maybe_next_event_id: :no_more_events
+                 }
                }
-             ] = result_data
+             } = room_results
 
       assert 0 = Enum.count(state_event_stream)
 
-      assert %Sync.Result{data: []} =
-               config
-               |> Sync.init(device.id,
-                 timeout: 300,
-                 since: PaginationToken.new(next_batch_map, :forward, System.os_time(:millisecond))
-               )
-               |> Sync.perform()
+      %{"next_batch" => _} = sync_result = Sync.perform_v2(account.user_id, device.id, timeout: 300, since: next_batch)
+      refute is_map_key(sync_result, "rooms")
     end
   end
 end

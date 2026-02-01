@@ -47,12 +47,18 @@ defmodule RadioBeam do
       {Registry, keys: :unique, name: RadioBeam.RoomRegistry},
       # Start the RoomEphemeralStateRegistry
       {Registry, keys: :unique, name: RadioBeam.RoomEphemeralStateRegistry},
+      # Start the SyncSinkRegistry
+      {Registry, keys: :unique, name: RadioBeam.Sync.SinkRegistry},
       # Start the GenServer that handles transaction IDs
       RadioBeam.Transaction,
       # Start the Room.Server.Supervisor
       RadioBeam.Room.Server.Supervisor,
       # Start the Room.EphemeralState.Server Supervisor
       RadioBeam.Room.EphemeralState.Server.Supervisor,
+      # Start the Sync.SinkServer.Supervisor
+      RadioBeam.Sync.SinkServer.Supervisor,
+      # Start the Sync Source Task.Supervisor
+      {Task.Supervisor, name: RadioBeam.Sync.Source.Supervisor},
       # Cache to reduce redundant membership events in /sync
       LazyLoadMembersCache,
       # Cache for authorization code grant flow state

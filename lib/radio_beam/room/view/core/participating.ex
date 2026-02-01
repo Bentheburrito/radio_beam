@@ -2,7 +2,7 @@ defmodule RadioBeam.Room.View.Core.Participating do
   @moduledoc """
   Tracks a user's membership across rooms using m.room.member events.
   """
-  defstruct latest_known_join_pdus: %{}, all: MapSet.new()
+  defstruct latest_known_join_pdus: %{}, all: MapSet.new(), invited: MapSet.new()
 
   @type t() :: %__MODULE__{}
 
@@ -19,9 +19,15 @@ defmodule RadioBeam.Room.View.Core.Participating do
         do: Map.put(participating.latest_known_join_pdus, room_id, pdu),
         else: participating.latest_known_join_pdus
 
+    invited_room_ids =
+      if pdu.event.content["membership"] == "invite",
+        do: MapSet.put(participating.invited, room_id),
+        else: MapSet.delete(participating.invited, room_id)
+
     struct!(participating,
       latest_known_join_pdus: latest_known_join_pdus,
-      all: MapSet.put(participating.all, room_id)
+      all: MapSet.put(participating.all, room_id),
+      invited: invited_room_ids
     )
   end
 end

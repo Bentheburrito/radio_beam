@@ -44,7 +44,7 @@ defmodule RadioBeam.User.ClientConfig do
 
     event_filter = parse_filter_or_filter_id_with_default(config, filter_or_filter_id)
 
-    %{ignored_user_ids: ignored_user_ids, filter: event_filter}
+    %{ignored_user_ids: ignored_user_ids, filter: event_filter, account_data: config.account_data}
   end
 
   defp parse_filter_or_filter_id_with_default(config, filter_id) when is_binary(filter_id) do
@@ -54,6 +54,7 @@ defmodule RadioBeam.User.ClientConfig do
     end
   end
 
-  defp parse_filter_or_filter_id_with_default(_config, %{} = inline_filter), do: inline_filter
+  defp parse_filter_or_filter_id_with_default(_config, %EventFilter{} = inline_filter), do: inline_filter
+  defp parse_filter_or_filter_id_with_default(_config, %{} = inline_filter), do: EventFilter.new(inline_filter)
   defp parse_filter_or_filter_id_with_default(_config, :none), do: EventFilter.new(%{})
 end
