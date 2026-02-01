@@ -5,7 +5,7 @@ defmodule RadioBeam.SyncTest do
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Sync
-  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 

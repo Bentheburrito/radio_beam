@@ -7,8 +7,8 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdates do
   @behaviour RadioBeam.Sync.Source
 
   alias RadioBeam.PubSub
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.Sync.Source
-  alias RadioBeam.Sync.Source.NextBatch
   alias RadioBeam.User.KeyStore
 
   @impl Source

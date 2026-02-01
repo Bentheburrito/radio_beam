@@ -1,7 +1,7 @@
-defmodule RadioBeam.Sync.Source.NextBatchTest do
+defmodule RadioBeam.Sync.NextBatchTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.Sync.NextBatch
 
   describe "new/3,4" do
     setup do

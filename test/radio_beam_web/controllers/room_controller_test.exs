@@ -2,7 +2,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.Sync.NextBatch
 
   describe "create/2" do
     test "successfully creates a room with the spec's example req body", %{conn: conn} do

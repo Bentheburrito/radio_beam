@@ -11,11 +11,11 @@ defmodule RadioBeam.Sync.SinkServer do
   """
   use GenServer, restart: :transient
 
-  alias RadioBeam.Sync.Source
-  alias RadioBeam.Sync.Source.NextBatch
-  alias RadioBeam.User
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room.View
+  alias RadioBeam.Sync.NextBatch
+  alias RadioBeam.Sync.Source
+  alias RadioBeam.User
 
   require Logger
 

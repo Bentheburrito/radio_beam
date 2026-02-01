@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.Timeline.ChunkTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline.Chunk
-  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User.EventFilter
 
   defp get_known_memberships, do: []

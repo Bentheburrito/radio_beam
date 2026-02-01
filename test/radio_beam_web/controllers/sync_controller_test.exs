@@ -2,7 +2,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User
 
   setup do

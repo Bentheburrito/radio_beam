@@ -2,8 +2,8 @@ defmodule RadioBeam.Sync do
   @moduledoc """
   Functions for performing /sync
   """
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.Sync.SinkServer
-  alias RadioBeam.Sync.Source.NextBatch
   alias RadioBeam.User
   alias RadioBeam.User.KeyStore
 

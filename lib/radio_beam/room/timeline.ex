@@ -6,13 +6,13 @@ defmodule RadioBeam.Room.Timeline do
 
   require Logger
 
+  alias RadioBeam.Room
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Participating
-  alias RadioBeam.Sync.Source.NextBatch
-  alias RadioBeam.Room
+  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 

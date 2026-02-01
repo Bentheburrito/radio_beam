@@ -5,7 +5,7 @@ defmodule RadioBeam.Room.TimelineTest do
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.View.Core.Timeline.Event
-  alias RadioBeam.Sync.Source.NextBatch
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User.EventFilter
 
   setup do
