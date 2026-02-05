@@ -4,6 +4,7 @@ defmodule RadioBeam.User do
   user data.
   """
 
+  alias RadioBeam.PubSub
   alias RadioBeam.Room
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Database
@@ -40,9 +41,15 @@ defmodule RadioBeam.User do
 
   def put_device_keys(user_id, device_id, opts) do
     case Database.update_user_device_with(user_id, device_id, &Device.put_keys(&1, user_id, opts)) do
-      {:ok, %Device{} = device} -> {:ok, Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)}
-      {:error, :invalid_identity_keys} -> {:error, :invalid_user_or_device_id}
-      {:error, :not_found} -> {:error, :not_found}
+      {:ok, %Device{} = device} ->
+        PubSub.broadcast(PubSub.user_membership_or_crypto_id_changed(), :crypto_id_changed)
+        {:ok, Device.OneTimeKeyRing.one_time_key_counts(device.one_time_key_ring)}
+
+      {:error, :invalid_identity_keys} ->
+        {:error, :invalid_user_or_device_id}
+
+      {:error, :not_found} ->
+        {:error, :not_found}
     end
   end
 
@@ -86,6 +93,7 @@ defmodule RadioBeam.User do
       with {:ok, scope} <- verify_scope(scope),
            {:ok, _config} <-
              Database.upsert_user_client_config_with(user_id, &ClientConfig.put_account_data(&1, scope, type, content)) do
+        user_id |> PubSub.account_data_updated() |> PubSub.broadcast({:account_data_updated, user_id})
         :ok
       end
     else
@@ -125,8 +133,10 @@ defmodule RadioBeam.User do
   def put_event_filter(user_id, raw_definition) do
     filter = EventFilter.new(raw_definition)
 
-    with {:ok, _config} <- Database.upsert_user_client_config_with(user_id, &ClientConfig.put_event_filter(&1, filter)),
-         do: {:ok, filter.id}
+    with {:ok, _config} <- Database.upsert_user_client_config_with(user_id, &ClientConfig.put_event_filter(&1, filter)) do
+      user_id |> PubSub.account_data_updated() |> PubSub.broadcast({:account_data_updated, user_id})
+      {:ok, filter.id}
+    end
   end
 
   def get_event_filter(user_id, filter_id) do

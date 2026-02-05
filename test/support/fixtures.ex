@@ -206,10 +206,9 @@ defmodule Fixtures do
   def create_and_put_device_keys(user_id, device_id) do
     {key, _} = device_keys(device_id, user_id)
 
-    {:ok, device} =
-      Database.update_user_device_with(user_id, device_id, &Device.put_keys(&1, user_id, identity_keys: key))
+    {:ok, otk_info} = User.put_device_keys(user_id, device_id, identity_keys: key)
 
-    device
+    otk_info
   end
 
   def authz_event(event_attrs, auth_events) do

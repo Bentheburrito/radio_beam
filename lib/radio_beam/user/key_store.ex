@@ -4,6 +4,7 @@ defmodule RadioBeam.User.KeyStore do
   """
   import RadioBeam.AccessExtras, only: [put_nested: 3]
 
+  alias RadioBeam.PubSub
   alias RadioBeam.Room
   alias RadioBeam.User
   alias RadioBeam.User.CrossSigningKey
@@ -122,11 +123,17 @@ defmodule RadioBeam.User.KeyStore do
   end
 
   def put_cross_signing_keys(user_id, kw_list) do
-    Database.update_key_store(user_id, fn %__MODULE__{cross_signing_key_ring: csk_ring} = key_store ->
-      with {:ok, %CrossSigningKeyRing{} = csk_ring} <- CrossSigningKeyRing.put(csk_ring, user_id, kw_list) do
-        struct!(key_store, cross_signing_key_ring: csk_ring)
-      end
-    end)
+    result =
+      Database.update_key_store(user_id, fn %__MODULE__{cross_signing_key_ring: csk_ring} = key_store ->
+        with {:ok, %CrossSigningKeyRing{} = csk_ring} <- CrossSigningKeyRing.put(csk_ring, user_id, kw_list) do
+          struct!(key_store, cross_signing_key_ring: csk_ring)
+        end
+      end)
+
+    with {:ok, _} <- result do
+      PubSub.broadcast(PubSub.user_membership_or_crypto_id_changed(), :crypto_id_changed)
+      result
+    end
   end
 
   def claim_otks(user_device_algo_map) do
@@ -154,13 +161,18 @@ defmodule RadioBeam.User.KeyStore do
       end)
 
     last_seen_event_by_room_id =
-      Map.new(room_ids, fn room_id ->
+      room_ids
+      |> Stream.map(fn room_id ->
         with {:ok, "$" <> _ = since_event_id} <- fetch_last_seen_event_id.(room_id),
              {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [since_event_id]),
              [since_event] <- Enum.take(event_stream, 1) do
           {room_id, since_event}
+        else
+          _ -> nil
         end
       end)
+      |> Stream.reject(&is_nil/1)
+      |> Map.new()
 
     fetch_key_store = &Database.fetch_key_store/1
     get_all_devices = &Database.get_all_devices_of_user/1

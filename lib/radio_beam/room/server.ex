@@ -6,6 +6,7 @@ defmodule RadioBeam.Room.Server do
   """
   use GenServer
 
+  alias RadioBeam.PubSub
   alias RadioBeam.Room.Database
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
@@ -88,6 +89,10 @@ defmodule RadioBeam.Room.Server do
           # note: `mark_dirty` needs to be called after Views are updated, not
           # just when write model is updated
           LazyLoadMembersCache.mark_dirty(room.id, event.state_key)
+        end
+
+        if event.type == "m.room.member" and event.content["membership"] in ~w|join leave ban kick| do
+          PubSub.broadcast(PubSub.user_membership_or_crypto_id_changed(), :crypto_id_changed)
         end
 
         {:reply, {:ok, event.id}, room}
