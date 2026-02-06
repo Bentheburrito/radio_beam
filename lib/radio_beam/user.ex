@@ -65,7 +65,14 @@ defmodule RadioBeam.User do
     to_device_message_request
     |> parse_send_to_device_request()
     |> Enum.each(fn {user_id, device_id, message} ->
-      Database.update_user_device_with(user_id, device_id, &Device.Message.put(&1, message, sender_id, message_type))
+      result =
+        Database.update_user_device_with(user_id, device_id, &Device.Message.put(&1, message, sender_id, message_type))
+
+      with {:ok, _} <- result do
+        user_id
+        |> PubSub.to_device_message_available(device_id)
+        |> PubSub.broadcast({:device_message_available, user_id, device_id})
+      end
     end)
   end
 
