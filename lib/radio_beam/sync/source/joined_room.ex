@@ -1,11 +1,12 @@
 defmodule RadioBeam.Sync.Source.JoinedRoom do
   @moduledoc """
-  Returns a room ID the user just joined.
+  Returns a JoinedRoomResult for a room the user just joined.
   """
   @behaviour RadioBeam.Sync.Source
 
   alias RadioBeam.PubSub
   alias RadioBeam.Room.Sync.JoinedRoomResult
+  alias RadioBeam.Room.View
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Sync.Source
 
@@ -13,7 +14,7 @@ defmodule RadioBeam.Sync.Source.JoinedRoom do
   def top_level_path(_key, joined_room_result), do: ["rooms", "join", joined_room_result.room_id]
 
   @impl Source
-  def inputs, do: ~w|account_data user_id event_filter|a
+  def inputs, do: ~w|account_data user_id event_filter known_memberships|a
 
   @impl Source
   def run(inputs, key, sink_pid) do
@@ -31,8 +32,15 @@ defmodule RadioBeam.Sync.Source.JoinedRoom do
 
         # TODO: known_memberships
         joined_room_result =
-          JoinedRoomResult.new(room, user_id, inputs.account_data, [membership_event], "join",
-            filter: inputs.event_filter
+          JoinedRoomResult.new(
+            room,
+            user_id,
+            inputs.account_data,
+            [membership_event],
+            &View.get_events!(&1, inputs.user_id, &2),
+            "join",
+            filter: inputs.event_filter,
+            known_memberships: inputs.known_memberships
           )
 
         # put the event ID/next_batch value under the room ID, so the next sync

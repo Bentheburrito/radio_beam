@@ -279,13 +279,32 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   defp pubsub_messages(room_id, topological_id, pdu) do
-    new_event_message = {PubSub.all_room_events(room_id), {:room_event, room_id, Event.new!(topological_id, pdu, [])}}
+    event = Event.new!(topological_id, pdu, [])
+    new_event_message = {PubSub.all_room_events(room_id), {:room_event, room_id, event}}
 
-    if pdu.event.type == "m.room.member" and pdu.event.content["membership"] == "invite" do
-      [
-        new_event_message,
-        {PubSub.invite_events(pdu.event.state_key), {:room_invite, pdu.event.state_key, pdu.event.sender, room_id}}
-      ]
+    if pdu.event.type == "m.room.member" do
+      membership_event_messages =
+        case pdu.event do
+          %{content: %{"membership" => "invite"}} ->
+            [
+              {PubSub.invite_events(pdu.event.state_key),
+               {:room_invite, pdu.event.state_key, pdu.event.sender, room_id}}
+            ]
+
+          %{content: %{"membership" => membership}} when membership in ~w|join leave ban kick| ->
+            crypto_id_change_message = {PubSub.user_membership_or_crypto_id_changed(), :crypto_id_changed}
+
+            if membership == "join" and not match?(%{"membership" => "join"}, pdu.event.prev_state_content) do
+              [
+                crypto_id_change_message,
+                {PubSub.user_joined_room(pdu.event.state_key), {:room_joined, event}}
+              ]
+            else
+              [crypto_id_change_message]
+            end
+        end
+
+      [new_event_message | membership_event_messages]
     else
       [new_event_message]
     end

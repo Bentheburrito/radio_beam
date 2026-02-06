@@ -3,9 +3,9 @@ defmodule RadioBeam.Room.Sync.InvitedRoomResult do
   alias RadioBeam.Room
   alias RadioBeam.Room.View.Core.Timeline.Event
 
-  defstruct ~w|room_id stripped_state_events user_invite_event_id|a
+  defstruct ~w|room_id stripped_state_events|a
 
-  @type t() :: %__MODULE__{room_id: Room.id(), stripped_state_events: [map()], user_invite_event_id: Room.event_id()}
+  @type t() :: %__MODULE__{room_id: Room.id(), stripped_state_events: [map()]}
 
   def new!(room, user_id) do
     stripped_state_events =
