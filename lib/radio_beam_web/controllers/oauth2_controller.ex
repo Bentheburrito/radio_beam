@@ -78,7 +78,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
 
       {:error, :state} ->
         error_params = oauth_error("invalid_request", "This homeserver requires a client-provided `state` value.")
-        redirect_with(conn, URI.new!(params["redirect_uri"]), params["response_mode"], error_params)
+        redirect_with(conn, URI.new!(params["redirect_uri"]), params["response_mode"] || "query", error_params)
 
       {:error, :registration_disabled} ->
         %{query_params: query_params} = fetch_query_params(conn)
