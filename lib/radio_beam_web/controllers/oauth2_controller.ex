@@ -109,7 +109,6 @@ defmodule RadioBeamWeb.OAuth2Controller do
               case error do
                 [user_id: error] -> [user_id_localpart: {error, []}]
                 [pwd_hash: "password is too weak"] -> [password: {OAuth2.weak_password_message(), []}]
-                [pwd_hash: error] -> [password: error]
                 :already_exists -> [user_id_localpart: {"That username is already taken.", []}]
                 :unknown_username_or_password -> [user_id_localpart: {"Unknown username or password", []}]
               end
