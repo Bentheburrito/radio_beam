@@ -66,9 +66,6 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
             JoinedRoomResult.new_ephemeral(room_id, inputs.account_data, "join", EphemeralState.Core.all_typing(state))
 
           {:ok, room_sync_result, maybe_next_batch(inputs, room_sync_result)}
-
-        :noop ->
-          nil
       end)
     else
       {:ok, room_sync_result, maybe_next_batch(inputs, room_sync_result)}
@@ -82,8 +79,6 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
     {:ok, room_sync_result, next_batch}
   end
 
-  defp side_effects({:no_update, _} = result, _inputs, _room_id), do: result
-
   defp maybe_next_batch(inputs, room_sync_result) do
     case room_sync_result do
       %JoinedRoomResult{latest_event_id: :use_latest} -> Map.get(inputs, :last_batch)
@@ -96,7 +91,6 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
       receive do
         {:room_event, "!" <> _, %Event{}} = message -> message
         {:room_ephemeral_state_update, "!" <> _, %EphemeralState{}} = message -> message
-        _ -> :noop
       end
     end)
   end
