@@ -536,7 +536,8 @@ defmodule RadioBeamWeb.OAuth2ControllerTest do
     test "returns an invalid_request oauth2 JSON error (400) when no token is supplied", %{conn: conn} do
       conn = post(conn, ~p"/oauth2/revoke", %{})
 
-      assert %{"error" => "invalid_request", "error_description" => "No 'token' to revoke was provided"} = json_response(conn, 400)
+      assert %{"error" => "invalid_request", "error_description" => "No 'token' to revoke was provided"} =
+               json_response(conn, 400)
     end
   end
 

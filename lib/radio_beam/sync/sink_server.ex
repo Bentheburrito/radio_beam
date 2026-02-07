@@ -208,8 +208,16 @@ defmodule RadioBeam.Sync.SinkServer do
 
     cond do
       Enum.any?(sources, &(Source.state(&1) == :working)) -> :waiting
-      Enum.all?(sources, &(Source.state(&1) == :waiting)) and state.timeout_state != :timed_out -> :waiting
+      Enum.all?(sources, &waiting_or_no_update?/1) and state.timeout_state != :timed_out -> :waiting
       :else -> :done
+    end
+  end
+
+  defp waiting_or_no_update?(source) do
+    case Source.state(source) do
+      :waiting -> true
+      {:no_update, _} -> true
+      _else -> false
     end
   end
 
