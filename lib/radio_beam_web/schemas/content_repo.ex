@@ -15,7 +15,7 @@ defmodule RadioBeamWeb.Schemas.ContentRepo do
 
   def thumbnail do
     %{
-      "animated" => [:boolean, default: true],
+      "animated" => [&animated?/1, default: true],
       "height" => &Schemas.as_integer/1,
       "width" => &Schemas.as_integer/1,
       "method" => Schema.enum(%{"scale" => :scale, "crop" => :crop}),
@@ -23,5 +23,14 @@ defmodule RadioBeamWeb.Schemas.ContentRepo do
       "server_name" => :string,
       "media_id" => :string
     }
+  end
+
+  defp animated?(value) do
+    case value do
+      bool when is_boolean(bool) -> {:ok, bool}
+      "true" -> {:ok, true}
+      "false" -> {:ok, false}
+      _else -> {:error, :not_a_boolean}
+    end
   end
 end

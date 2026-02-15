@@ -44,7 +44,7 @@ config :radio_beam, RadioBeam.ContentRepo.Database, backend: RadioBeam.Database.
 
 config :radio_beam, RadioBeam.ContentRepo,
   allowed_mimes:
-    ~w|image/jpg image/png image/gif audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
+    ~w|image/jpg image/jpeg image/png image/gif image/webp audio/mpeg audio/wav audio/aac video/mp4 text/csv application/octet-stream|,
   dir: :default,
   max_wait_for_download_ms: :timer.minutes(1),
   # Whether or not to create new thumbnails of uploaded images. The ability to

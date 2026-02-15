@@ -107,7 +107,7 @@ defmodule Fixtures do
   end
 
   def jpg_upload(user_id, width, height, tmp_dir, repo_dir \\ ContentRepo.path()) do
-    {:ok, upload} = ContentRepo.create(user_id)
+    {:ok, upload_id, _} = ContentRepo.create(user_id)
 
     tmp_upload_path = Path.join([tmp_dir, "tmp_jpg_upload_#{width}_#{height}"])
 
@@ -124,8 +124,9 @@ defmodule Fixtures do
     |> Operation.jpegsave!(tmp_upload_path)
 
     file_info = file_info(File.read!(tmp_upload_path), "jpg", "cool_picture")
-    {:ok, upload} = ContentRepo.upload(upload, file_info, tmp_upload_path, repo_dir)
-    upload
+    file_acceptor = fn -> {:ok, file_info, tmp_upload_path, nil} end
+    {:ok, ^upload_id, nil} = ContentRepo.try_upload(upload_id, user_id, file_acceptor, repo_dir)
+    {upload_id, file_info}
   end
 
   def create_cross_signing_keys(user_id) do

@@ -24,12 +24,7 @@ defmodule RadioBeam do
       User.Authentication.LegacyAPI,
       User.Authentication.OAuth2,
       User.EventFilter,
-      User.KeyStore,
-      ### temp / leaky
-      ContentRepo.Database,
-      ContentRepo.Thumbnail,
-      ContentRepo.Upload,
-      ContentRepo.Upload.FileInfo
+      User.KeyStore
     ]
 
   alias RadioBeam.Config

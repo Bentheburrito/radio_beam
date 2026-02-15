@@ -27,7 +27,7 @@ defmodule RadioBeamWeb.Router do
   @exp_read_user_bursts new!(100 / minutes(1), 40 / minutes(3), 40 / minutes(2), 50 / minutes(5))
   @exp_write_user_bursts new!(50 / minutes(1), 15 / minutes(5), 15 / minutes(5), 30 / minutes(5))
   @frequent_ephemeral_write new!(500 / minutes(1), 50 / minutes(2), 25 / minutes(2), 50 / minutes(3))
-  @infrequent_cheap_static_read new!(100 / minutes(1), 25 / minutes(2), 10 / minutes(2), 50 / minutes(2))
+  @infrequent_cheap_static_read new!(300 / minutes(1), 50 / minutes(1), 25 / minutes(1), 150 / minutes(1))
   @room_event_read new!(500 / minutes(1), 50 / minutes(1), 25 / minutes(1), 100 / minutes(2))
   @room_event_write new!(1_500 / seconds(10), 20 / minutes(1), 15 / minutes(1), 100 / minutes(1))
   # for endpoints likely to be hit by scrapers (e.g. root "/") that we don't care get rate limited aggressively

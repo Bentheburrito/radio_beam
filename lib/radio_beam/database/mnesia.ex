@@ -159,7 +159,7 @@ defmodule RadioBeam.Database.Mnesia do
   @impl RadioBeam.ContentRepo.Database
   def upsert_upload(%Upload{} = upload) do
     data_record =
-      upload(id: upload.id, file: upload.file, inserted_at: upload.inserted_at, uploaded_by_id: upload.uploaded_by_id)
+      upload(id: upload.id, file: upload.file, created_at: upload.created_at, uploaded_by_id: upload.uploaded_by_id)
 
     transaction(fn -> :mnesia.write(Tables.Upload, data_record, :write) end)
   end
@@ -176,7 +176,7 @@ defmodule RadioBeam.Database.Mnesia do
 
   @impl RadioBeam.ContentRepo.Database
   def with_user_total_uploaded_bytes("@" <> _ = uploaded_by_id, callback) do
-    match_head = upload(id: :_, file: :"$1", inserted_at: :_, uploaded_by_id: uploaded_by_id)
+    match_head = upload(id: :_, file: :"$1", created_at: :_, uploaded_by_id: uploaded_by_id)
     match_spec = [{match_head, [{:is_map, :"$1"}], [:"$1"]}]
 
     transaction(fn ->
@@ -190,7 +190,7 @@ defmodule RadioBeam.Database.Mnesia do
 
   @impl RadioBeam.ContentRepo.Database
   def with_user_upload_counts("@" <> _ = uploaded_by_id, callback) do
-    match_head = upload(id: :_, file: :"$1", inserted_at: :_, uploaded_by_id: uploaded_by_id)
+    match_head = upload(id: :_, file: :"$1", created_at: :_, uploaded_by_id: uploaded_by_id)
     match_spec = [{match_head, [], [:"$1"]}]
 
     transaction(fn ->

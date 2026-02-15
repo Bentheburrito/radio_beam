@@ -4,13 +4,13 @@ defmodule RadioBeam.Database.Mnesia.Tables.Upload do
   alias RadioBeam.ContentRepo
 
   require Record
-  Record.defrecord(:upload, __MODULE__, id: nil, file: nil, inserted_at: nil, uploaded_by_id: nil)
+  Record.defrecord(:upload, __MODULE__, id: nil, file: nil, created_at: nil, uploaded_by_id: nil)
 
   @type t() ::
           record(:upload,
             id: ContentRepo.MatrixContentURI.t(),
             file: ContentRepo.Upload.FileInfo.t(),
-            inserted_at: DateTime.t(),
+            created_at: DateTime.t(),
             uploaded_by_id: RadioBeam.User.id()
           )
 

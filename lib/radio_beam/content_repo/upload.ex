@@ -3,7 +3,7 @@ defmodule RadioBeam.ContentRepo.Upload do
   An `%Upload{}` represents a user-uploaded file on disk, including metadata
   such as its size and who it was uploaded by.
   """
-  defstruct ~w|id file inserted_at uploaded_by_id|a
+  defstruct ~w|id file created_at uploaded_by_id|a
 
   alias RadioBeam.User
   alias RadioBeam.ContentRepo.MatrixContentURI
@@ -23,7 +23,7 @@ defmodule RadioBeam.ContentRepo.Upload do
   @type t() :: %__MODULE__{
           id: MatrixContentURI.t(),
           file: file(),
-          inserted_at: DateTime.t(),
+          created_at: DateTime.t(),
           uploaded_by_id: User.id()
         }
   def dump!(upload), do: upload
@@ -32,13 +32,13 @@ defmodule RadioBeam.ContentRepo.Upload do
   def new("@" <> _ = uploaded_by_id, %MatrixContentURI{} = mxc \\ MatrixContentURI.new!()) do
     %__MODULE__{
       id: mxc,
-      file: nil,
-      inserted_at: DateTime.utc_now(),
+      file: :reserved,
+      created_at: DateTime.utc_now(),
       uploaded_by_id: uploaded_by_id
     }
   end
 
-  def put_file(%__MODULE__{file: file} = upload, %FileInfo{} = file_info) when file in [nil, :reserved] do
+  def put_file(%__MODULE__{file: file} = upload, %FileInfo{} = file_info) when file == :reserved do
     %__MODULE__{upload | file: file_info}
   end
 end

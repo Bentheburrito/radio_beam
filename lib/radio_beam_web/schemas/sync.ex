@@ -18,7 +18,7 @@ defmodule RadioBeamWeb.Schemas.Sync do
   def get_messages do
     %{
       "dir" => Schema.enum(%{"f" => :forward, "b" => :backward}, &String.downcase/1),
-      "filter" => optional(Schema.any_of([&filter_by_id/1, Filter.filter()])),
+      "filter" => optional(Schema.any_of([Filter.room_event_filter(), &Filter.json_room_event_filter/1])),
       "from" => optional(&since_token/1),
       "limit" => [&Filter.limit/1, default: RadioBeam.max_timeline_events()],
       "to" => optional(&since_token/1)

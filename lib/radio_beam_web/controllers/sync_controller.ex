@@ -46,7 +46,7 @@ defmodule RadioBeamWeb.SyncController do
       request
       |> Map.take(["filter", "limit"])
       |> Enum.reduce([to: :limit], fn
-        {"filter", filter}, opts -> Keyword.put(opts, :filter, filter)
+        {"filter", filter}, opts -> Keyword.put(opts, :filter, %{"room" => %{"timeline" => filter}})
         {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
       end)
 

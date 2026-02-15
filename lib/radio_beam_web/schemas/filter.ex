@@ -23,6 +23,14 @@ defmodule RadioBeamWeb.Schemas.Filter do
 
   def json_filter(_whatever), do: {:error, :invalid}
 
+  def json_room_event_filter("{" <> _rest = json_encoded_filter) do
+    with {:ok, filter} <- JSON.decode(json_encoded_filter) do
+      Schema.match(filter, room_event_filter())
+    end
+  end
+
+  def json_room_event_filter(_whatever), do: {:error, :invalid}
+
   defp event_filter do
     %{
       "limit" => optional(&limit/1),
@@ -45,7 +53,7 @@ defmodule RadioBeamWeb.Schemas.Filter do
     }
   end
 
-  defp room_event_filter(max_events \\ RadioBeam.max_timeline_events()) do
+  def room_event_filter(max_events \\ RadioBeam.max_timeline_events()) do
     %{
       "contains_url" => optional(:boolean),
       "include_redundant_members" => [:boolean, default: false],

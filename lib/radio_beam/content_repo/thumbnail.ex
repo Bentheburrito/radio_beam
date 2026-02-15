@@ -41,6 +41,7 @@ defmodule RadioBeam.ContentRepo.Thumbnail do
   end
 
   def coerce_spec(_width, _height, _method), do: {:error, :invalid_spec}
+  def coerce_spec({w, h, method}), do: coerce_spec(w, h, method)
 
   @spec new!(String.t()) :: t() | no_return()
   def new!(type) when type in @allowed_file_types, do: %__MODULE__{image: nil, source: nil, type: type}

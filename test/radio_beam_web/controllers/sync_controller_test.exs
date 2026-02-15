@@ -174,11 +174,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
           "body" => "this place is so cool"
         })
 
-      filter = %{"room" => %{"timeline" => %{"limit" => 3}}}
-      {:ok, filter_id} = User.put_event_filter(creator.user_id, filter)
-
       query_params = %{
-        filter: filter_id,
+        filter: %{"limit" => 3},
         dir: "b"
       }
 
@@ -191,7 +188,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert [%{"content" => %{"body" => "this place is so cool"}}, %{"type" => "m.room.name"}, _] = chunk
 
       query_params = %{
-        filter: filter_id,
+        filter: %{"limit" => 3},
         dir: "b",
         from: next
       }
