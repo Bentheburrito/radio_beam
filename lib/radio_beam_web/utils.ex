@@ -41,4 +41,6 @@ defmodule RadioBeamWeb.Utils do
   end
 
   def rl(rl), do: [assigns: %{rate_limit: rl}]
+
+  def ip_tuple_to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
 end

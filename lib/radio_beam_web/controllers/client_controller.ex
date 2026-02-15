@@ -4,7 +4,7 @@ defmodule RadioBeamWeb.ClientController do
   """
   use RadioBeamWeb, :controller
 
-  import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4]
+  import RadioBeamWeb.Utils, only: [json_error: 3, json_error: 4, ip_tuple_to_string: 1]
 
   alias RadioBeam.Transaction
   alias RadioBeam.Errors
@@ -57,8 +57,6 @@ defmodule RadioBeamWeb.ClientController do
     Logger.error("#{__MODULE__}: #{inspect(error)}")
     json_error(conn, 500, :unknown)
   end
-
-  defp ip_tuple_to_string({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
 
   def send_to_device(conn, %{"type" => type, "transaction_id" => txn_id}) do
     user_id = conn.assigns.user_id

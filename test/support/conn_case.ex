@@ -37,7 +37,7 @@ defmodule RadioBeamWeb.ConnCase do
     {:ok, setup_authenticated_user(Phoenix.ConnTest.build_conn(), tags)}
   end
 
-  defp setup_authenticated_user(conn, tags) do
+  def setup_authenticated_user(conn, tags) do
     account = Fixtures.create_account()
 
     code_verifier = 24 |> :crypto.strong_rand_bytes() |> Base.encode64()

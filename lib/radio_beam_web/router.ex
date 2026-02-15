@@ -7,6 +7,7 @@ defmodule RadioBeamWeb.Router do
   import Kernel, except: [/: 2]
 
   alias RadioBeamWeb.AccountController
+  alias RadioBeamWeb.AdminController
   alias RadioBeamWeb.LegacyAuthAPIController
   alias RadioBeamWeb.ClientController
   alias RadioBeamWeb.ContentRepoController
@@ -155,6 +156,8 @@ defmodule RadioBeamWeb.Router do
       end
 
       scope "/v3" do
+        get "/admin/whois/:user_id", AdminController, :whois, rl(@infrequent_cheap_static_read)
+
         get "/capabilities", HomeserverInfoController, :capabilities, rl(@infrequent_cheap_static_read)
 
         get "/devices", ClientController, :get_device, rl(@user_metadata_read)
