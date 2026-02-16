@@ -4,6 +4,7 @@ defmodule RadioBeam.Database.Mnesia do
   """
   @behaviour RadioBeam.Database
 
+  @behaviour RadioBeam.Admin.Database
   @behaviour RadioBeam.ContentRepo.Database
   @behaviour RadioBeam.Room.Database
   @behaviour RadioBeam.User.Database
@@ -17,7 +18,9 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.RoomView
   import RadioBeam.Database.Mnesia.Tables.Upload
   import RadioBeam.Database.Mnesia.Tables.UserClientConfig
+  import RadioBeam.Database.Mnesia.Tables.UserGeneratedReport
 
+  alias RadioBeam.Admin.UserGeneratedReport
   alias RadioBeam.ContentRepo.Upload
   alias RadioBeam.Database.Mnesia.Tables
   alias RadioBeam.Room
@@ -38,7 +41,8 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.RoomAlias,
     Tables.RoomView,
     Tables.Upload,
-    Tables.UserClientConfig
+    Tables.UserClientConfig,
+    Tables.UserGeneratedReport
   ]
 
   @impl RadioBeam.Database
@@ -389,6 +393,31 @@ defmodule RadioBeam.Database.Mnesia do
     end)
   end
 
+  @impl RadioBeam.Admin.Database
+  def insert_new_report(%UserGeneratedReport{} = report) do
+    key = {report.target, report.submitted_by}
+
+    report = user_generated_report(target_and_submitted_by: key, created_at: report.created_at, reason: report.reason)
+
+    transaction(fn ->
+      if report_exists?(key),
+        do: {:error, :already_exists},
+        else: :mnesia.write(Tables.UserGeneratedReport, report, :write)
+    end)
+  end
+
+  defp report_exists?(key), do: Tables.UserGeneratedReport |> :mnesia.read(key, :write) |> Enum.empty?() |> Kernel.not()
+
+  @impl RadioBeam.Admin.Database
+  def all_reports do
+    match_head = user_generated_report(target_and_submitted_by: :_, created_at: :_, reason: :_)
+    match_spec = [{match_head, [], [:"$_"]}]
+
+    transaction(fn ->
+      Tables.UserGeneratedReport |> :mnesia.select(match_spec) |> Enum.map(&record_to_domain_struct/1)
+    end)
+  end
+
   defp record_to_domain_struct(key_store(key_store: %KeyStore{} = key_store)), do: key_store
   defp record_to_domain_struct(user_client_config(client_config: %ClientConfig{} = config)), do: config
   defp record_to_domain_struct(device(device: %Device{} = device)), do: device
@@ -396,11 +425,17 @@ defmodule RadioBeam.Database.Mnesia do
   defp record_to_domain_struct(room(room: %Room{} = room)), do: room
   defp record_to_domain_struct(room_alias(alias_struct: %Room.Alias{} = room_alias)), do: room_alias
   defp record_to_domain_struct(upload() = upload_record), do: struct!(Upload, upload(upload_record))
-
   defp record_to_domain_struct(room_view(room_view: view_state)), do: view_state
 
   defp record_to_domain_struct(
          dynamic_oauth2_client(dynamic_oauth2_client: %DynamicOAuth2Client{} = dyn_oauth2_client)
        ),
        do: dyn_oauth2_client
+
+  defp record_to_domain_struct(
+         user_generated_report(target_and_submitted_by: {target, submitted_by}, created_at: created_at, reason: reason)
+       ) do
+    {:ok, report} = UserGeneratedReport.new(target, submitted_by, created_at, reason)
+    report
+  end
 end
