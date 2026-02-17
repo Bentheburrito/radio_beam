@@ -27,6 +27,7 @@ defmodule RadioBeamWeb.Router do
   @device_upkeep new!(80 / minutes(1), 10 / minutes(30), 5 / minutes(10), 80 / minutes(15))
   @exp_read_user_bursts new!(100 / minutes(1), 40 / minutes(3), 40 / minutes(2), 50 / minutes(5))
   @exp_write_user_bursts new!(50 / minutes(1), 15 / minutes(5), 15 / minutes(5), 30 / minutes(5))
+  @cheap_write_user_bursts new!(1000 / minutes(1), 200 / minutes(5), 200 / minutes(5), 500 / minutes(5))
   @frequent_ephemeral_write new!(500 / minutes(1), 50 / minutes(2), 25 / minutes(2), 50 / minutes(3))
   @infrequent_cheap_static_read new!(300 / minutes(1), 50 / minutes(1), 25 / minutes(1), 150 / minutes(1))
   @room_event_read new!(500 / minutes(1), 50 / minutes(1), 25 / minutes(1), 100 / minutes(2))
@@ -225,6 +226,13 @@ defmodule RadioBeamWeb.Router do
           get "/:room_id/timestamp_to_event", RoomController, :get_nearest_event, rl(@room_event_read)
 
           put "/:room_id/typing/:user_id", RoomController, :put_typing, rl(@frequent_ephemeral_write)
+
+          post "/:room_id/report", AdminController, :report_room, rl(@cheap_write_user_bursts)
+          post "/:room_id/report/:event_id", AdminController, :report_room_event, rl(@cheap_write_user_bursts)
+        end
+
+        scope "/users" do
+          post "/:user_id/report", AdminController, :report_user, rl(@cheap_write_user_bursts)
         end
 
         scope "/account" do

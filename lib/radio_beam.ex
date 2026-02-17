@@ -10,6 +10,7 @@ defmodule RadioBeam do
     deps: [Argon2, Ecto, Guardian, Hammer, Phoenix.PubSub, Polyjuice.Util],
     exports: [
       AccessExtras,
+      Admin,
       ContentRepo,
       ContentRepo.MatrixContentURI,
       Errors,

@@ -1,6 +1,128 @@
 defmodule RadioBeamWeb.AdminControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  alias RadioBeam.Room
+
+  describe "report_room/2" do
+    test "saves the report and returns an empty JSON object (200)", %{conn: conn} do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report", %{"reason" => "not moderated, full of spam"})
+      assert response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns M_NOT_FOUND (404) when the room doesn't exist", %{conn: conn} do
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/!idontexist12312312/report", %{
+          "reason" => "not moderated, full of spam (I'm lying)"
+        })
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => "Room not found"} = json_response(conn, 404)
+    end
+
+    test "returns M_FORBIDDEN (403) when the user has already an outstanding report for the room", %{conn: conn} do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report", %{"reason" => "not moderated, full of spam"})
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report", %{"reason" => "full of spam! pls help"})
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "already reported"
+    end
+  end
+
+  describe "report_room_event/2" do
+    test "saves the report and returns an empty JSON object (200)", %{conn: conn, account: %{user_id: reporter_id}} do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _} = Room.invite(room_id, creator_id, reporter_id)
+      {:ok, _} = Room.join(room_id, reporter_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "blahblahblahblahblahblahblah")
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report/#{event_id}", %{"reason" => "spam"})
+      assert response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns M_NOT_FOUND (404) when the event doesn't exist", %{conn: conn, account: %{user_id: reporter_id}} do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _} = Room.invite(room_id, creator_id, reporter_id)
+      {:ok, _} = Room.join(room_id, reporter_id)
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report/$asdfasdf", %{"reason" => "spam (I'm lying)"})
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => error} = json_response(conn, 404)
+      assert error =~ "event was not found"
+    end
+
+    test "returns M_NOT_FOUND (404) when the event exists, but the user isn't a member of the room", %{
+      conn: conn,
+      account: %{user_id: reporter_id}
+    } do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _} = Room.invite(room_id, creator_id, reporter_id)
+      # didn't accept invite
+
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "blahblahblahblahblahblahblah")
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report/#{event_id}", %{"reason" => "spam (how would I know?)"})
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => error} = json_response(conn, 404)
+      assert error =~ "event was not found"
+    end
+
+    test "returns M_FORBIDDEN (403) when the user has already an outstanding report for the event", %{
+      conn: conn,
+      account: %{user_id: reporter_id}
+    } do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _} = Room.invite(room_id, creator_id, reporter_id)
+      {:ok, _} = Room.join(room_id, reporter_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "blahblahblahblahblahblahblah")
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report/#{event_id}", %{"reason" => "spam"})
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/report/#{event_id}", %{"reason" => "delete pls!!"})
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "already reported"
+    end
+  end
+
+  describe "report_user/2" do
+    test "saves the report and returns an empty JSON object (200)", %{conn: conn} do
+      %{user_id: user_id} = Fixtures.create_account()
+
+      conn = post(conn, ~p"/_matrix/client/v3/users/#{user_id}/report", %{"reason" => "they were mean to me"})
+      assert response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns M_NOT_FOUND (404) when the event doesn't exist", %{conn: conn} do
+      conn =
+        post(conn, ~p"/_matrix/client/v3/users/@helloidontexistt/report", %{
+          "reason" => "they were mean to me (I talk to ghosts)"
+        })
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => "User not found"} = json_response(conn, 404)
+    end
+
+    test "returns M_FORBIDDEN (403) when the user has already an outstanding report for the user", %{conn: conn} do
+      %{user_id: user_id} = Fixtures.create_account()
+
+      conn = post(conn, ~p"/_matrix/client/v3/users/#{user_id}/report", %{"reason" => "they were mean to me"})
+      conn = post(conn, ~p"/_matrix/client/v3/users/#{user_id}/report", %{"reason" => "they were mean to me"})
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "already reported"
+    end
+  end
+
   describe "whois/2" do
     setup do
       device_display_name = "My Awesome Computer"
