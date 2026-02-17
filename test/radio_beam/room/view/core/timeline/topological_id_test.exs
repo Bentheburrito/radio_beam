@@ -73,4 +73,15 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalIDTest do
       assert {:error, :invalid} = TopologicalID.parse_string(encoded)
     end
   end
+
+  describe "JSON.Encoder implementation" do
+    test "encodes a TopologicalID as expected" do
+      creator = Fixtures.create_account()
+      room = Fixtures.room("11", creator.user_id)
+      root = DAG.root!(room.dag)
+      root_topo_id = TopologicalID.new!(root, [])
+
+      assert ~s|"tid(1,0)"| = JSON.encode!(root_topo_id)
+    end
+  end
 end

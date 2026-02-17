@@ -222,18 +222,20 @@ defmodule RadioBeamWeb.RoomKeysControllerTest do
         |> Enum.shuffle()
         # all these paths hit one user, so have to make sure the backup version
         # increments for each time we call add_room_keys_with_2_backups_to_user
-        |> Stream.with_index(fn _element, index -> index * 2 end)
+        |> Stream.with_index(fn element, index -> {element, index * 2} end)
 
       for {path_fxn, version} <- paths do
         room_id = Fixtures.room_id()
         session_id = Fixtures.random_string(16)
-        path = path_fxn.(room_id, session_id, version)
+        path = path_fxn.(room_id, session_id, 2)
 
         add_room_keys_with_2_backups_to_user(account.user_id)
         add_e2ee_keys_to_backup(account.user_id, 2, %{room_id => %{session_id => @session_data}})
 
+        expected_etag = "#{div(version, 2) + 2}"
+
         conn = delete(conn, path, %{})
-        assert %{"count" => 0, "etag" => "2"} = json_response(conn, 200)
+        assert %{"count" => 0, "etag" => ^expected_etag} = json_response(conn, 200)
       end
     end
 

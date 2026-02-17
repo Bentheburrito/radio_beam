@@ -59,7 +59,7 @@ defmodule RadioBeam.User.RoomKeys.Backup do
     do: backup.room_session_backups |> update_in(&Map.delete(&1, room_id)) |> inc_modified_count()
 
   def delete_keys_under(%__MODULE__{} = backup, ["!" <> _ = room_id, session_id]),
-    do: backup.room_session_backups[room_id] |> update_in(&Map.delete(&1, session_id)) |> inc_modified_count()
+    do: backup.room_session_backups[room_id][session_id] |> pop_in() |> elem(1) |> inc_modified_count()
 
   defp inc_modified_count(%__MODULE__{} = backup), do: update_in(backup.modified_count, &(&1 + 1))
 

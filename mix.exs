@@ -23,17 +23,16 @@ defmodule RadioBeam.MixProject do
       ],
       test_coverage: [
         ignore_modules: [
-          RadioBeamApplication,
+          Fixtures,
           RadioBeam.DataCase,
           RadioBeam.User.Authentication.OAuth2.Builtin.Guardian.Plug,
-          RadioBeamWeb.Telemetry,
+          RadioBeamApplication,
           RadioBeamWeb.CoreComponents,
           RadioBeamWeb.Gettext,
           RadioBeamWeb.Layouts,
           RadioBeamWeb.OAuth2HTML,
-          Fixtures,
-          # to remove later
-          RadioBeamWeb.Plugs.UserInteractiveAuth
+          RadioBeamWeb.Telemetry,
+          ~r/Database.Mnesia.Tables/
         ]
       ]
     ]
