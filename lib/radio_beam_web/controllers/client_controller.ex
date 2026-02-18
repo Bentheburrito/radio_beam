@@ -96,11 +96,6 @@ defmodule RadioBeamWeb.ClientController do
       {:already_done, response} ->
         json(conn, response)
 
-      :federation_unimplemented ->
-        conn
-        |> put_status(404)
-        |> json(Errors.unrecognized("Device messages over federation are currently unimplemented"))
-
       :error ->
         conn
         |> put_status(500)

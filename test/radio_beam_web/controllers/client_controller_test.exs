@@ -4,12 +4,21 @@ defmodule RadioBeamWeb.ClientControllerTest do
   @moduletag [device_display_name: "da steam deck"]
 
   describe "get_device/2" do
-    test "returns a list of devices", %{conn: conn, device_id: device_id} do
+    test "returns a list of devices", %{conn: conn, account: %{user_id: user_id}, device_id: device_id} do
+      device2 = Fixtures.create_device(user_id)
+
       conn = get(conn, ~p"/_matrix/client/v3/devices", %{})
 
-      expected_device = %{"device_id" => device_id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"}
-      assert %{"devices" => [actual_device]} = json_response(conn, 200)
-      assert ^expected_device = Map.delete(actual_device, "last_seen_ts")
+      expected_devices =
+        Enum.sort([
+          %{"device_id" => device_id, "display_name" => "da steam deck", "last_seen_ip" => "127.0.0.1"},
+          %{"device_id" => device2.id, "display_name" => RadioBeam.User.Device.default_name()}
+        ])
+
+      assert %{"devices" => [actual_device, actual_device2]} = json_response(conn, 200)
+
+      assert expected_devices ==
+               Enum.sort([Map.delete(actual_device, "last_seen_ts"), Map.delete(actual_device2, "last_seen_ts")])
     end
 
     test "returns a device under the given device ID", %{conn: conn, device_id: device_id} do
@@ -41,6 +50,12 @@ defmodule RadioBeamWeb.ClientControllerTest do
       assert response = json_response(conn, 200)
       assert 0 = map_size(response)
     end
+
+    test "returns M_NOT_FOUND (404) when the device ID doesn't exist", %{conn: conn} do
+      conn = put(conn, ~p"/_matrix/client/v3/devices/AfhFYGSU", %{"display_name" => "da steam machine"})
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => "device not found"} = json_response(conn, 404)
+    end
   end
 
   describe "send_to_device/2" do
@@ -62,15 +77,6 @@ defmodule RadioBeamWeb.ClientControllerTest do
 
       assert response = json_response(conn, 200)
       assert 0 = map_size(response)
-    end
-
-    # TOFIX: send to-device msgs over federation
-    @tag :skip
-    test "(tochange): returns M_UNRECOGNIZED (404) when a user is not on the same homserver", %{conn: conn} do
-      messages = %{"@test:somewhere.else" => %{"idontexist" => %{"hello" => "world"}}}
-      conn = put(conn, ~p"/_matrix/client/v3/sendToDevice/m.what/abc123", %{"messages" => messages})
-
-      assert %{"errcode" => "M_UNRECOGNIZED"} = json_response(conn, 404)
     end
 
     @tag :capture_log

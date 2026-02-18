@@ -133,7 +133,7 @@ defmodule RadioBeam.MixProject do
         "format --check-formatted",
         # "cmd --shell './bin/xref_check.sh'",
         "cmd --shell 'mix xref graph --format cycles --fail-above 3 > /dev/null'",
-        "test"
+        "test --cover"
       ],
       boundaries: [
         "boundary.visualize",

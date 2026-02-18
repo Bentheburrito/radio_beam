@@ -362,6 +362,89 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
     end
 
+    test "can successfully paginate in either direction from a pagination token, to: another", %{
+      room_id: room_id,
+      creator: creator
+    } do
+      filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
+      device = Fixtures.create_device(creator.user_id)
+
+      assert {:ok, %Chunk{timeline_events: _events, state_events: _state, start: %NextBatch{}, end: end_token}} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
+
+      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token, end: end_token2}} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
+
+      expected_events = Enum.take(events, 2)
+      expected_state = Enum.take(state, 2)
+
+      assert {:ok,
+              %Chunk{
+                timeline_events: ^expected_events,
+                state_events: state,
+                start: to_start_token,
+                end: :no_more_events
+              }} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, to: end_token2)
+
+      assert ^expected_state = Enum.take(state, 2)
+      assert NextBatch.topologically_equal?(to_start_token, start_token)
+
+      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token3}} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
+
+      expected_events = Enum.take(events, 2)
+      expected_state = Enum.take(state, 2)
+
+      assert {:ok,
+              %Chunk{
+                timeline_events: ^expected_events,
+                state_events: state,
+                start: to_start_token2,
+                end: :no_more_events
+              }} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, to: end_token3)
+
+      assert ^expected_state = Enum.take(state, 2)
+      assert NextBatch.topologically_equal?(to_start_token2, start_token2)
+
+      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token4}} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
+
+      expected_events = Enum.take(events, 2)
+      expected_state = Enum.take(state, 2)
+
+      assert {:ok,
+              %Chunk{
+                timeline_events: ^expected_events,
+                state_events: state,
+                start: to_start_token3,
+                end: :no_more_events
+              }} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, to: end_token4)
+
+      assert ^expected_state = Enum.take(state, 2)
+      assert NextBatch.topologically_equal?(to_start_token3, start_token3)
+
+      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token5}} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :forward}, filter: filter)
+
+      expected_events = Enum.take(events, 2)
+      expected_state = Enum.take(state, 2)
+
+      assert {:ok,
+              %Chunk{
+                timeline_events: ^expected_events,
+                state_events: state,
+                start: to_start_token4,
+                end: :no_more_events
+              }} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :forward}, to: end_token5)
+
+      assert ^expected_state = Enum.take(state, 2)
+      assert NextBatch.topologically_equal?(to_start_token4, start_token4)
+    end
+
     test "filters state by relevant senders when lazy_load_members is true", %{
       creator: creator,
       account: account

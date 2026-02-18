@@ -8,6 +8,9 @@ defmodule RadioBeam.ContentRepo.MatrixContentURITest do
       assert {:ok, %MatrixContentURI{id: "abcd_-123", server_name: "local-host"}} =
                MatrixContentURI.new("local-host", "abcd_-123")
 
+      assert {:ok, %MatrixContentURI{id: id, server_name: "local-host"}} = MatrixContentURI.new("local-host")
+      assert {:ok, _} = Ecto.UUID.dump(id)
+
       assert {:ok,
               %MatrixContentURI{
                 id: "1234567890qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM",

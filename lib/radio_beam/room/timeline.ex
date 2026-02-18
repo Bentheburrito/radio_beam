@@ -49,8 +49,8 @@ defmodule RadioBeam.Room.Timeline do
       not_passed_to =
         cond do
           maybe_to_event == :none -> fn _ -> true end
-          direction == :forward -> &(TopologicalID.compare(&1, maybe_to_event.order_id) != :gt)
-          direction == :backward -> &(TopologicalID.compare(&1, maybe_to_event.order_id) != :lt)
+          direction == :forward -> &(TopologicalID.compare(&1.order_id, maybe_to_event.order_id) != :gt)
+          direction == :backward -> &(TopologicalID.compare(&1.order_id, maybe_to_event.order_id) != :lt)
         end
 
       event_stream =
@@ -147,18 +147,6 @@ defmodule RadioBeam.Room.Timeline do
   defp get_user_timeline_preferences(user_id, opts) do
     maybe_filter_or_filter_id = Keyword.get(opts, :filter, :none)
 
-    user_tl_prefs = User.get_timeline_preferences(user_id, maybe_filter_or_filter_id)
-
-    if is_map_key(user_tl_prefs, :filter) do
-      user_tl_prefs
-    else
-      filter =
-        case Keyword.get(opts, :limit, :none) do
-          :none -> EventFilter.new(%{})
-          limit -> EventFilter.new(%{"room" => %{"timeline" => %{"limit" => limit}}})
-        end
-
-      Map.put(user_tl_prefs, :filter, filter)
-    end
+    User.get_timeline_preferences(user_id, maybe_filter_or_filter_id)
   end
 end

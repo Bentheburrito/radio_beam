@@ -125,14 +125,6 @@ defmodule RadioBeamWeb.ContentRepoController do
           unused_expires_at: DateTime.to_unix(created_at, :millisecond) + ContentRepo.unused_mxc_uris_expire_in_ms()
         })
 
-      {:error, {:quota_reached, :max_reserved}} ->
-        Logger.info("MEDIA QUOTA REACHED max_reserved: #{user_id} tried to upload a file after reaching a limit")
-
-        json_error(conn, 429, :limit_exceeded, [
-          ContentRepo.unused_mxc_uris_expire_in_ms(),
-          "You have too many pending uploads. Ensure all previous uploads succeed before trying again"
-        ])
-
       {:error, {:quota_reached, quota_kind}} ->
         quota_reached_error(conn, quota_kind, user_id)
     end
@@ -204,6 +196,15 @@ defmodule RadioBeamWeb.ContentRepoController do
     else
       halting_json_error(conn, 403, :forbidden, ["#{mime_type} files are not allowed"])
     end
+  end
+
+  defp quota_reached_error(conn, :max_reserved, user_id) do
+    Logger.info("MEDIA QUOTA REACHED max_reserved: #{user_id} tried to upload a file after reaching a limit")
+
+    json_error(conn, 429, :limit_exceeded, [
+      ContentRepo.unused_mxc_uris_expire_in_ms(),
+      "You have too many pending uploads. Ensure all previous uploads succeed before trying again"
+    ])
   end
 
   @quota_reached_error_msg "You have uploaded too many files. Contact the server admin if you believe this is a mistake."

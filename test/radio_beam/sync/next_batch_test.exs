@@ -108,5 +108,19 @@ defmodule RadioBeam.Sync.NextBatchTest do
 
       assert {:ok, ^token} = NextBatch.decode(encoded_token)
     end
+
+    test "returns an error tuple for malformed batch string", %{room: room, event_id: event_id} do
+      now = System.os_time(:millisecond)
+      other_room_id = Fixtures.room_id()
+      pairs = %{room.id => event_id, other_room_id => event_id}
+
+      token = NextBatch.new!(now, pairs, :forward)
+      malformed_token = to_string(token) <> "asdf"
+
+      assert {:error, :malformed_batch_token} = NextBatch.decode(malformed_token)
+
+      malformed_token = token |> to_string() |> String.replace("timestamp", "")
+      assert {:error, :malformed_batch_token} = NextBatch.decode(malformed_token)
+    end
   end
 end

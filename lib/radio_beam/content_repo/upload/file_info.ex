@@ -13,7 +13,7 @@ defmodule RadioBeam.ContentRepo.Upload.FileInfo do
           type: String.t()
         }
 
-  def new(type, size, sha256, filename \\ "Upload") do
+  def new(type, size, sha256, filename) do
     %__MODULE__{
       byte_size: size,
       filename: filename,

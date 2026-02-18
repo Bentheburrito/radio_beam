@@ -44,4 +44,12 @@ defmodule RadioBeam.Room.AliasTest do
       end
     end
   end
+
+  describe "String.Chars impl" do
+    test "converts an %Alias{} to a string as expected" do
+      alias_str = "#some_alias:localhost"
+      {:ok, alias} = Alias.new(alias_str)
+      assert ^alias_str = to_string(alias)
+    end
+  end
 end

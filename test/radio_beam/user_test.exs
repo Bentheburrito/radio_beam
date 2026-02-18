@@ -1,6 +1,7 @@
 defmodule RadioBeam.UserTest do
   use ExUnit.Case, async: true
 
+  alias RadioBeam.PubSub
   alias RadioBeam.Room
   alias RadioBeam.User
   alias RadioBeam.User.Database
@@ -82,6 +83,27 @@ defmodule RadioBeam.UserTest do
         assert {:error, :invalid_user_or_device_id} =
                  User.put_device_keys(account.user_id, device.id, identity_keys: device_key)
       end
+    end
+  end
+
+  describe "send_to_devices/3" do
+    setup do
+      account = Fixtures.create_account()
+      device = Fixtures.create_device(account.user_id)
+      %{account: account, device: device}
+    end
+
+    test "sends a message, notifying PubSub subscribers", %{account: %{user_id: user_id}, device: %{id: device_id}} do
+      :ok = PubSub.subscribe(PubSub.to_device_message_available(user_id, device_id))
+
+      :ok =
+        User.send_to_devices(
+          %{user_id => %{"*" => %{"hello!" => "world"}}},
+          "@hello:world",
+          "com.spectrum.corncobtv.notification"
+        )
+
+      assert_receive {:device_message_available, ^user_id, ^device_id}
     end
   end
 

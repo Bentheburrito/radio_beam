@@ -69,17 +69,24 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, account.user_id)
 
-      %JoinedRoomResult{} =
-        joined_room_result =
-        JoinedRoomResult.new(room, account.user_id, %{}, timeline_events, get_events_for_user, "join")
+      for opts <- [[], [typing: ["@abcde:localhost"]]] do
+        %JoinedRoomResult{} =
+          joined_room_result =
+          JoinedRoomResult.new(room, account.user_id, %{}, timeline_events, get_events_for_user, "join", opts)
 
-      assert json = JSON.encode!(joined_room_result)
-      assert json =~ ~s|"state":{"events":[]|
-      assert json =~ ~s|"type":"m.room.create"|
-      assert json =~ ~s|"type":"m.room.join_rules"|
-      assert json =~ ~s|"type":"m.room.history_visibility"|
-      assert json =~ ~s|"type":"m.room.member"|
-      assert json =~ ~s|"type":"m.room.message"|
+        assert json = JSON.encode!(joined_room_result)
+        assert json =~ ~s|"state":{"events":[]|
+        assert json =~ ~s|"type":"m.room.create"|
+        assert json =~ ~s|"type":"m.room.join_rules"|
+        assert json =~ ~s|"type":"m.room.history_visibility"|
+        assert json =~ ~s|"type":"m.room.member"|
+        assert json =~ ~s|"type":"m.room.message"|
+
+        if Keyword.has_key?(opts, :typing) do
+          assert json =~ ~s|m.typing|
+          assert json =~ ~s|@abcde:localhost|
+        end
+      end
     end
   end
 

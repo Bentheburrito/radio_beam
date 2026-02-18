@@ -51,13 +51,6 @@ defmodule RadioBeam.Sync.NextBatch do
     nb1.kvs == nb2.kvs and nb1.dir == nb2.dir
   end
 
-  def to_map(batch) do
-    batch.kvs
-    |> Map.put("timestamp", batch.timestamp)
-    |> Map.put("dir", batch.dir)
-    |> Stream.reject(fn {_k, v} -> is_nil(v) end)
-  end
-
   defimpl JSON.Encoder do
     def encode(batch, encoder) do
       batch

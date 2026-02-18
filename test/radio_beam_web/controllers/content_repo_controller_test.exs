@@ -270,7 +270,11 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       assert error =~ "Cannot upload files larger than"
     end
 
-    test "rejects (403) an upload when a user has reached a quota", %{conn: conn, account: account, tmp_dir: tmp_dir} do
+    test "rejects (403) an upload when a user has reached their total bytes uploaded quota", %{
+      conn: conn,
+      account: account,
+      tmp_dir: tmp_dir
+    } do
       max_bytes = ContentRepo.user_upload_limits().max_bytes
       max_upload_bytes = ContentRepo.max_upload_size_bytes()
       num_to_upload = div(max_bytes, max_upload_bytes)
@@ -294,6 +298,22 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "uploaded too many files"
+    end
+
+    test "rejects (429) an upload when a user has reached their reserve quota", %{conn: conn, account: account} do
+      num_to_reserve = ContentRepo.user_upload_limits().max_reserved
+
+      for _i <- 1..num_to_reserve do
+        {:ok, _upload_id, _} = ContentRepo.create(account.user_id)
+      end
+
+      conn =
+        conn
+        |> put_req_header("content-type", "text/csv")
+        |> post(~p"/_matrix/media/v3/upload", Fixtures.random_string(32))
+
+      assert %{"errcode" => "M_LIMIT_EXCEEDED", "error" => error} = json_response(conn, 429)
+      assert error =~ "too many pending uploads"
     end
   end
 
