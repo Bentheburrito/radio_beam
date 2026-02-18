@@ -7,7 +7,8 @@
 
 ---
 
-A [Matrix](https://matrix.org/) homeserver, powered by the
+A [Matrix](https://matrix.org/) homeserver, powered by
+[Elixir](https://elixir-lang.org/) and the
 [BEAM](https://en.wikipedia.org/wiki/BEAM_(Erlang_virtual_machine)).
 
 <br>
@@ -46,21 +47,19 @@ be supported, in favor of the newer OAuth2 APIs.
 | Read and Unread Markers             | 🗒️Planned/Not Started |                  |
 | Receipts                            | 🗒️Planned/Not Started |                  |
 | Reference Relations                 | ✅Implemented         |                  |
-| Reporting Content                   | 🗒️Planned/Not Started |                  |
-| Rich replies                        | ✅Implemented         | (Client feature) |
+| Reporting Content                   | ✅Implemented         |                  |
 | Room History Visibility             | ✅Implemented         |                  |
 | Room Previews                       | ❓Not Scoped          |                  |
 | Room Tagging                        | 🗒️Planned/Not Started |                  |
 | Room Upgrades                       | 🗒️Planned/Not Started |                  |
 | SSO Client Login/Authentication     | ❌Not Planned         | Prefer the OAuth 2.0 APIs instead |
 | Secrets                             | ✅Implemented         |                  |
-| Send-to-Device Messaging            | ☑️Mostly Complete     |                  |
+| Send-to-Device Messaging            | ☑️Mostly Complete     | Sending over federation remaining |
 | Server Access Control Lists (ACLs)  | 🗒️Planned/Not Started |                  |
-| Server Administration               | 🗒️Planned/Not Started |                  |
+| Server Administration               | ✅Implemented         |                  |
 | Server Notices                      | 🗒️Planned/Not Started |                  |
 | Server Side Search                  | 🗒️Planned/Not Started |                  |
 | Spaces                              | 🗒️Planned/Not Started |                  |
-| Sticker Messages                    | 🗒️Planned/Not Started |                  |
 | Third-party Invites                 | 🗒️Planned/Not Started |                  |
 | Third-party Networks                | 🗒️Planned/Not Started |                  |
 | Threading                           | ☑️Mostly Complete     |                  |
@@ -81,7 +80,8 @@ Below are additional APIs/features outside of the C-S and S-S APIs, including un
 | API / Feature Name                  | Status                | Additional Notes |
 |-------------------------------------|-----------------------|------------------|
 | Room Versions 1-2                   | ❌Not Planned         |                  |
-| Room Versions 3-12                  | ✅Implemented         |                  |
+| Room Versions 3-11                  | ✅Implemented         |                  |
+| Room Versions 12                    | 🗒️Planned/Not Started |                  |
 | Account Administrative Contact Info | ❌Not Planned         |                  |
 | Account Locking / Suspension        | 🗒️Planned/Not Started |                  |
 | Application Service API             | 🗒️Planned/Not Started |                  |
