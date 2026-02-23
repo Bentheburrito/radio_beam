@@ -10,14 +10,12 @@ defmodule RadioBeamWeb.Schemas.Relations do
         Schema.enum(%{"f" => :chronological, "b" => :reverse_chronological}, &String.downcase/1),
         default: :reverse_chronological
       ],
-      "from" => optional(&pagination_token/1),
+      "from" => optional(&RadioBeam.Sync.parse_batch_token/1),
       "limit" => [&Filter.limit/1, default: RadioBeam.max_timeline_events()],
-      "to" => optional(&pagination_token/1),
+      "to" => optional(&RadioBeam.Sync.parse_batch_token/1),
       "recurse" => [:boolean, default: false]
     }
   end
 
-  # TODO these are in schemas/sync.ex too, extract into helper fxns
-  defp pagination_token(token), do: RadioBeam.Sync.parse_batch_token(token)
   defp optional(type), do: [type, :optional]
 end

@@ -136,11 +136,11 @@ defmodule RadioBeam.Room do
     Room.Server.send(room_id, Events.text_message(room_id, sender_id, message))
   end
 
-  def get_event(room_id, user_id, event_id, _bundle_aggregates? \\ true) do
-    expect_one_event(room_id, user_id, event_id)
+  def get_event(room_id, user_id, event_id, bundle_aggregates? \\ true) do
+    expect_one_event(room_id, user_id, event_id, bundle_aggregates?)
   end
 
-  def redact_event(room_id, user_id, event_id, reason \\ nil) do
+  def redact_event(room_id, user_id, event_id, reason) do
     Room.Server.send(room_id, Events.redaction(room_id, user_id, event_id, reason))
   end
 
@@ -213,7 +213,7 @@ defmodule RadioBeam.Room do
   def get_state(room_id, user_id, type, state_key) do
     with {:ok, room} <- get(room_id),
          {:ok, %PDU{} = state_pdu} <- get_state_at(room.state, user_id, type, state_key) do
-      expect_one_event(room_id, user_id, state_pdu.event.id)
+      expect_one_event(room_id, user_id, state_pdu.event.id, false)
     end
   end
 
@@ -234,8 +234,8 @@ defmodule RadioBeam.Room do
     end
   end
 
-  defp expect_one_event(room_id, user_id, event_id) do
-    with {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [event_id]),
+  defp expect_one_event(room_id, user_id, event_id, bundle_aggregations?) do
+    with {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [event_id], bundle_aggregations?),
          [event] <- Enum.take(event_stream, 1) do
       {:ok, event}
     else
@@ -252,20 +252,48 @@ defmodule RadioBeam.Room do
     end
   end
 
-  def get_children(room_id, user_id, event_id, opts) do
+  def get_children(room_id, user_id, event_id, limit, opts) do
     with {:ok, child_event_stream} <- Room.View.get_child_events(room_id, user_id, event_id) do
       rel_type = Keyword.get(opts, :rel_type)
       event_type = Keyword.get(opts, :event_type)
 
+      comparator = &(TopologicalID.compare(&1, &2.order_id) in [:gt, :eq])
+      before_start? = maybe_event_comparator(room_id, user_id, Keyword.fetch(opts, :to), comparator, fn _ -> false end)
+
+      comparator = &(TopologicalID.compare(&2.order_id, &1) == :lt)
+      before_end? = maybe_event_comparator(room_id, user_id, Keyword.fetch(opts, :from), comparator, fn _ -> true end)
+
+      # note: we take(limit) *after* sorting, since child_event_stream does
+      # not traverse child events in topological order (as of writing,
+      # RelatedEvents maps child event IDs in a MapSet (which is unordered).
+      #
+      # same reasoning for using the filter/reject instead of drop_/take_while
       child_events =
         child_event_stream
+        # |> Stream.drop_while(before_start?)
+        # |> Stream.take_while(before_end?)
+        |> Stream.reject(before_start?)
+        |> Stream.filter(before_end?)
         |> Stream.filter(&(filter_rel_type(&1, rel_type) and filter_event_type(&1, event_type)))
         |> apply_order(Keyword.get(opts, :order, :reverse_chronological))
+        |> Enum.take(limit)
 
       # TOIMPL: support for `recurse?` option
       {:ok, child_events, _recurse_depth = 1}
     end
   end
+
+  defp maybe_event_comparator(room_id, user_id, {:ok, event_id}, comparator, default) do
+    case get_event(room_id, user_id, event_id, false) do
+      {:ok, event} ->
+        &comparator.(event.order_id, &1)
+
+      {:error, :unauthorized} ->
+        default
+    end
+  end
+
+  defp maybe_event_comparator(_room_id, _user_id, :error, _comparator, default), do: default
 
   defp filter_rel_type(_pdu, nil), do: true
   defp filter_rel_type(%{content: %{"m.relates_to" => %{"rel_type" => rel_type}}}, rel_type), do: true

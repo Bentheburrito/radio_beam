@@ -239,7 +239,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     end
   end
 
-  def get_visible_events(%__MODULE__{} = timeline, event_ids, user_id, fetch_pdu!) do
+  def get_visible_events(%__MODULE__{} = timeline, event_ids, user_id, fetch_pdu!, bundle_aggregations? \\ true) do
     latest_known_join_topo_id = get_latest_known_join_topo_id(timeline, user_id)
 
     event_visible? =
@@ -253,10 +253,14 @@ defmodule RadioBeam.Room.View.Core.Timeline do
     |> Stream.filter(event_visible?)
     |> Stream.map(fn {event_id, metadata} ->
       visible_bundled_events =
-        timeline.event_metadata[event_id].bundled_event_ids
-        |> Stream.map(&{&1, Map.fetch!(timeline.event_metadata, &1)})
-        |> Stream.filter(event_visible?)
-        |> Enum.map(fn {event_id, metadata} -> Event.new!(metadata.topological_id, fetch_pdu!.(event_id), []) end)
+        if bundle_aggregations? do
+          timeline.event_metadata[event_id].bundled_event_ids
+          |> Stream.map(&{&1, Map.fetch!(timeline.event_metadata, &1)})
+          |> Stream.filter(event_visible?)
+          |> Enum.map(fn {event_id, metadata} -> Event.new!(metadata.topological_id, fetch_pdu!.(event_id), []) end)
+        else
+          []
+        end
 
       Event.new!(metadata.topological_id, fetch_pdu!.(event_id), visible_bundled_events)
     end)

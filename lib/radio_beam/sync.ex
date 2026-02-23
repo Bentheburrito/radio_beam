@@ -29,6 +29,8 @@ defmodule RadioBeam.Sync do
 
   def parse_batch_token(maybe_encoded_pagination_token), do: NextBatch.decode(maybe_encoded_pagination_token)
 
+  def parse_event_id_at(%NextBatch{} = batch_token, room_id), do: NextBatch.fetch(batch_token, room_id)
+
   def parse_event_id_at(maybe_encoded_batch, room_id) do
     with {:ok, %NextBatch{} = batch_token} <- NextBatch.decode(maybe_encoded_batch) do
       NextBatch.fetch(batch_token, room_id)
@@ -37,4 +39,10 @@ defmodule RadioBeam.Sync do
 
   def batch_token_to_latest_event_id_fetcher(%NextBatch{} = batch_token), do: &NextBatch.fetch(batch_token, &1)
   def batch_token_timestamp(%NextBatch{} = batch_token), do: NextBatch.timestamp(batch_token)
+
+  def new_batch_token_for(room_id, event_id, dir \\ :forward) do
+    :millisecond
+    |> System.os_time()
+    |> NextBatch.new!(%{room_id => event_id}, dir)
+  end
 end

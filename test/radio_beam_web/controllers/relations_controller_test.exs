@@ -132,12 +132,73 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       content = relates_to(parent_event_id, "so impatient :/")
       {:ok, child_id3} = Room.send(room_id, account2.user_id, "m.room.message", content)
 
-      conn =
-        get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_event_id}", %{})
 
       assert %{"chunk" => chunk} = json_response(conn, 200)
       assert 2 = length(chunk)
       refute Enum.any?(chunk, &(&1["event_id"] == child_id3))
+    end
+
+    test "returns events before the given `from` token", %{conn: conn, account: %{user_id: user_id}} do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
+      {:ok, _event_id} = Room.join(room_id, user_id)
+
+      {:ok, parent_id} = Room.send_text_message(room_id, creator_id, "a new room!")
+
+      {:ok, eid1} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello"))
+      {:ok, eid2} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello?"))
+      {:ok, eid3} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "anyone out there?"))
+      {:ok, _eid4} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "guess I'm all alone"))
+      {:ok, _eid5} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "I'll just talk to myself"))
+      {:ok, _eid6} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "..."))
+
+      from = RadioBeam.Sync.new_batch_token_for(room_id, eid3)
+
+      conn =
+        get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_id}?from=#{to_string(from)}&dir=f", %{})
+
+      assert %{
+               "chunk" => [%{"event_id" => ^eid1}, %{"event_id" => ^eid2}],
+               "prev_batch" => prev_batch,
+               "next_batch" => next_batch
+             } =
+               json_response(conn, 200)
+
+      assert {:ok, ^eid2} = RadioBeam.Sync.parse_event_id_at(prev_batch, room_id)
+      assert {:ok, ^eid1} = RadioBeam.Sync.parse_event_id_at(next_batch, room_id)
+    end
+
+    test "returns events after the given `to` token", %{conn: conn, account: %{user_id: user_id}} do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
+      {:ok, _event_id} = Room.join(room_id, user_id)
+
+      {:ok, parent_id} = Room.send_text_message(room_id, creator_id, "a new room!")
+
+      {:ok, _eid1} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello"))
+      {:ok, _eid2} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello?"))
+      {:ok, eid3} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "anyone out there?"))
+      {:ok, eid4} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "guess I'm all alone"))
+      {:ok, eid5} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "I'll just talk to myself"))
+      {:ok, eid6} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "..."))
+
+      to = RadioBeam.Sync.new_batch_token_for(room_id, eid3)
+
+      conn =
+        get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/relations/#{parent_id}?to=#{to_string(to)}&dir=f", %{})
+
+      assert %{
+               "chunk" => [%{"event_id" => ^eid4}, %{"event_id" => ^eid5}, %{"event_id" => ^eid6}],
+               "prev_batch" => prev_batch,
+               "next_batch" => next_batch
+             } =
+               json_response(conn, 200)
+
+      assert {:ok, ^eid6} = RadioBeam.Sync.parse_event_id_at(prev_batch, room_id)
+      assert {:ok, ^eid4} = RadioBeam.Sync.parse_event_id_at(next_batch, room_id)
     end
   end
 end

@@ -634,10 +634,164 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.set_name(room_id, creator.user_id, "A New Name")
 
       {:ok, _event_id} =
-        Room.put_state(room_id, creator.user_id, "m.room.topic", "", %{"topic" => "THERE ARE MONSTERS ON THIS WORLD!?"})
+        Room.put_state(room_id, creator.user_id, "m.room.topic", %{"topic" => "THERE ARE MONSTERS ON THIS WORLD!?"})
 
       assert {:ok, ^event} = Room.get_state(room_id, account2.user_id, "m.room.topic", "")
       assert {:error, :not_found} = Room.get_state(room_id, account2.user_id, "m.room.name", "")
+    end
+  end
+
+  describe "get_children/4,5" do
+    setup do
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id, addl_state_events: [history_visibility_event("joined")])
+      {:ok, parent_id} = Room.send_text_message(room_id, creator_id, "a new room!")
+
+      {:ok, eid1} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello"))
+      {:ok, eid2} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello?"))
+      {:ok, eid3} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "anyone out there?"))
+      {:ok, eid4} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "guess I'm all alone"))
+      {:ok, eid5} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "I'll just talk to myself"))
+      {:ok, eid6} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "..."))
+
+      %{
+        creator_id: creator_id,
+        room_id: room_id,
+        parent_id: parent_id,
+        eid1: eid1,
+        eid2: eid2,
+        eid3: eid3,
+        eid4: eid4,
+        eid5: eid5,
+        eid6: eid6
+      }
+    end
+
+    test "returns events as long as they are topologically greater than :to", %{
+      creator_id: creator_id,
+      room_id: room_id,
+      parent_id: parent_id,
+      eid1: eid1,
+      eid2: eid2,
+      eid3: eid3,
+      eid4: eid4,
+      eid5: eid5,
+      eid6: eid6
+    } do
+      assert {:ok, [%{id: ^eid1}, %{id: ^eid2}, %{id: ^eid3}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: parent_id, order: :chronological)
+
+      assert {:ok, [%{id: ^eid2}, %{id: ^eid3}, %{id: ^eid4}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: eid1, order: :chronological)
+
+      assert {:ok, [%{id: ^eid4}, %{id: ^eid5}, %{id: ^eid6}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: eid3, order: :chronological)
+
+      assert {:ok, [%{id: ^eid6}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: eid5, order: :chronological)
+
+      assert {:ok, [%{id: ^eid6}, %{id: ^eid5}, %{id: ^eid4}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: parent_id, order: :reverse_chronological)
+
+      assert {:ok, [%{id: ^eid6}, %{id: ^eid5}, %{id: ^eid4}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: eid1, order: :reverse_chronological)
+
+      assert {:ok, [%{id: ^eid6}, %{id: ^eid5}, %{id: ^eid4}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: eid3, order: :reverse_chronological)
+
+      assert {:ok, [%{id: ^eid6}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, to: eid5, order: :reverse_chronological)
+    end
+
+    test "returns events as long as they are topologically less than :from", %{
+      creator_id: creator_id,
+      room_id: room_id,
+      parent_id: parent_id,
+      eid1: eid1,
+      eid2: eid2,
+      eid3: eid3,
+      eid4: eid4,
+      eid5: eid5
+    } do
+      assert {:ok, [], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: parent_id, order: :chronological)
+
+      assert {:ok, [], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid1, order: :chronological)
+
+      assert {:ok, [%{id: ^eid1}, %{id: ^eid2}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid3, order: :chronological)
+
+      assert {:ok, [%{id: ^eid1}, %{id: ^eid2}, %{id: ^eid3}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid5, order: :chronological)
+
+      assert {:ok, [], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: parent_id, order: :reverse_chronological)
+
+      assert {:ok, [], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid1, order: :reverse_chronological)
+
+      assert {:ok, [%{id: ^eid2}, %{id: ^eid1}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid3, order: :reverse_chronological)
+
+      assert {:ok, [%{id: ^eid4}, %{id: ^eid3}, %{id: ^eid2}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid5, order: :reverse_chronological)
+    end
+
+    test "returns events as long as they are topologically within the bounds of :from and :to", %{
+      creator_id: creator_id,
+      room_id: room_id,
+      parent_id: parent_id,
+      eid1: eid1,
+      eid2: eid2,
+      eid3: eid3,
+      eid4: eid4,
+      eid5: eid5
+    } do
+      assert {:ok, [%{id: ^eid1}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid2, to: parent_id, order: :chronological)
+
+      assert {:ok, [%{id: ^eid1}, %{id: ^eid2}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid3, to: parent_id, order: :chronological)
+
+      assert {:ok, [%{id: ^eid2}, %{id: ^eid1}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3,
+                 from: eid3,
+                 to: parent_id,
+                 order: :reverse_chronological
+               )
+
+      assert {:ok, [%{id: ^eid4}, %{id: ^eid3}, %{id: ^eid2}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3,
+                 from: eid5,
+                 to: parent_id,
+                 order: :reverse_chronological
+               )
+
+      assert {:ok, [%{id: ^eid1}, %{id: ^eid2}, %{id: ^eid3}], 1} =
+               Room.get_children(room_id, creator_id, parent_id, 3, from: eid5, to: parent_id, order: :chronological)
+    end
+
+    test "a user can't fetch child events that history visibility doesn't allow them to see", %{
+      creator_id: creator_id,
+      room_id: room_id
+    } do
+      %{user_id: user_id} = Fixtures.create_account()
+      {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
+      {:ok, _event_id} = Room.join(room_id, user_id)
+
+      {:ok, parent_id} = Room.send_text_message(room_id, creator_id, "omgggg")
+      {:ok, eid1} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello friend!"))
+
+      {:ok, _event_id} = Room.leave(room_id, user_id)
+
+      {:ok, _eid2_user_cant_see} =
+        Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "oh...bye...friend"))
+
+      {:ok, eid3} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, ":("))
+
+      assert {:ok, [%{id: ^eid1}], 1} =
+               Room.get_children(room_id, user_id, parent_id, 3, from: eid3, order: :chronological)
     end
   end
 
@@ -646,6 +800,17 @@ defmodule RadioBeam.RoomTest do
       "content" => %{"history_visibility" => visibility},
       "state_key" => "",
       "type" => "m.room.history_visibility"
+    }
+  end
+
+  defp relates_to(parent_id, msg) do
+    %{
+      "msgtype" => "m.text",
+      "body" => msg,
+      "m.relates_to" => %{
+        "rel_type" => "m.thread",
+        "event_id" => parent_id
+      }
     }
   end
 end
