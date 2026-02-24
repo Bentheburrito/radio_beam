@@ -2,6 +2,7 @@ defmodule RadioBeamWeb.Schemas.Room do
   @moduledoc false
 
   alias Polyjuice.Util.Schema
+  alias RadioBeamWeb.Schemas.Filter
   alias RadioBeamWeb.Schemas.InstantMessaging
 
   def invite do
@@ -50,6 +51,13 @@ defmodule RadioBeamWeb.Schemas.Room do
     %{
       "dir" => Schema.enum(%{"f" => :forward, "b" => :backward}, &String.downcase/1),
       "ts" => &stringed_int/1
+    }
+  end
+
+  def get_event_context do
+    %{
+      "filter" => optional(Schema.any_of([Filter.room_event_filter(), &Filter.json_room_event_filter/1])),
+      "limit" => [&Filter.limit/1, default: RadioBeam.max_timeline_events()]
     }
   end
 

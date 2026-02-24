@@ -224,6 +224,7 @@ defmodule RadioBeamWeb.Router do
           get "/:room_id/state/:event_type", RoomController, :get_state_event, rl(@room_event_read)
           get "/:room_id/messages", SyncController, :get_messages, rl(@room_event_read)
           get "/:room_id/timestamp_to_event", RoomController, :get_nearest_event, rl(@room_event_read)
+          get "/:room_id/context/:event_id", RoomController, :get_event_context, rl(@room_event_read)
 
           put "/:room_id/typing/:user_id", RoomController, :put_typing, rl(@frequent_ephemeral_write)
 

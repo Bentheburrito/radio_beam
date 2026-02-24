@@ -706,6 +706,60 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
   end
 
+  describe "get_event_context/2" do
+    test "returns event context", %{conn: conn, account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      {:ok, eid1} = Room.send_text_message(room_id, user_id, "testing 123")
+      {:ok, eid2} = Room.send_text_message(room_id, user_id, "wow it works")
+      {:ok, eid3} = Room.send_text_message(room_id, user_id, "I wonder if I should invite someone")
+      {:ok, eid4} = Room.send_text_message(room_id, user_id, "...")
+      {:ok, eid5} = Room.send_text_message(room_id, user_id, "nahhhhh")
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/context/#{eid4}", %{})
+
+      assert %{
+               "end" => end_token,
+               "event" => %{"event_id" => ^eid4},
+               "events_after" => [%{"event_id" => ^eid5}],
+               "events_before" => [%{"event_id" => ^eid3}, %{"event_id" => ^eid2}, %{"event_id" => ^eid1} | _]
+             } =
+               response =
+               json_response(conn, 200)
+
+      {:ok, end_token} = NextBatch.decode(end_token)
+      assert {:ok, ^eid5} = NextBatch.fetch(end_token, room_id)
+
+      refute is_map_key(response, "start")
+    end
+
+    test "returns event context, applying the limit in the given filter", %{conn: conn, account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      {:ok, eid1} = Room.send_text_message(room_id, user_id, "testing 123")
+      {:ok, eid2} = Room.send_text_message(room_id, user_id, "wow it works")
+      {:ok, eid3} = Room.send_text_message(room_id, user_id, "I wonder if I should invite someone")
+      {:ok, eid4} = Room.send_text_message(room_id, user_id, "...")
+      {:ok, eid5} = Room.send_text_message(room_id, user_id, "nahhhhh")
+
+      filter = JSON.encode!(%{"limit" => 2})
+
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/context/#{eid3}?filter=#{filter}", %{})
+
+      assert %{
+               "end" => end_token,
+               "event" => %{"event_id" => ^eid3},
+               "events_after" => [%{"event_id" => ^eid4}, %{"event_id" => ^eid5}],
+               "events_before" => [%{"event_id" => ^eid2}, %{"event_id" => ^eid1}],
+               "start" => start_token
+             } = json_response(conn, 200)
+
+      {:ok, end_token} = NextBatch.decode(end_token)
+      assert {:ok, ^eid5} = NextBatch.fetch(end_token, room_id)
+
+      {:ok, start_token} = NextBatch.decode(start_token)
+      assert {:ok, ^eid1} = NextBatch.fetch(start_token, room_id)
+    end
+  end
+
   describe "put_typing/2" do
     test "returns an empty JSON object (200) when the typing status was accepted", %{
       conn: conn,
