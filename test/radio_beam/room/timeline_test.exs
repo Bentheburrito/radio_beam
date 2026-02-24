@@ -503,4 +503,79 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
     end
   end
+
+  describe "get_context/4,5" do
+    setup %{creator: creator, account: account} do
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, eid1} = Room.join(room_id, account.user_id)
+
+      {:ok, eid2} = Room.send_text_message(room_id, creator.user_id, "sup")
+      {:ok, eid3} = Room.send_text_message(room_id, account.user_id, "yo")
+      {:ok, eid4} = Room.send_text_message(room_id, account.user_id, "what is this room about")
+      {:ok, eid5} = Room.send_text_message(room_id, creator.user_id, "idk")
+      {:ok, event_id} = Room.send_text_message(room_id, creator.user_id, "wait yes I do")
+      {:ok, eid6} = Room.set_name(room_id, creator.user_id, "Get Messages Pagination")
+      {:ok, eid7} = Room.send_text_message(room_id, creator.user_id, "there we go")
+      {:ok, eid8} = Room.send_text_message(room_id, account.user_id, "so you're just using me to test something?")
+      {:ok, eid9} = Room.send_text_message(room_id, creator.user_id, "yeah")
+      {:ok, eid10} = Room.send_text_message(room_id, account.user_id, "wow")
+      Room.send_text_message(room_id, creator.user_id, "?")
+      Room.send_text_message(room_id, account.user_id, "I thought I was more than that to you")
+
+      Room.leave(room_id, account.user_id, "you can't trust anyone in this industry")
+
+      {:ok, not_visible_eid} = Room.send_text_message(room_id, creator.user_id, "so dramatic 🙄")
+
+      %{
+        room_id: room_id,
+        event_id: event_id,
+        expected_before: [eid1, eid2, eid3, eid4, eid5],
+        expected_after: [eid6, eid7, eid8, eid9, eid10],
+        not_visible_eid: not_visible_eid
+      }
+    end
+
+    test "fetches all surrounding events, up to the given limit", %{
+      room_id: room_id,
+      event_id: event_id,
+      expected_before: [eid1 | _] = expected_before,
+      expected_after: expected_after,
+      account: %{user_id: user_id}
+    } do
+      eid10 = List.last(expected_after)
+      device = Fixtures.create_device(user_id)
+      filter = %{"room" => %{"timeline" => %{"limit" => 5}}}
+
+      assert {:ok, %{id: ^event_id}, events_before, start_token, events_after, end_token} =
+               Timeline.get_context(room_id, user_id, device.id, event_id, filter: filter)
+
+      assert Enum.sort(expected_before) == events_before |> Stream.map(& &1.id) |> Enum.sort()
+      assert Enum.sort(expected_after) == events_after |> Stream.map(& &1.id) |> Enum.sort()
+
+      assert {:ok, ^eid1} = NextBatch.fetch(start_token, room_id)
+      assert {:ok, ^eid10} = NextBatch.fetch(end_token, room_id)
+    end
+
+    test "does not surface events that the user isn't allowed to see", %{
+      room_id: room_id,
+      expected_after: [_, _, _, _, eid10],
+      not_visible_eid: not_visible_eid,
+      account: %{user_id: user_id},
+      creator: %{user_id: creator_id}
+    } do
+      creator_device = Fixtures.create_device(creator_id)
+      device = Fixtures.create_device(user_id)
+      filter = %{"room" => %{"timeline" => %{"limit" => 5}}}
+
+      assert {:ok, %{id: ^eid10}, _events_before, _start_token, events_after_user, _end_token} =
+               Timeline.get_context(room_id, user_id, device.id, eid10, filter: filter)
+
+      assert {:ok, %{id: ^eid10}, _events_before, _start_token, events_after_creator, _end_token} =
+               Timeline.get_context(room_id, creator_id, creator_device.id, eid10, filter: filter)
+
+      refute Enum.any?(events_after_user, &(&1.id == not_visible_eid))
+      assert Enum.any?(events_after_creator, &(&1.id == not_visible_eid))
+    end
+  end
 end

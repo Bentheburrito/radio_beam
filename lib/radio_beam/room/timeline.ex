@@ -106,15 +106,7 @@ defmodule RadioBeam.Room.Timeline do
           else: NextBatch.new!(System.os_time(:millisecond), %{room_id => maybe_next_event_id}, direction)
 
       {:ok,
-       Chunk.new(
-         room,
-         timeline_events,
-         start_token,
-         end_token,
-         get_known_memberships_fxn,
-         get_events_for_user,
-         filter
-       )}
+       Chunk.new(room, timeline_events, start_token, end_token, get_known_memberships_fxn, get_events_for_user, filter)}
     end
   end
 
@@ -148,5 +140,17 @@ defmodule RadioBeam.Room.Timeline do
     maybe_filter_or_filter_id = Keyword.get(opts, :filter, :none)
 
     User.get_timeline_preferences(user_id, maybe_filter_or_filter_id)
+  end
+
+  def get_context(room_id, user_id, device_id, event_id, get_message_opts) do
+    prev_token = :millisecond |> System.os_time() |> NextBatch.new!(%{room_id => event_id}, :backward)
+    next_token = :millisecond |> System.os_time() |> NextBatch.new!(%{room_id => event_id}, :forward)
+
+    with {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [event_id], true),
+         {:ok, prev_chunk} <- get_messages(room_id, user_id, device_id, {prev_token, :backward}, get_message_opts),
+         {:ok, next_chunk} <- get_messages(room_id, user_id, device_id, {next_token, :forward}, get_message_opts) do
+      [event] = Enum.take(event_stream, 1)
+      {:ok, event, prev_chunk.timeline_events, prev_chunk.end, next_chunk.timeline_events, next_chunk.end}
+    end
   end
 end
