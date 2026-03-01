@@ -25,6 +25,13 @@ defmodule RadioBeamWeb.Schemas.Sync do
     }
   end
 
+  def get_event_context do
+    %{
+      "filter" => optional(Schema.any_of([Filter.room_event_filter(), &Filter.json_room_event_filter/1])),
+      "limit" => [&Filter.limit/1, default: RadioBeam.max_timeline_events()]
+    }
+  end
+
   defp filter_by_id("{" <> _), do: {:error, :invalid}
   defp filter_by_id(filter_id) when is_binary(filter_id), do: {:ok, filter_id}
   defp filter_by_id(_), do: {:error, :invalid}

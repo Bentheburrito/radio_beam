@@ -184,6 +184,9 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert %{"chunk" => chunk, "end" => next, "start" => _, "state" => state} =
                json_response(conn, 200)
 
+      {:ok, next_decoded} = NextBatch.decode(next)
+      assert NextBatch.fetch(next_decoded, room_id) == {:ok, List.last(chunk)["event_id"]}
+
       assert 1 = length(state)
       assert [%{"content" => %{"body" => "this place is so cool"}}, %{"type" => "m.room.name"}, _] = chunk
 
@@ -198,9 +201,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert %{"chunk" => chunk, "end" => _next2, "start" => next2, "state" => state} =
                json_response(conn, 200)
 
-      {:ok, next} = NextBatch.decode(next)
       {:ok, next2} = NextBatch.decode(next2)
-      assert NextBatch.topologically_equal?(next, next2)
+      assert NextBatch.fetch(next2, room_id) == {:ok, hd(chunk)["event_id"]}
 
       assert 1 = length(state)
       assert [%{"type" => "m.room.history_visibility"}, %{"type" => "m.room.join_rules"}, _] = chunk

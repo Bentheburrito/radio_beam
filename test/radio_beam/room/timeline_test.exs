@@ -3,9 +3,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline
-  alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.View.Core.Timeline.Event
-  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User.EventFilter
 
   setup do
@@ -16,7 +14,7 @@ defmodule RadioBeam.Room.TimelineTest do
     %{creator: creator, account: account, device: device}
   end
 
-  describe "get_messages/5,6" do
+  describe "get_messages/4,5" do
     setup %{creator: creator, account: account} do
       {:ok, room_id} = Room.create(creator.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
@@ -40,7 +38,7 @@ defmodule RadioBeam.Room.TimelineTest do
       %{room_id: room_id}
     end
 
-    test "can successfully paginate backwards through events in a room using a NextBatch token", %{
+    test "can successfully paginate backwards through events in a room using the given event ID", %{
       room_id: room_id,
       creator: %{user_id: creator_id} = creator,
       account: %{user_id: user_id}
@@ -49,15 +47,12 @@ defmodule RadioBeam.Room.TimelineTest do
 
       device = Fixtures.create_device(creator.user_id)
 
-      now = System.os_time(:millisecond)
-
       [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
-      start_token = NextBatch.new!(now, %{room_id => tip_event_id}, :forward)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
+      assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert NextBatch.topologically_equal?(start_token, start_token2)
+      assert %{id: ^tip_event_id} = hd(events)
 
       assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state, Event)
@@ -69,10 +64,10 @@ defmodule RadioBeam.Room.TimelineTest do
              ] =
                events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token2}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
+      assert {:ok, events, end_id2, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(end_token, start_token3)
+      refute match?(%{id: ^end_id}, hd(events))
 
       assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state, Event)
@@ -83,10 +78,10 @@ defmodule RadioBeam.Room.TimelineTest do
                %{type: "m.room.message", content: %{"body" => "so you're just using me to test something?"}}
              ] = events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
+      assert {:ok, events, end_id3, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(end_token2, start_token4)
+      refute match?(%{id: ^end_id2}, hd(events))
 
       assert 1 = Enum.count(state)
 
@@ -98,16 +93,16 @@ defmodule RadioBeam.Room.TimelineTest do
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 30}}})
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token5, end: :no_more_events}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :backward}, filter: filter)
+      assert {:ok, events, :no_more_events, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :backward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(end_token3, start_token5)
+      refute match?(%{id: ^end_id3}, hd(events))
 
       assert 12 = Enum.count(events)
       assert 2 = Enum.count(state)
     end
 
-    test "can successfully paginate forward events in a room after a sync", %{
+    test "can successfully paginate forward events in a room", %{
       room_id: room_id,
       creator: %{user_id: creator_id} = creator,
       account: %{user_id: user_id}
@@ -115,15 +110,12 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       device = Fixtures.create_device(creator.user_id)
 
-      now = System.os_time(:millisecond)
-
       [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
-      start_token = NextBatch.new!(now, %{room_id => tip_event_id}, :forward)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
+      assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert NextBatch.topologically_equal?(start_token, start_token2)
+      assert %{id: ^tip_event_id} = hd(events)
 
       assert [
                %{type: "m.room.member"},
@@ -134,42 +126,33 @@ defmodule RadioBeam.Room.TimelineTest do
       assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
                Enum.sort(state, Event)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token2, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward})
+      assert {:ok, events, _end_id2, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :forward})
 
-      assert NextBatch.topologically_equal?(end_token, end_token2)
+      refute match?(%{id: ^end_id}, hd(events))
 
-      assert [%{type: "m.room.member", sender: ^creator_id}, %{type: "m.room.member", sender: ^user_id}] =
-               Enum.sort(state, Event)
+      assert [%{type: "m.room.member", sender: ^user_id}] = Enum.to_list(state)
 
       assert [
-               %{type: "m.room.message"},
                %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
                %{type: "m.room.member"}
              ] = events
 
       Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: _state, start: end_token4, end: _}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward})
+      assert {:ok, events, end_id3, _state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :forward})
 
-      assert NextBatch.topologically_equal?(end_token, end_token4)
+      refute match?(%{id: ^end_id}, hd(events))
 
       assert [
-               %{type: "m.room.message"},
                %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
                %{type: "m.room.member"},
                %{type: "m.room.message", content: %{"body" => "welp"}}
              ] = events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: _state, start: end_token5, end: end_token6}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward})
-
-      assert NextBatch.topologically_equal?(end_token3, end_token5)
-
-      refute end_token6 == :no_more_events
-
-      assert [%{type: "m.room.message", content: %{"body" => "welp"}}] = events
+      assert {:ok, [], :no_more_events, _state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward})
     end
 
     test "can successfully paginate forward from the beginning of a room", %{
@@ -180,15 +163,12 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.create_device(creator.user_id)
 
-      now = System.os_time(:millisecond)
-
       [%{id: root_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :root) |> Enum.take(1)
-      start_token = NextBatch.new!(now, %{room_id => root_event_id}, :backward)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
+      assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :root, filter: filter)
 
-      assert NextBatch.topologically_equal?(start_token, start_token2)
+      assert %{id: ^root_event_id} = hd(events)
 
       assert 2 = Enum.count(state)
 
@@ -205,10 +185,10 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "yo"}}
              ] = events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token2, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :forward}, filter: filter)
+      assert {:ok, events, end_id2, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :forward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(end_token, end_token2)
+      refute match?(%{id: ^end_id}, hd(events))
 
       assert 2 = Enum.count(state)
 
@@ -225,10 +205,10 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "I thought I was more than that to you"}}
              ] = events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: end_token4, end: %NextBatch{} = _next}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
+      assert {:ok, events, _end_id3, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(end_token3, end_token4)
+      refute match?(%{id: ^end_id2}, hd(events))
 
       assert 1 = Enum.count(state)
       [%{type: "m.room.member", content: %{"membership" => "leave"}}] = events
@@ -242,15 +222,12 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.create_device(creator.user_id)
 
-      now = System.os_time(:millisecond)
-
       [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
-      start_token = NextBatch.new!(now, %{room_id => tip_event_id}, :forward)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token}} =
+      assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert NextBatch.topologically_equal?(start_token, start_token2)
+      assert %{id: ^tip_event_id} = hd(events)
 
       assert 2 = Enum.count(state)
 
@@ -267,10 +244,10 @@ defmodule RadioBeam.Room.TimelineTest do
                %{content: %{"msgtype" => "m.text", "body" => "idk"}}
              ] = events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token2}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
+      assert {:ok, events, end_id2, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(start_token3, end_token)
+      refute match?(%{id: ^end_id2}, hd(events))
 
       assert 2 = Enum.count(state)
 
@@ -287,10 +264,8 @@ defmodule RadioBeam.Room.TimelineTest do
                %{type: "m.room.member"}
              ] = events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: :no_more_events}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
-
-      assert NextBatch.topologically_equal?(start_token4, end_token2)
+      assert {:ok, events, :no_more_events, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
 
       assert 1 = Enum.count(state)
       [%{type: "m.room.create"}] = events
@@ -300,65 +275,62 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       device = Fixtures.create_device(creator.user_id)
 
-      assert {:ok, %Chunk{timeline_events: _events, state_events: _state, start: %NextBatch{}, end: end_token}} =
+      assert {:ok, _events, end_id, _state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token, end: end_token2}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
+      assert {:ok, events, end_id2, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(start_token, end_token)
+      refute match?(%{id: ^end_id}, hd(events))
 
       assert 2 = Enum.count(state)
 
       assert [
-               %{content: %{"msgtype" => "m.text", "body" => "wow"}, id: event_id1},
+               %{content: %{"msgtype" => "m.text", "body" => "wow"}},
                %{content: %{"msgtype" => "m.text", "body" => "yeah"}},
-               %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}}
+               %{
+                 content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"},
+                 id: expected_end_id4
+               }
              ] = events
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
+      assert {:ok, events, end_id3, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
 
-      assert NextBatch.topologically_equal?(start_token2, end_token2)
+      refute match?(%{id: ^end_id2}, hd(events))
 
       assert 1 = Enum.count(state)
 
       assert [
-               %{content: %{"msgtype" => "m.text", "body" => "there we go"}, id: event_id2},
+               %{content: %{"msgtype" => "m.text", "body" => "there we go"}},
                %{content: %{"name" => "Get Messages Pagination"}},
                %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}}
              ] = events
 
-      expected_end_token4 = NextBatch.new!(System.os_time(:millisecond), %{room_id => event_id2}, :forward)
+      assert {:ok, events, ^expected_end_id4, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward}, filter: filter)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token4}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
-
-      assert NextBatch.topologically_equal?(start_token3, end_token3)
-      assert NextBatch.topologically_equal?(expected_end_token4, end_token4)
-
-      assert 1 = Enum.count(state)
-
-      assert [
-               %{content: %{"msgtype" => "m.text", "body" => "wait yes I do"}},
-               %{content: %{"name" => "Get Messages Pagination"}},
-               %{content: %{"msgtype" => "m.text", "body" => "there we go"}}
-             ] = events
-
-      expected_end_token5 = NextBatch.new!(System.os_time(:millisecond), %{room_id => event_id1}, :forward)
-
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token5}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :forward}, filter: filter)
-
-      assert NextBatch.topologically_equal?(start_token4, end_token2)
-      assert NextBatch.topologically_equal?(expected_end_token5, end_token5)
+      refute match?(%{id: ^end_id3}, hd(events))
 
       assert 2 = Enum.count(state)
 
       assert [
-               %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}},
+               %{content: %{"name" => "Get Messages Pagination"}},
+               %{content: %{"msgtype" => "m.text", "body" => "there we go"}},
+               %{content: %{"msgtype" => "m.text", "body" => "so you're just using me to test something?"}}
+             ] = events
+
+      assert {:ok, events, end_id5, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, filter: filter)
+
+      refute match?(%{id: ^end_id2}, hd(events))
+
+      assert 2 = Enum.count(state)
+
+      assert [
                %{content: %{"msgtype" => "m.text", "body" => "yeah"}},
-               %{content: %{"msgtype" => "m.text", "body" => "wow"}}
+               %{content: %{"msgtype" => "m.text", "body" => "wow"}},
+               %{content: %{"msgtype" => "m.text", "body" => "?"}, id: ^end_id5}
              ] = events
     end
 
@@ -369,80 +341,54 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       device = Fixtures.create_device(creator.user_id)
 
-      assert {:ok, %Chunk{timeline_events: _events, state_events: _state, start: %NextBatch{}, end: end_token}} =
+      assert {:ok, _events, end_id, _state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token, end: end_token2}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, filter: filter)
+      assert {:ok, events, end_id2, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
+
+      refute match?(%{id: ^end_id}, hd(events))
 
       expected_events = Enum.take(events, 2)
       expected_state = Enum.take(state, 2)
 
-      assert {:ok,
-              %Chunk{
-                timeline_events: ^expected_events,
-                state_events: state,
-                start: to_start_token,
-                end: :no_more_events
-              }} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token, :backward}, to: end_token2)
+      assert {:ok, ^expected_events, :no_more_events, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, to: end_id2)
 
       assert ^expected_state = Enum.take(state, 2)
-      assert NextBatch.topologically_equal?(to_start_token, start_token)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token2, end: end_token3}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, filter: filter)
+      assert {:ok, events, end_id3, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
 
       expected_events = Enum.take(events, 2)
       expected_state = Enum.take(state, 2)
 
-      assert {:ok,
-              %Chunk{
-                timeline_events: ^expected_events,
-                state_events: state,
-                start: to_start_token2,
-                end: :no_more_events
-              }} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :backward}, to: end_token3)
+      assert {:ok, ^expected_events, :no_more_events, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, to: end_id3)
 
       assert ^expected_state = Enum.take(state, 2)
-      assert NextBatch.topologically_equal?(to_start_token2, start_token2)
 
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token3, end: end_token4}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, filter: filter)
+      assert {:ok, events, end_id4, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward}, filter: filter)
+
+      expected_events = Enum.take(events, 2)
+      expected_state = Enum.filter(state, &Enum.any?(expected_events, fn event -> event.sender == &1.state_key end))
+
+      assert {:ok, ^expected_events, :no_more_events, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward}, to: end_id4)
+
+      assert ^expected_state = Enum.take(state, 2)
+
+      assert {:ok, events, end_id5, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, filter: filter)
 
       expected_events = Enum.take(events, 2)
       expected_state = Enum.take(state, 2)
 
-      assert {:ok,
-              %Chunk{
-                timeline_events: ^expected_events,
-                state_events: state,
-                start: to_start_token3,
-                end: :no_more_events
-              }} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token3, :forward}, to: end_token4)
+      assert {:ok, ^expected_events, :no_more_events, state} =
+               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, to: end_id5)
 
       assert ^expected_state = Enum.take(state, 2)
-      assert NextBatch.topologically_equal?(to_start_token3, start_token3)
-
-      assert {:ok, %Chunk{timeline_events: events, state_events: state, start: start_token4, end: end_token5}} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :forward}, filter: filter)
-
-      expected_events = Enum.take(events, 2)
-      expected_state = Enum.take(state, 2)
-
-      assert {:ok,
-              %Chunk{
-                timeline_events: ^expected_events,
-                state_events: state,
-                start: to_start_token4,
-                end: :no_more_events
-              }} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_token2, :forward}, to: end_token5)
-
-      assert ^expected_state = Enum.take(state, 2)
-      assert NextBatch.topologically_equal?(to_start_token4, start_token4)
     end
 
     test "filters state by relevant senders when lazy_load_members is true", %{
@@ -465,7 +411,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       account2_device = Fixtures.create_device(account2.user_id)
 
-      assert {:ok, %Chunk{timeline_events: [_one, _two], state_events: state}} =
+      assert {:ok, [_one, _two], _end_id, state} =
                Timeline.get_messages(room_id, account2.user_id, account2_device, :tip, filter: filter)
 
       for id <- [account.user_id, account2.user_id] do
@@ -491,8 +437,8 @@ defmodule RadioBeam.Room.TimelineTest do
 
       creator_device_id = Fixtures.create_device(creator.user_id)
 
-      {:ok, %Chunk{timeline_events: events}} =
-        Timeline.get_messages(room_id, creator.user_id, creator_device_id, :tip, filter: filter)
+      assert {:ok, events, _end_id, _state} =
+               Timeline.get_messages(room_id, creator.user_id, creator_device_id, :tip, filter: filter)
 
       assert [
                %{id: ^child_id},
@@ -547,14 +493,11 @@ defmodule RadioBeam.Room.TimelineTest do
       device = Fixtures.create_device(user_id)
       filter = %{"room" => %{"timeline" => %{"limit" => 5}}}
 
-      assert {:ok, %{id: ^event_id}, events_before, start_token, events_after, end_token} =
+      assert {:ok, %{id: ^event_id}, events_before, ^eid1, events_after, ^eid10} =
                Timeline.get_context(room_id, user_id, device.id, event_id, filter: filter)
 
       assert Enum.sort(expected_before) == events_before |> Stream.map(& &1.id) |> Enum.sort()
       assert Enum.sort(expected_after) == events_after |> Stream.map(& &1.id) |> Enum.sort()
-
-      assert {:ok, ^eid1} = NextBatch.fetch(start_token, room_id)
-      assert {:ok, ^eid10} = NextBatch.fetch(end_token, room_id)
     end
 
     test "does not surface events that the user isn't allowed to see", %{
@@ -568,10 +511,10 @@ defmodule RadioBeam.Room.TimelineTest do
       device = Fixtures.create_device(user_id)
       filter = %{"room" => %{"timeline" => %{"limit" => 5}}}
 
-      assert {:ok, %{id: ^eid10}, _events_before, _start_token, events_after_user, _end_token} =
+      assert {:ok, %{id: ^eid10}, _events_before, _start_token, events_after_user, _end_id} =
                Timeline.get_context(room_id, user_id, device.id, eid10, filter: filter)
 
-      assert {:ok, %{id: ^eid10}, _events_before, _start_token, events_after_creator, _end_token} =
+      assert {:ok, %{id: ^eid10}, _events_before, _start_token, events_after_creator, _end_id} =
                Timeline.get_context(room_id, creator_id, creator_device.id, eid10, filter: filter)
 
       refute Enum.any?(events_after_user, &(&1.id == not_visible_eid))

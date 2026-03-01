@@ -300,42 +300,6 @@ defmodule RadioBeamWeb.RoomController do
     |> json(Errors.endpoint_error(:missing_param, @missing_req_param_msg))
   end
 
-  def get_event_context(conn, %{"room_id" => room_id, "event_id" => event_id}) do
-    user_id = conn.assigns.user_id
-    device_id = conn.assigns.device_id
-
-    opts =
-      conn.assigns.request
-      |> Map.take(["filter", "limit"])
-      |> Enum.reduce([to: :limit], fn
-        {"filter", filter}, opts -> Keyword.put(opts, :filter, %{"room" => %{"timeline" => filter}})
-        {"limit", limit}, opts -> Keyword.put(opts, :limit, limit)
-      end)
-
-    case Room.Timeline.get_context(room_id, user_id, device_id, event_id, opts) do
-      {:ok, %{id: ^event_id} = event, events_before, start_token, events_after, end_token} ->
-        response =
-          maybe_put_start(
-            %{
-              end: end_token,
-              event: event,
-              events_after: events_after,
-              events_before: events_before
-              # TOIMPL: return the state of the room at the latest event
-            },
-            start_token
-          )
-
-        json(conn, response)
-
-      {:error, error} when error in ~w|not_found unauthorized|a ->
-        json_error(conn, 404, :not_found, "That room or event was not found")
-    end
-  end
-
-  defp maybe_put_start(response, :no_more_events), do: response
-  defp maybe_put_start(response, start_token), do: Map.put(response, :start, start_token)
-
   def put_typing(conn, %{"room_id" => room_id}) do
     typing_update_result =
       case conn.assigns.request do

@@ -8,37 +8,34 @@ defmodule RadioBeam.Room.Timeline do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.Database
-  alias RadioBeam.Room.Timeline.Chunk
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
-  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
   @doc """
   Get a chunk of `room_id` events visible to the given `user_id`, starting at
-  `from`, up to the limit or a provided `to`. The user must have a membership
-  event in the room.
+  the event whose ID `from`, up to the limit or a provided `to` event ID. The
+  user must have a membership event in the room.
 
   ### Options
 
-  - `to`: A `NextBatch` token to return events up to.
+  - `to`: An event ID token to return events up to.
   - `filter`: A `User.EventFilter` to apply to returned events.
   - `limit`: If `filter` is not supplied, this will apply a maximum limit of
     events returned. Otherwise the `EventFilter`'s limits will be applied.
   """
-  # credo:disable-for-lines:93 Credo.Check.Refactor.CyclomaticComplexity
-  def get_messages(room_id, user_id, device_id, from_token, opts \\ []) do
+  # credo:disable-for-lines:62 Credo.Check.Refactor.CyclomaticComplexity
+  def get_messages(room_id, user_id, device_id, from, opts \\ []) do
     with :ok <- check_membership(room_id, user_id),
          {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, from, direction} <- map_from_pagination_token(from_token, room_id),
          {:ok, user_event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
+      direction = dir_of_from(from)
       %{filter: filter, ignored_user_ids: ignored_user_ids} = get_user_timeline_preferences(user_id, opts)
 
       maybe_to_event =
-        with %NextBatch{} = since <- Keyword.get(opts, :to, :none),
-             {:ok, to_event_id} <- NextBatch.fetch(since, room.id),
+        with "$" <> _ = to_event_id <- Keyword.get(opts, :to, :none),
              {:ok, to_event_stream} <- Room.View.get_events(room.id, user_id, [to_event_id]),
              [to_event] <- Enum.take(to_event_stream, 1) do
           to_event
@@ -53,21 +50,11 @@ defmodule RadioBeam.Room.Timeline do
           direction == :backward -> &(TopologicalID.compare(&1.order_id, maybe_to_event.order_id) != :lt)
         end
 
-      event_stream =
-        case from_token do
-          {%NextBatch{} = from, _dir} ->
-            if NextBatch.direction(from) != direction do
-              user_event_stream
-            else
-              Stream.drop(user_event_stream, 1)
-            end
-
-          _else ->
-            user_event_stream
-        end
+      num_to_drop = if from in ~w|tip root|a, do: 0, else: 1
 
       {timeline_events, maybe_next_event_id} =
-        event_stream
+        user_event_stream
+        |> Stream.drop(num_to_drop)
         |> Stream.filter(&allow_event_for_user?(&1, filter, ignored_user_ids, maybe_to_event))
         |> Stream.take(filter.timeline.limit)
         |> Stream.take_while(not_passed_to)
@@ -83,30 +70,10 @@ defmodule RadioBeam.Room.Timeline do
       #       initiate a backfill over federation
 
       get_known_memberships_fxn = fn -> LazyLoadMembersCache.get([room.id], device_id) end
-      get_events_for_user = &Room.View.get_events!(room_id, user_id, &1)
 
-      start_direction =
-        case from_token do
-          {%NextBatch{} = from, _dir} -> NextBatch.direction(from)
-          _else -> if direction == :forward, do: :backward, else: :forward
-        end
+      relevant_state_event_stream = get_state_events(room, user_id, timeline_events, get_known_memberships_fxn, filter)
 
-      start_token =
-        case Enum.take(user_event_stream, 1) do
-          [first_event | _] ->
-            NextBatch.new!(System.os_time(:millisecond), %{room_id => first_event.id}, start_direction)
-
-          [] ->
-            NextBatch.new!(System.os_time(:millisecond), %{}, start_direction)
-        end
-
-      end_token =
-        if maybe_next_event_id == :no_more_events,
-          do: :no_more_events,
-          else: NextBatch.new!(System.os_time(:millisecond), %{room_id => maybe_next_event_id}, direction)
-
-      {:ok,
-       Chunk.new(room, timeline_events, start_token, end_token, get_known_memberships_fxn, get_events_for_user, filter)}
+      {:ok, timeline_events, maybe_next_event_id, relevant_state_event_stream}
     end
   end
 
@@ -126,15 +93,9 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
-  defp map_from_pagination_token(:root, _room_id), do: {:ok, :root, :forward}
-  defp map_from_pagination_token(:tip, _room_id), do: {:ok, :tip, :backward}
-
-  defp map_from_pagination_token({%NextBatch{} = token, direction}, room_id) do
-    case NextBatch.fetch(token, room_id) do
-      {:ok, event_id} -> {:ok, {event_id, direction}, direction}
-      {:error, :not_found} -> {:error, :from_token_missing_room_id}
-    end
-  end
+  defp dir_of_from(:root), do: :forward
+  defp dir_of_from(:tip), do: :backward
+  defp dir_of_from({_event_id, direction}), do: direction
 
   defp get_user_timeline_preferences(user_id, opts) do
     maybe_filter_or_filter_id = Keyword.get(opts, :filter, :none)
@@ -142,15 +103,34 @@ defmodule RadioBeam.Room.Timeline do
     User.get_timeline_preferences(user_id, maybe_filter_or_filter_id)
   end
 
-  def get_context(room_id, user_id, device_id, event_id, get_message_opts) do
-    prev_token = :millisecond |> System.os_time() |> NextBatch.new!(%{room_id => event_id}, :backward)
-    next_token = :millisecond |> System.os_time() |> NextBatch.new!(%{room_id => event_id}, :forward)
+  defp get_state_events(room, user_id, timeline_events, get_known_memberships_fxn, filter) do
+    ignore_memberships_from =
+      if filter.state.memberships == :lazy do
+        known_membership_map = get_known_memberships_fxn.()
+        Map.get(known_membership_map, room.id, [])
+      else
+        []
+      end
 
+    state_event_ids =
+      timeline_events
+      |> Stream.reject(&(&1.sender in ignore_memberships_from))
+      |> Stream.uniq_by(& &1.sender)
+      |> Enum.map(fn pdu ->
+        # TODO: use Room.get_members instead of accessing state directly...
+        {:ok, %{event: %{id: event_id}}} = Room.State.fetch(room.state, "m.room.member", pdu.sender)
+        event_id
+      end)
+
+    Room.View.get_events!(room.id, user_id, state_event_ids)
+  end
+
+  def get_context(room_id, user_id, device_id, event_id, opts) do
     with {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [event_id], true),
-         {:ok, prev_chunk} <- get_messages(room_id, user_id, device_id, {prev_token, :backward}, get_message_opts),
-         {:ok, next_chunk} <- get_messages(room_id, user_id, device_id, {next_token, :forward}, get_message_opts) do
+         {:ok, prev_events, prev_end, _} <- get_messages(room_id, user_id, device_id, {event_id, :backward}, opts),
+         {:ok, next_events, next_end, _} <- get_messages(room_id, user_id, device_id, {event_id, :forward}, opts) do
       [event] = Enum.take(event_stream, 1)
-      {:ok, event, prev_chunk.timeline_events, prev_chunk.end, next_chunk.timeline_events, next_chunk.end}
+      {:ok, event, prev_events, prev_end, next_events, next_end}
     end
   end
 end

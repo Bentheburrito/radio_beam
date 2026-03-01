@@ -47,10 +47,6 @@ defmodule RadioBeam.Sync.NextBatch do
 
   def direction(%__MODULE__{dir: dir}), do: dir
 
-  def topologically_equal?(%__MODULE__{} = nb1, %__MODULE__{} = nb2) do
-    nb1.kvs == nb2.kvs and nb1.dir == nb2.dir
-  end
-
   defimpl JSON.Encoder do
     def encode(batch, encoder) do
       batch

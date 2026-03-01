@@ -40,9 +40,16 @@ defmodule RadioBeam.Sync do
   def batch_token_to_latest_event_id_fetcher(%NextBatch{} = batch_token), do: &NextBatch.fetch(batch_token, &1)
   def batch_token_timestamp(%NextBatch{} = batch_token), do: NextBatch.timestamp(batch_token)
 
-  def new_batch_token_for(room_id, event_id, dir \\ :forward) do
+  @default_dir :forward
+  def new_batch_token_for(room_id, event_id, dir \\ @default_dir) do
     :millisecond
     |> System.os_time()
     |> NextBatch.new!(%{room_id => event_id}, dir)
+  end
+
+  def new_batch_token do
+    :millisecond
+    |> System.os_time()
+    |> NextBatch.new!(%{}, @default_dir)
   end
 end
