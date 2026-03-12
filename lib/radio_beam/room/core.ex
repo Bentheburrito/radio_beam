@@ -39,7 +39,9 @@ defmodule RadioBeam.Room.Core do
       Room.generate_id() |> to_string() |> Events.create(creator_id, version, Keyword.get(opts, :content, %{}))
 
     with {:ok, %AuthorizedEvent{} = create_event} <- State.authorize_event(state, create_event_attrs) do
-      %DAG{} = dag = DAG.new!(create_event)
+      dag_backend = Keyword.get(opts, :dag_backend, DAG.Map)
+      dag = dag_backend.new!(create_event)
+
       %PDU{event: ^create_event} = create_pdu = DAG.fetch!(dag, create_event.id)
       state = State.handle_pdu(state, create_pdu)
 
@@ -90,7 +92,8 @@ defmodule RadioBeam.Room.Core do
 
   defp send_common(%Room{} = room, %AuthorizedEvent{} = event) do
     with %Room{} = room <- Relationships.apply_event(room, event) do
-      {%DAG{} = dag, pdu} = DAG.append!(room.dag, event)
+      dag = DAG.append!(room.dag, event)
+      pdu = DAG.fetch!(dag, event.id)
 
       room
       |> struct!(dag: dag, state: State.handle_pdu(room.state, pdu))
