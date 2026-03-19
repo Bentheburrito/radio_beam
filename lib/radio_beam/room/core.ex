@@ -33,7 +33,8 @@ defmodule RadioBeam.Room.Core do
   @spec new(String.t(), User.id(), deps :: map(), [create_opt()]) ::
           {Room.t(), :queue.queue(PDU.t())} | {:error, :unauthorized}
   def new(version, creator_id, deps, opts \\ []) do
-    state = State.new!()
+    state_backend = Keyword.get(opts, :state_backend, State.NaiveMap)
+    state = state_backend.new!()
 
     create_event_attrs =
       Room.generate_id() |> to_string() |> Events.create(creator_id, version, Keyword.get(opts, :content, %{}))
