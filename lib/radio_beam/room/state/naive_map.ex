@@ -56,7 +56,7 @@ defmodule RadioBeam.Room.State.NaiveMap do
     if authorized?(state_mapping, room_version, event_attrs, auth_event_pdus) do
       authz_event_attrs = Map.put(event_attrs, "auth_events", Enum.map(auth_event_pdus, & &1.event.id))
 
-      with {:ok, event_id} <- Events.reference_hash(authz_event_attrs, room_version) do
+      with {:ok, populated_event_attrs} <- compute_and_put_hashes(authz_event_attrs, room_version) do
         prev_state_content =
           if state_key = Map.get(event_attrs, "state_key") do
             case fetch(state, event_attrs["type"], state_key) do
@@ -68,8 +68,7 @@ defmodule RadioBeam.Room.State.NaiveMap do
           end
 
         authz_event =
-          authz_event_attrs
-          |> Map.put("id", event_id)
+          populated_event_attrs
           |> Map.put("prev_state_content", prev_state_content)
           |> AuthorizedEvent.new!()
 
@@ -77,6 +76,14 @@ defmodule RadioBeam.Room.State.NaiveMap do
       end
     else
       {:error, :unauthorized}
+    end
+  end
+
+  defp compute_and_put_hashes(event_attrs, room_version) do
+    with {:ok, content_hash} <- Events.content_hash(event_attrs, room_version),
+         event_attrs = Map.put(event_attrs, "hashes", %{"sha256" => content_hash}),
+         {:ok, event_id} <- Events.reference_hash(event_attrs, room_version) do
+      {:ok, Map.put(event_attrs, "id", event_id)}
     end
   end
 
