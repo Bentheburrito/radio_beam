@@ -17,7 +17,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
       tmp_upload_path = Path.join([tmp_dir, "tmp_upload"])
       File.write!(tmp_upload_path, content)
       file_acceptor = fn -> {:ok, Fixtures.file_info(content, "csv", "a file to share"), tmp_upload_path, nil} end
-      {:ok, ^upload_id, nil} = ContentRepo.try_upload(upload_id, account.user_id, file_acceptor, tmp_dir)
+      {:ok, ^upload_id, nil} = ContentRepo.try_upload(upload_id, account.user_id, file_acceptor)
 
       %{account: account, upload_id: upload_id, content: content}
     end
