@@ -12,7 +12,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Timeline.VisibilityGroup
 
-  @attrs ~w|topological_id_to_event_id topological_id_ord_set event_metadata member_metadata visibility_groups visibility_exceptions timestamp_to_event_id_index|a
+  @attrs ~w|topological_id_to_event_id topological_id_ord_set event_metadata member_metadata visibility_groups visibility_event_content visibility_exceptions timestamp_to_event_id_index|a
   @enforce_keys @attrs
   defstruct @attrs
   @typep t() :: %__MODULE__{}
@@ -26,14 +26,15 @@ defmodule RadioBeam.Room.View.Core.Timeline do
       event_metadata: %{},
       member_metadata: %{},
       visibility_groups: %{},
+      visibility_event_content: %{},
       visibility_exceptions: %{},
       timestamp_to_event_id_index: TimestampToEventIDIndex.new!()
     }
   end
 
-  def key_for(%{id: room_id}, _pdu), do: {:ok, {__MODULE__, room_id}}
+  def key_for(room_id, _pdu), do: {:ok, {__MODULE__, room_id}}
 
-  def handle_pdu(%__MODULE__{} = timeline, %Room{} = room, %PDU{} = pdu) do
+  def handle_pdu(%__MODULE__{} = timeline, room_id, get_state_mapping, %PDU{} = pdu) do
     prev_events_topo_id_stream =
       timeline.event_metadata
       |> Map.take(pdu.prev_event_ids)
@@ -49,7 +50,14 @@ defmodule RadioBeam.Room.View.Core.Timeline do
         timeline.member_metadata
       end
 
-    visibility_group = VisibilityGroup.from_state!(room.state, pdu)
+    visibility_event_content =
+      if pdu.event.type in ~w|m.room.history_visibility m.room.member| do
+        Map.put(timeline.visibility_event_content, pdu.event.id, pdu.event.content)
+      else
+        timeline.visibility_event_content
+      end
+
+    visibility_group = VisibilityGroup.from_state!(get_state_mapping.(), visibility_event_content)
     visibility_group_id = VisibilityGroup.id(visibility_group)
 
     event_metadata =
@@ -111,12 +119,13 @@ defmodule RadioBeam.Room.View.Core.Timeline do
         event_metadata: event_metadata,
         member_metadata: member_metadata,
         visibility_groups: Map.put(timeline.visibility_groups, visibility_group_id, visibility_group),
+        visibility_event_content: visibility_event_content,
         visibility_exceptions: visibility_exceptions,
         timestamp_to_event_id_index:
           TimestampToEventIDIndex.put(timeline.timestamp_to_event_id_index, pdu.event.origin_server_ts, pdu.event.id)
       )
 
-    {timeline, pubsub_messages(room.id, pdu_topo_id, pdu)}
+    {timeline, pubsub_messages(room_id, pdu_topo_id, pdu)}
   end
 
   defp later_join_topo_id(timeline, user_id, pdu_topo_id) do

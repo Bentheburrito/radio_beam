@@ -13,18 +13,18 @@ defmodule RadioBeam.Room.Core.RelationshipsTest do
 
     test "noops relationships if the event is not related to others", %{room: room, creator_id: creator_id} do
       msg_event = Events.text_message(room.id, creator_id, "hello world")
-      {:sent, %{relationships: relationships}, _pdu} = Room.Core.send(room, msg_event, default_deps())
+      {:sent, %{relationships: relationships}, _event_id, _pdus} = Room.Core.send(room, msg_event, default_deps())
       assert relationships == room.relationships
     end
 
     test "applies a m.reaction event, as long as it's not a duplicate", %{room: room, creator_id: creator_id} do
       msg_event = Events.text_message(room.id, creator_id, "hello world")
-      {:sent, room, %{event: msg_event}} = Room.Core.send(room, msg_event, default_deps())
+      {:sent, room, _event_id, [%{event: msg_event}]} = Room.Core.send(room, msg_event, default_deps())
 
       key = "👍"
       rel = %{"m.relates_to" => %{"event_id" => msg_event.id, "rel_type" => "m.annotation", "key" => key}}
       reaction_event = Events.message(room.id, creator_id, "m.reaction", rel)
-      {:sent, room, %{event: %{id: reaction_event_id}}} = Room.Core.send(room, reaction_event, default_deps())
+      {:sent, room, reaction_event_id, _pdus} = Room.Core.send(room, reaction_event, default_deps())
 
       assert [{reaction_event_id, key, creator_id}] ==
                room.relationships.children_by_event_id[msg_event.id]["m.reaction"]
@@ -34,7 +34,7 @@ defmodule RadioBeam.Room.Core.RelationshipsTest do
       key2 = "💩"
       rel = %{"m.relates_to" => %{"event_id" => msg_event.id, "rel_type" => "m.annotation", "key" => key2}}
       reaction_event = Events.message(room.id, creator_id, "m.reaction", rel)
-      {:sent, room, %{event: %{id: reaction_event_id2}}} = Room.Core.send(room, reaction_event, default_deps())
+      {:sent, room, reaction_event_id2, _pdus} = Room.Core.send(room, reaction_event, default_deps())
 
       assert [{reaction_event_id2, key2, creator_id}, {reaction_event_id, key, creator_id}] ==
                room.relationships.children_by_event_id[msg_event.id]["m.reaction"]

@@ -8,7 +8,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
     setup do
       account = Fixtures.create_account()
 
-      {:sent, room, _pdu} =
+      {:sent, room, _event_id, _pdus} =
         "11"
         |> Fixtures.room(account.user_id)
         |> Fixtures.send_room_msg(account.user_id, "hellloooo")
@@ -24,7 +24,11 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
 
       timeline_events =
         timeline
-        |> Room.View.Core.Timeline.topological_stream(account.user_id, :tip, &Room.DAG.fetch!(room.dag, &1))
+        |> Room.View.Core.Timeline.topological_stream(
+          account.user_id,
+          :tip,
+          &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
+        )
         |> Enum.to_list()
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, account.user_id)
@@ -45,7 +49,11 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, account.user_id)
 
-      state_pdus = room.state |> Room.State.get_all() |> Map.values()
+      state_pdus =
+        room
+        |> Room.Core.get_state_mapping()
+        |> Map.values()
+        |> Enum.map(&Room.Chronicle.fetch_pdu!(room.chronicle, &1))
 
       opts = [maybe_last_sync_room_state_pdus: state_pdus]
 
@@ -57,14 +65,18 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
     test "encodes an JoinedRoomResult as expected by the C-S spec" do
       account = Fixtures.create_account()
 
-      {:sent, room, _pdu} =
+      {:sent, room, _event_id, _pdus} =
         "11" |> Fixtures.room(account.user_id) |> Fixtures.send_room_msg(account.user_id, "helloooooooo")
 
       timeline = Fixtures.make_room_view(Room.View.Core.Timeline, room)
 
       timeline_events =
         timeline
-        |> Room.View.Core.Timeline.topological_stream(account.user_id, :tip, &Room.DAG.fetch!(room.dag, &1))
+        |> Room.View.Core.Timeline.topological_stream(
+          account.user_id,
+          :tip,
+          &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
+        )
         |> Enum.to_list()
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, account.user_id)
@@ -92,7 +104,12 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
 
   defp get_events_for_user_fxn(%{id: room_id} = room, timeline, user_id) do
     fn ^room_id, event_ids ->
-      Room.View.Core.Timeline.get_visible_events(timeline, event_ids, user_id, &Room.DAG.fetch!(room.dag, &1))
+      Room.View.Core.Timeline.get_visible_events(
+        timeline,
+        event_ids,
+        user_id,
+        &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
+      )
     end
   end
 end

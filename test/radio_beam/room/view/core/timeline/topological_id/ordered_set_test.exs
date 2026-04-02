@@ -1,31 +1,32 @@
 defmodule RadioBeam.Room.View.Core.Timeline.TopologicalID.OrderedSetTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room.DAG
+  alias RadioBeam.Room.Chronicle
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID.OrderedSet
 
   setup do
     creator = Fixtures.create_account()
     room = Fixtures.room("11", creator.user_id)
-    %{room: room}
+    %{key: root_id} = RadioBeam.DAG.root!(room.chronicle.dag)
+    zids = RadioBeam.DAG.zid_keys(room.chronicle.dag)
+    %{room: room, root_id: root_id, zids: zids}
   end
 
   describe "put/2" do
-    test "puts new TopologicalIDs into the set", %{room: room} do
+    test "puts new TopologicalIDs into the set", %{room: room, root_id: root_id, zids: zids} do
       set = OrderedSet.new!()
       assert is_nil(OrderedSet.first(set))
       assert is_nil(OrderedSet.last(set))
 
-      root = DAG.root!(room.dag)
-      root_topo_id = TopologicalID.new!(root, [])
+      root_topo_id = TopologicalID.new!(Chronicle.fetch_pdu!(room.chronicle, root_id), [])
       set = OrderedSet.put(set, root_topo_id)
 
       assert ^root_topo_id = OrderedSet.first(set)
       assert ^root_topo_id = OrderedSet.last(set)
 
-      [latest_pdu_event_id] = DAG.forward_extremities(room.dag)
-      latest_pdu = DAG.fetch!(room.dag, latest_pdu_event_id)
+      [latest_pdu_event_id] = zids
+      latest_pdu = Chronicle.fetch_pdu!(room.chronicle, latest_pdu_event_id)
       latest_pdu_topo_id = TopologicalID.new!(latest_pdu, [])
       set = OrderedSet.put(set, latest_pdu_topo_id)
 
@@ -67,13 +68,13 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalID.OrderedSetTest do
 
   defp ordered_set_size_five(room) do
     # TODO: the depth is technically wrong here
-    {DAG.forward_extremities(room.dag), []}
+    {RadioBeam.DAG.zid_keys(room.chronicle.dag), []}
     |> Stream.unfold(fn
       {[], _} ->
         nil
 
       {[event_id], prev_topo_ids} ->
-        pdu = DAG.fetch!(room.dag, event_id)
+        pdu = Chronicle.fetch_pdu!(room.chronicle, event_id)
         topo_id = TopologicalID.new!(pdu, prev_topo_ids)
         {topo_id, {pdu.prev_event_ids, [topo_id]}}
     end)

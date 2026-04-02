@@ -5,7 +5,7 @@ defmodule RadioBeam.User.EventFilterTest do
   alias RadioBeam.User.EventFilter
 
   describe "new/1" do
-    @room_ids Enum.map(1..6, fn _ -> RadioBeam.Room.generate_id() end)
+    @room_ids Enum.map(1..6, fn _ -> RadioBeam.Room.generate_legacy_id() end)
               |> Enum.chunk_every(2)
               |> List.duplicate(2)
               |> Enum.flat_map(& &1)

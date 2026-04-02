@@ -20,7 +20,7 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
       user_id = Fixtures.user_id()
       room = Fixtures.room("11", user_id)
 
-      {:sent, room, %{event: %{id: parent_event_id} = parent_event}} =
+      {:sent, room, parent_event_id, [%{event: parent_event}]} =
         Fixtures.send_room_msg(room, user_id, "This is a test message")
 
       assert 0 = map_size(parent_event.unsigned)
@@ -31,13 +31,13 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
         "m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "m.thread"}
       }
 
-      {:sent, room, %{event: %{id: thread_event_id1} = thread_event1}} =
+      {:sent, room, thread_event_id1, [%{event: thread_event1}]} =
         Fixtures.send_room_event(room, user_id, "m.room.message", content)
 
-      {:sent, room, %{event: %{id: thread_event_id2} = thread_event2}} =
+      {:sent, room, thread_event_id2, [%{event: thread_event2}]} =
         Fixtures.send_room_event(room, user_id, "m.room.message", Map.put(content, "body", "This another thread msg"))
 
-      {:sent, _room, %{event: %{id: thread_event_id3} = thread_event3}} =
+      {:sent, _room, thread_event_id3, [%{event: thread_event3}]} =
         Fixtures.send_room_event(room, user_id, "m.room.message", Map.put(content, "body", "Yay"))
 
       child_events = [thread_event1, thread_event2, thread_event3]
@@ -63,7 +63,7 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
       user_id = Fixtures.user_id()
       room = Fixtures.room("11", user_id)
 
-      {:sent, room, %{event: parent_event}} =
+      {:sent, room, _event_id, [%{event: parent_event}]} =
         Fixtures.send_room_msg(room, user_id, "This is a test message")
 
       assert 0 = map_size(parent_event.unsigned)
@@ -74,8 +74,8 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
         "m.new_content" => %{"body" => "This is a corrected test message", "msgtype" => "m.text"}
       }
 
-      {:sent, room, %{event: event1}} = Fixtures.send_room_event(room, user_id, "m.room.message", content)
-      {:sent, _room, %{event: event2}} = Fixtures.send_room_event(room, user_id, "m.room.message", content)
+      {:sent, room, _event_id, [%{event: event1}]} = Fixtures.send_room_event(room, user_id, "m.room.message", content)
+      {:sent, _room, _event_id, [%{event: event2}]} = Fixtures.send_room_event(room, user_id, "m.room.message", content)
 
       child_events = [event1, event2]
 
@@ -90,7 +90,7 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
       user_id = Fixtures.user_id()
       room = Fixtures.room("11", user_id)
 
-      {:sent, room, %{event: %{id: parent_event_id} = parent_event}} =
+      {:sent, room, parent_event_id, [%{event: parent_event}]} =
         Fixtures.send_room_msg(room, user_id, "This is a test message")
 
       assert 0 = map_size(parent_event.unsigned)
@@ -101,10 +101,10 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
         "m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "m.reference"}
       }
 
-      {:sent, room, %{event: %{id: ref_event_id1} = event1}} =
+      {:sent, room, ref_event_id1, [%{event: event1}]} =
         Fixtures.send_room_event(room, user_id, "m.room.message", content)
 
-      {:sent, _room, %{event: %{id: ref_event_id2} = event2}} =
+      {:sent, _room, ref_event_id2, [%{event: event2}]} =
         Fixtures.send_room_event(room, user_id, "m.room.message", Map.put(content, "body", "ref event 2"))
 
       child_events = [event1, event2]
@@ -119,7 +119,7 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
       user_id = Fixtures.user_id()
       room = Fixtures.room("11", user_id)
 
-      {:sent, room, %{event: %{id: parent_event_id} = parent_event}} =
+      {:sent, room, parent_event_id, [%{event: parent_event}]} =
         Fixtures.send_room_msg(room, user_id, "This is a test message")
 
       assert 0 = map_size(parent_event.unsigned)
@@ -130,10 +130,10 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
         "m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "org.what.is.this"}
       }
 
-      {:sent, room, %{event: event1}} =
+      {:sent, room, _event_id, [%{event: event1}]} =
         Fixtures.send_room_event(room, user_id, "m.room.message", content)
 
-      {:sent, _room, %{event: event2}} =
+      {:sent, _room, _event_id, [%{event: event2}]} =
         Fixtures.send_room_event(room, user_id, "m.room.message", Map.put(content, "body", "ref event 2"))
 
       child_events = [event1, event2]
@@ -146,7 +146,7 @@ defmodule RadioBeam.Room.EventRelationshipsTest do
       user_id = Fixtures.user_id()
       room = Fixtures.room("11", user_id)
 
-      {:sent, _room, %{event: parent_event}} =
+      {:sent, _room, _event_id, [%{event: parent_event}]} =
         Fixtures.send_room_msg(room, user_id, "This is a test message")
 
       assert 0 = map_size(parent_event.unsigned)

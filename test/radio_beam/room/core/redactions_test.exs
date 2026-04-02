@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.Core.RedactionsTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.Core.Redactions
-  alias RadioBeam.Room.DAG
+  alias RadioBeam.Room.Chronicle
   alias RadioBeam.Room.Events
 
   describe "Core.send/3 (Core.Redactions.apply_or_queue/2)" do
@@ -13,26 +13,26 @@ defmodule RadioBeam.Room.Core.RedactionsTest do
       %{room: room, creator_id: user_id}
     end
 
-    test "applies a redaction to an event when we have it on the room DAG", %{room: room, creator_id: creator_id} do
+    test "applies a redaction to an event when we have it in the room chronicle", %{room: room, creator_id: creator_id} do
       msg_event = Events.text_message(room.id, creator_id, "afsjdghk")
-      {:sent, room, %{event: %{id: to_redact_id}}} = Room.Core.send(room, msg_event, default_deps())
+      {:sent, room, to_redact_id, _pdus} = Room.Core.send(room, msg_event, default_deps())
 
       redaction_event = Events.redaction(room.id, creator_id, to_redact_id, "cat walked on keyboard")
-      {:sent, room, _pdu} = Room.Core.send(room, redaction_event, default_deps())
+      {:sent, room, _eid, _pdus} = Room.Core.send(room, redaction_event, default_deps())
 
       assert 0 = map_size(room.redactions.pending)
-      pdu = DAG.fetch!(room.dag, to_redact_id)
+      pdu = Chronicle.fetch_pdu!(room.chronicle, to_redact_id)
       assert 0 = map_size(pdu.event.content)
     end
 
-    test "queues a redaction as pending when we don't yet have the target event on the room DAG", %{
+    test "queues a redaction as pending when we don't yet have the target event in the room chronicle", %{
       room: room,
       creator_id: creator_id
     } do
       to_redact_id = "!asdf"
 
       redaction_event = Events.redaction(room.id, creator_id, to_redact_id, "cat walked on keyboard")
-      {:sent, room, _pdu} = Room.Core.send(room, redaction_event, default_deps())
+      {:sent, room, _eid, _pdu} = Room.Core.send(room, redaction_event, default_deps())
 
       assert 1 = map_size(room.redactions.pending)
     end
@@ -46,11 +46,11 @@ defmodule RadioBeam.Room.Core.RedactionsTest do
     end
 
     test "returns the room if no redaction is pending for the given event_id", %{room: room} do
-      pdu = DAG.root!(room.dag)
-      assert ^room = Redactions.apply_any_pending(room, pdu.event.id)
+      %{key: event_id} = RadioBeam.DAG.root!(room.chronicle.dag)
+      assert {:not_applied, ^room} = Redactions.apply_any_pending(room, event_id)
     end
 
-    # TODO: can't write this test until Room.DAG supports inserting an event at
+    # TODO: can't write this test until RadioBeam.DAG supports inserting an event at
     # a particular point (as opposed to just appending it). This is required
     # since we want to simulate the target of the redaction event arriving late
     # (and thus invoking the pending-redaction-application functionality)
@@ -58,15 +58,15 @@ defmodule RadioBeam.Room.Core.RedactionsTest do
     test "applies a pending redaction", %{room: room, creator_id: creator_id} do
       # first create a message event and its redaction...
       msg_event = Events.text_message(room.id, creator_id, "afsjdghk")
-      {:sent, stub_room, %{event: %{id: to_redact_id} = msg_event}} = Room.Core.send(room, msg_event, default_deps())
+      {:sent, stub_room, to_redact_id, [%{event: msg_event}]} = Room.Core.send(room, msg_event, default_deps())
 
       redaction_event = Events.redaction(room.id, creator_id, to_redact_id, "cat walked on keyboard")
-      {:sent, _room, %{event: redaction_event}} = Room.Core.send(stub_room, redaction_event, default_deps())
+      {:sent, _room, _eid, [%{event: redaction_event}]} = Room.Core.send(stub_room, redaction_event, default_deps())
 
       # ...then simulate the events arriving out-of-order
-      assert {:sent, room, %{}} = Room.Core.send(room, redaction_event, default_deps())
+      assert {:sent, room, _, [%{}]} = Room.Core.send(room, redaction_event, default_deps())
       assert 1 = map_size(room.redactions.pending)
-      assert {:sent, room, %{event: %{content: content}}} = Room.Core.send(room, msg_event, default_deps())
+      assert {:sent, room, _eid, [%{event: %{content: content}}]} = Room.Core.send(room, msg_event, default_deps())
       assert 0 = map_size(content)
       assert 0 = map_size(room.redactions.pending)
     end

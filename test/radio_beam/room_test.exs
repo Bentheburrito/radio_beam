@@ -613,6 +613,8 @@ defmodule RadioBeam.RoomTest do
 
     test "returns not_found when the key doesn't exist in the state", %{account1: creator} do
       {:ok, room_id} = Room.create(creator.user_id)
+
+      :pong = Room.Server.ping(room_id)
       assert {:error, :not_found} = Room.get_state(room_id, creator.user_id, "m.room.message_board", "")
     end
 

@@ -3,7 +3,6 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
   alias RadioBeam.User.EventFilter
   alias RadioBeam.Room
-  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
@@ -16,7 +15,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
   @type opt() ::
           {:next_event_id, Room.event_id() | :no_more_events}
-          | {:maybe_last_sync_room_state_pdus, [PDU.t()] | :initial}
+          | {:maybe_last_sync_room_state_events, [Event.t()] | :initial}
           | {:full_state?, boolean()}
           | {:known_memberships, %{Room.id() => MapSet.t(User.id())}}
           | {:filter, EventFilter.t()}
@@ -26,7 +25,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
           t() | :no_update
   def new(room, user_id, account_data, timeline_events, get_events_for_user, membership, opts \\ []) do
     filter = Keyword.get_lazy(opts, :filter, fn -> EventFilter.new(%{}) end)
-    maybe_last_sync_room_state_pdus = Keyword.get(opts, :maybe_last_sync_room_state_pdus, :initial)
+    maybe_last_sync_room_state_events = Keyword.get(opts, :maybe_last_sync_room_state_events, :initial)
     full_state? = Keyword.get(opts, :full_state?, false)
     known_memberships = Keyword.get(opts, :known_memberships, %{})
 
@@ -40,7 +39,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         determine_state_events(
           room,
           timeline_events,
-          maybe_last_sync_room_state_pdus,
+          maybe_last_sync_room_state_events,
           get_events_for_user,
           full_state?,
           known_memberships,
@@ -99,64 +98,42 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   defp determine_state_events(
          room,
          timeline_events,
-         maybe_last_sync_room_state_pdus,
+         maybe_last_sync_room_state_events,
          get_events_for_user,
          full_state?,
          known_memberships,
          sender_ids,
          filter
        ) do
-    {room_state_pdus_at_last_sync, desired_state_events} =
-      if maybe_last_sync_room_state_pdus == :initial or full_state?,
+    {room_state_events_at_last_sync, desired_state_events} =
+      if maybe_last_sync_room_state_events == :initial or full_state?,
         do: {[], :before_timeline_start},
-        else: {maybe_last_sync_room_state_pdus, :delta}
+        else: {maybe_last_sync_room_state_events, :delta}
 
-    # we will never be in a situation where maybe_last_sync_room_state_pdus =
+    # we will never be in a situation where maybe_last_sync_room_state_events =
     # :initial AND List.last(timeline_events) = nil, because an init sync will
     # always return some events, and an incremental sync will always have a
     # "last known state" of the last sync
     state_event_ids_at_tl_start =
       case List.last(timeline_events) do
         %Event{} = oldest_tl_event ->
-          %PDU{} = oldest_tl_pdu = Room.DAG.fetch!(room.dag, oldest_tl_event.id)
-
-          oldest_tl_event_id = oldest_tl_event.id
-
-          room.state
-          |> Room.State.get_all_at(oldest_tl_pdu)
-          # |> Stream.reject(fn {_k, pdu} -> pdu.event.id == oldest_tl_event.id end)
-          |> Enum.flat_map(fn
-            # If the oldest TL event is a state event, we want to get the
-            # previous value/state event it changed from. I.e. the state
-            # *before* the first event in the TL. Yes, I know it's fugly.
-            {_k, %{event: %{id: ^oldest_tl_event_id}, prev_event_ids: [prev_event_id]} = pdu} ->
-              prev_pdu = Room.DAG.fetch!(room.dag, prev_event_id)
-
-              case Room.State.fetch_at(room.state, pdu.event.type, pdu.event.state_key, prev_pdu) do
-                {:ok, prev_state_pdu} -> [prev_state_pdu.event.id]
-                {:error, :not_found} -> []
-              end
-
-            {_k, %{event: %{id: ^oldest_tl_event_id}, prev_event_ids: []}} ->
-              []
-
-            {_k, pdu} ->
-              [pdu.event.id]
-          end)
+          room
+          |> Room.Core.get_state_mapping_at(oldest_tl_event.id, _apply_event_id? = false)
+          |> Enum.map(fn {_key, event_id} -> event_id end)
 
         nil ->
-          Enum.map(room_state_pdus_at_last_sync, & &1.event.id)
+          Enum.map(room_state_events_at_last_sync, & &1.id)
       end
 
     state_event_ids =
-      room_state_pdus_at_last_sync
-      |> Stream.map(& &1.event.id)
+      room_state_events_at_last_sync
+      |> Stream.map(& &1.id)
       |> determine_state_event_ids(state_event_ids_at_tl_start, desired_state_events)
 
     known_memberships = Map.get(known_memberships, room.id, MapSet.new())
 
-    get_events_for_user.(room.id, state_event_ids_at_tl_start)
-    |> Stream.filter(&(&1.id in state_event_ids))
+    room.id
+    |> get_events_for_user.(state_event_ids)
     |> Stream.filter(&EventFilter.allow_state_event?(filter, &1, sender_ids, known_memberships))
   end
 

@@ -1,7 +1,6 @@
 defmodule RadioBeam.Room.Sync.Core do
   @moduledoc false
   alias RadioBeam.Room
-  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Timeline
@@ -9,14 +8,15 @@ defmodule RadioBeam.Room.Sync.Core do
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   def perform(%{} = inputs, %Room{} = room) do
-    {:ok, user_membership_pdu} = Room.State.fetch(room.state, "m.room.member", inputs.user_id)
+    {:ok, user_membership_event_id} = Room.Core.get_state_mapping(room, "m.room.member", inputs.user_id)
+    user_membership_pdu = Room.Chronicle.fetch_pdu!(room.chronicle, user_membership_event_id)
     user_membership = user_membership_pdu.event.content["membership"]
 
-    maybe_last_sync_room_state_pdus =
+    maybe_last_sync_room_state_events =
       with "$" <> _ = event_id <- inputs.last_batch,
-           {:ok, %PDU{} = pdu} <- Room.DAG.fetch(room.dag, event_id),
-           %{} = state_at_last_sync <- Room.State.get_all_at(room.state, pdu) do
-        Map.values(state_at_last_sync)
+           %{} = state_id_mapping_at_last_sync <- Room.Core.get_state_mapping_at(room, event_id) do
+        state_event_ids_at_last_sync = Stream.map(state_id_mapping_at_last_sync, fn {_key, event_id} -> event_id end)
+        inputs.functions.get_events_for_user.(room.id, state_event_ids_at_last_sync)
       else
         _ -> :initial
       end
@@ -37,16 +37,16 @@ defmodule RadioBeam.Room.Sync.Core do
             room,
             membership,
             event_stream,
-            maybe_last_sync_room_state_pdus,
+            maybe_last_sync_room_state_events,
             typing_user_ids
           )
         end
 
-      "invite" when maybe_last_sync_room_state_pdus == :initial ->
+      "invite" when maybe_last_sync_room_state_events == :initial ->
         if user_membership_pdu.event.sender in inputs.ignored_user_ids do
           :no_update
         else
-          InvitedRoomResult.new!(room, inputs.user_id)
+          InvitedRoomResult.new!(room.id, inputs.functions.get_invite_state_for_user.(room.id))
         end
 
       "invite" ->
@@ -63,7 +63,7 @@ defmodule RadioBeam.Room.Sync.Core do
          room,
          membership,
          event_stream,
-         maybe_last_sync_room_state_pdus,
+         maybe_last_sync_room_state_events,
          typing_user_ids
        ) do
     maybe_to_event =
@@ -99,7 +99,7 @@ defmodule RadioBeam.Room.Sync.Core do
 
     opts = [
       next_event_id: maybe_next_event_id,
-      maybe_last_sync_room_state_pdus: maybe_last_sync_room_state_pdus,
+      maybe_last_sync_room_state_events: maybe_last_sync_room_state_events,
       full_state?: inputs.full_state?,
       known_memberships: inputs.known_memberships,
       filter: inputs.event_filter,

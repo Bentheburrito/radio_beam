@@ -1,7 +1,7 @@
 defmodule RadioBeam.Room.View.Core.Timeline.TopologicalIDTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room.DAG
+  alias RadioBeam.Room.Chronicle
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   setup do
@@ -12,11 +12,12 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalIDTest do
 
   describe "new!/2" do
     test "creates a new Topological ID from a PDU", %{room: room} do
-      root = DAG.root!(room.dag)
+      %{key: root_key} = RadioBeam.DAG.root!(room.chronicle.dag)
+      root = Chronicle.fetch_pdu!(room.chronicle, root_key)
       assert %TopologicalID{depth: 1, stream_number: 0} = root_topo_id = TopologicalID.new!(root, [])
 
-      [latest_pdu_event_id] = DAG.forward_extremities(room.dag)
-      latest_pdu = DAG.fetch!(room.dag, latest_pdu_event_id)
+      [latest_pdu_event_id] = RadioBeam.DAG.zid_keys(room.chronicle.dag)
+      latest_pdu = Chronicle.fetch_pdu!(room.chronicle, latest_pdu_event_id)
 
       assert %TopologicalID{depth: 2, stream_number: 5} = TopologicalID.new!(latest_pdu, [root_topo_id])
     end
@@ -24,12 +25,14 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalIDTest do
 
   describe "group_key/1" do
     test "returns depth as the group key", %{room: room} do
-      root = DAG.root!(room.dag)
+      %{key: root_key} = RadioBeam.DAG.root!(room.chronicle.dag)
+      root = Chronicle.fetch_pdu!(room.chronicle, root_key)
+
       root_topo_id = TopologicalID.new!(root, [])
       assert 1 == TopologicalID.group_key(root_topo_id)
 
-      [latest_pdu_event_id] = DAG.forward_extremities(room.dag)
-      latest_pdu = DAG.fetch!(room.dag, latest_pdu_event_id)
+      [latest_pdu_event_id] = RadioBeam.DAG.zid_keys(room.chronicle.dag)
+      latest_pdu = Chronicle.fetch_pdu!(room.chronicle, latest_pdu_event_id)
 
       latest_topo_id = TopologicalID.new!(latest_pdu, [root_topo_id])
       assert 2 = TopologicalID.group_key(latest_topo_id)
@@ -78,7 +81,8 @@ defmodule RadioBeam.Room.View.Core.Timeline.TopologicalIDTest do
     test "encodes a TopologicalID as expected" do
       creator = Fixtures.create_account()
       room = Fixtures.room("11", creator.user_id)
-      root = DAG.root!(room.dag)
+      %{id: root_id} = Chronicle.get_create_event(room.chronicle)
+      root = Chronicle.fetch_pdu!(room.chronicle, root_id)
       root_topo_id = TopologicalID.new!(root, [])
 
       assert ~s|"tid(1,0)"| = JSON.encode!(root_topo_id)

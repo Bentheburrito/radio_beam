@@ -125,13 +125,13 @@ defmodule RadioBeam.Sync.SinkServer do
           |> Map.take(source.mod.inputs())
           |> Map.put(:last_batch, last_batch)
 
-        ref =
+        task =
           Task.Supervisor.async_nolink(@source_supervisor, Source, :run, [source, source_inputs, sink_pid], @task_opts)
 
-        {ref, key}
+        {task.ref, key}
       end
 
-    {:noreply, put_in(state.source_keys_by_task_ref, keys_by_task_ref)}
+    state.source_keys_by_task_ref |> put_in(keys_by_task_ref) |> maybe_complete_sync()
   rescue
     e ->
       Logger.error(e)

@@ -6,6 +6,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoom do
   @behaviour RadioBeam.Sync.Source
 
   alias RadioBeam.PubSub
+  alias RadioBeam.Room
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Sync.Source
 
@@ -33,12 +34,16 @@ defmodule RadioBeam.Sync.Source.InvitedRoom do
 
   def run(inputs, "!" <> _ = room_id, _sink_pid) do
     with {:ok, room} <- RadioBeam.Room.Database.fetch_room(room_id) do
-      case RadioBeam.Room.State.fetch(room.state, "m.room.member", inputs.user_id) do
-        {:ok, %{event: %{sender: sender_id, content: %{"membership" => "invite"}}}} ->
+      case RadioBeam.Room.Core.get_state_mapping(room, "m.room.member", inputs.user_id) do
+        {:ok, event_id} ->
+          %{event: %{sender: sender_id, content: %{"membership" => "invite"}}} =
+            RadioBeam.Room.Chronicle.fetch_pdu!(room.chronicle, event_id)
+
           if sender_id in inputs.ignored_user_ids do
             {:no_update, nil}
           else
-            {:ok, InvitedRoomResult.new!(room, inputs.user_id), "sent"}
+            {:ok, invite_state_events} = Room.get_invite_state_events(room.id, inputs.user_id)
+            {:ok, InvitedRoomResult.new!(room.id, invite_state_events), "sent"}
           end
 
         {:error, :not_found} ->

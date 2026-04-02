@@ -8,15 +8,14 @@ defmodule RadioBeam.Room do
 
   require Logger
 
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room
   alias RadioBeam.Room.Alias
   alias RadioBeam.Room.Database
-  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Events
+  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.User
 
-  @attrs ~w|id dag state redactions relationships|a
+  @attrs ~w|id chronicle redactions relationships|a
   @enforce_keys @attrs
   defstruct @attrs
 
@@ -26,8 +25,8 @@ defmodule RadioBeam.Room do
 
   ### API ###
 
-  def generate_id(domain \\ RadioBeam.Config.server_name()),
-    do: Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate(domain)
+  def generate_legacy_id(domain \\ RadioBeam.Config.server_name()),
+    do: domain |> Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate() |> to_string()
 
   @doc """
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
@@ -70,6 +69,8 @@ defmodule RadioBeam.Room do
       _ -> MapSet.new()
     end
   end
+
+  def get_invite_state_events(room_id, user_id), do: Room.View.get_invite_state(room_id, user_id)
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
   @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t() | nil) ::
@@ -149,60 +150,82 @@ defmodule RadioBeam.Room do
   def bind_alias_to_room(%Alias{} = alias, room_id, ensure_room_exists? \\ true),
     do: Database.create_alias(alias, room_id, ensure_room_exists?)
 
+  @doc """
+  Gets membership events in the given room. If an `at_event_id` is provided,
+  returns memberships as of that event. Defaults to the current room state.
+  The requesting user must have been a member of the room at the point in
+  which these events are requested.
+
+  Note: this fxn is an unfortunate though rare situation where we'd like to
+  read from the write model directly - it doesn't seem worth it to set up a
+  `Room.View` just to hold the state that already exists in the Chronicle.
+  """
   def get_members(room_id, user_id, at_event_id \\ :latest_visible, membership_filter \\ fn _ -> true end)
 
   def get_members(room_id, user_id, at_event_id_or_current, membership_filter) do
     with true <- room_id in all_where_has_membership(user_id),
          {:ok, room} <- get(room_id),
-         {:ok, latest_visible_state_pdus} <- get_latest_visible_state(room, at_event_id_or_current, user_id),
-         {:ok, member_event_ids} <- get_member_event_ids_at_pdu(latest_visible_state_pdus, membership_filter),
-         {:ok, member_events} <- Room.View.get_events(room_id, user_id, member_event_ids) do
-      {:ok, member_events}
+         {:ok, latest_visible_state_events} <- get_latest_visible_state(room, at_event_id_or_current, user_id) do
+      {:ok, filter_member_events(latest_visible_state_events, membership_filter)}
     else
       _ -> {:error, :unauthorized}
     end
   end
 
   defp get_latest_visible_state(room, :latest_visible, user_id) do
-    case Room.State.fetch(room.state, "m.room.member", user_id) do
-      {:ok, %{event: %{content: %{"membership" => "join"}}}} ->
-        {:ok, Room.State.get_all(room.state)}
-
-      {:ok, %{event: %{content: %{"membership" => "leave"}, id: event_id}}} ->
-        pdu = Room.DAG.fetch!(room.dag, event_id)
-        {:ok, Room.State.get_all_at(room.state, pdu)}
-
-      _else ->
-        {:error, :unauthorized}
+    with {:ok, membership_event_id} <- Room.Core.get_state_mapping(room, "m.room.member", user_id),
+         {:ok, membership_event} <- expect_one_event(room.id, user_id, membership_event_id, false),
+         {:ok, state_mapping} <- get_mapping_based_on_membership(room, membership_event) do
+      state_event_id_stream = Stream.map(state_mapping, fn {_key, event_id} -> event_id end)
+      {:ok, Room.View.get_events!(room.id, user_id, state_event_id_stream, false)}
     end
   end
 
-  defp get_latest_visible_state(room, "$" <> _ = at_event_id, _user_id) do
-    pdu = Room.DAG.fetch!(room.dag, at_event_id)
-    {:ok, Room.State.get_all_at(room.state, pdu)}
+  defp get_latest_visible_state(room, "$" <> _ = at_event_id, user_id) do
+    # the fact that user_id can see at_event implies they have perms to see
+    # state at that event - no need to do add'l membership checks like in the
+    # prev fxn clause.
+    with {:ok, _at_event} <- expect_one_event(room.id, user_id, at_event_id, false) do
+      state_event_id_stream =
+        room |> Room.Core.get_state_mapping_at(at_event_id) |> Stream.map(fn {_key, event_id} -> event_id end)
+
+      {:ok, Room.View.get_events!(room.id, user_id, state_event_id_stream, false)}
+    end
   end
 
-  defp get_member_event_ids_at_pdu(state_pdus, membership_filter) do
-    state_pdus
-    |> Stream.map(fn {_key, pdu} -> pdu.event end)
-    |> Stream.filter(fn
+  defp get_mapping_based_on_membership(room, %{content: %{"membership" => "join"}}),
+    do: {:ok, Room.Core.get_state_mapping(room)}
+
+  defp get_mapping_based_on_membership(room, %{content: %{"membership" => membership}, id: event_id})
+       when membership in ~w|leave kick|, do: {:ok, Room.Core.get_state_mapping_at(room, event_id)}
+
+  defp get_mapping_based_on_membership(_room, _event), do: {:error, :unauthorized}
+
+  defp filter_member_events(state_events, membership_filter) do
+    Stream.filter(state_events, fn
       %{type: "m.room.member"} = event -> membership_filter.(get_in(event.content["membership"]))
       _ -> false
     end)
-    |> Stream.map(fn event -> event.id end)
-    |> then(&{:ok, &1})
   end
 
+  @doc """
+  Gets state events in the given room. The requesting user must have been a
+  member of the room at some point.
+
+  Note: this fxn is an unfortunate though rare situation where we'd like to
+  read from the write model directly - it doesn't seem worth it to set up a
+  `Room.View` just to hold the state that already exists in the Chronicle.
+  """
   def get_state(room_id, user_id) do
     with {:ok, room} <- get(room_id),
-         {:ok, use_state_at} <- use_state_at(room.state, user_id) do
-      state =
+         {:ok, use_state_at} <- use_state_at(room, user_id) do
+      state_mapping =
         case use_state_at do
-          :latest_event -> Room.State.get_all(room.state)
-          %PDU{} = pdu -> Room.State.get_all_at(room.state, pdu)
+          :latest_event -> Room.Core.get_state_mapping(room)
+          event_id -> Room.Core.get_state_mapping_at(room, event_id)
         end
 
-      state_event_ids = Stream.map(state, fn {_key, pdu} -> pdu.event.id end)
+      state_event_ids = Stream.map(state_mapping, fn {_key, event_id} -> event_id end)
 
       Room.View.get_events(room_id, user_id, state_event_ids)
     else
@@ -212,25 +235,29 @@ defmodule RadioBeam.Room do
 
   def get_state(room_id, user_id, type, state_key) do
     with {:ok, room} <- get(room_id),
-         {:ok, %PDU{} = state_pdu} <- get_state_at(room.state, user_id, type, state_key) do
-      expect_one_event(room_id, user_id, state_pdu.event.id, false)
+         {:ok, state_event_id} <- get_state_event_id_based_on_membership(room, user_id, type, state_key) do
+      expect_one_event(room_id, user_id, state_event_id, false)
     end
   end
 
-  defp get_state_at(room_state, user_id, type, state_key) do
-    case use_state_at(room_state, user_id) do
-      {:ok, :latest_event} -> Room.State.fetch(room_state, type, state_key)
-      {:ok, %PDU{} = pdu} -> Room.State.fetch_at(room_state, type, state_key, pdu)
+  defp get_state_event_id_based_on_membership(room, user_id, type, state_key) do
+    case use_state_at(room, user_id) do
+      {:ok, :latest_event} -> Room.Core.get_state_mapping(room, type, state_key)
+      {:ok, event_id} -> Room.Core.get_state_mapping_at(room, event_id, type, state_key)
       {:error, _} = error -> error
     end
   end
 
-  defp use_state_at(room_state, user_id) do
-    case Room.State.fetch(room_state, "m.room.member", user_id) do
-      {:ok, %{event: %{content: %{"membership" => "join"}}}} -> {:ok, :latest_event}
-      {:ok, %{event: %{content: %{"membership" => membership}}} = pdu} when membership in ~w|leave kick| -> {:ok, pdu}
-      {:ok, _} -> {:error, :unauthorized}
-      {:error, :not_found} -> {:error, :unauthorized}
+  defp use_state_at(room, user_id) do
+    with {:ok, membership_event_id} <- Room.Core.get_state_mapping(room, "m.room.member", user_id),
+         {:ok, membership_event} <- expect_one_event(room.id, user_id, membership_event_id, false) do
+      case membership_event.content do
+        %{"membership" => "join"} -> {:ok, :latest_event}
+        %{"membership" => membership} when membership in ~w|leave kick| -> {:ok, membership_event.id}
+        _else -> {:error, :unauthorized}
+      end
+    else
+      _else -> {:error, :unauthorized}
     end
   end
 

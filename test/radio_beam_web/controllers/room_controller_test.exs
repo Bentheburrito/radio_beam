@@ -658,6 +658,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "returns an M_NOT_FOUND (404) error when the state does not contain the key", %{conn: conn, account: account} do
       {:ok, room_id} = Room.create(account.user_id)
 
+      :pong = Room.Server.ping(room_id)
+
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.bathroom.member/#{account.user_id}", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end

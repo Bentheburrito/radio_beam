@@ -83,7 +83,7 @@ defmodule RadioBeam.Room.Events do
 
     [
       membership(room_id, creator_id, creator_id, :join, "Creator join event", direct?),
-      power_levels(room_id, creator_id, Keyword.get(opts, :power_levels, %{})),
+      power_levels(room_id, create_event.content["room_version"], creator_id, Keyword.get(opts, :power_levels, %{})),
       maybe_canonical_alias_event
     ]
     |> Stream.concat(from_preset(preset, room_id, creator_id))
@@ -95,13 +95,23 @@ defmodule RadioBeam.Room.Events do
     |> Stream.reject(&is_nil/1)
   end
 
-  def create(room_id, creator_id, room_version, create_content) do
+  def create(_, creator_id, "12", create_content) do
+    %{
+      "type" => "m.room.create",
+      "sender" => creator_id,
+      "state_key" => "",
+      "content" => Map.put(create_content, "room_version", "12"),
+      "origin_server_ts" => System.os_time(:millisecond)
+    }
+  end
+
+  def create(gen_room_id!, creator_id, room_version, create_content) do
     create_content =
       create_content
       |> maybe_put_creator(room_version, creator_id)
       |> Map.put("room_version", room_version)
 
-    state(room_id, "m.room.create", creator_id, create_content)
+    state(gen_room_id!.(), "m.room.create", creator_id, create_content)
   end
 
   defp maybe_put_creator(content, version, creator_id) when version in ~w|1 2 3 4 5 6 7 8 9 10|,
@@ -116,10 +126,10 @@ defmodule RadioBeam.Room.Events do
     state(room_id, "m.room.member", sender_id, content, subject_id)
   end
 
-  def power_levels(room_id, sender_id, content_overrides) do
+  def power_levels(room_id, room_version, sender_id, content_overrides) do
     power_levels_content =
       sender_id
-      |> default_power_level_content()
+      |> default_power_level_content(room_version)
       |> Map.merge(content_overrides, fn
         _k, v1, v2 when is_map(v1) and is_map(v2) -> Map.merge(v1, v2)
         _k, _v1, v2 -> v2
@@ -128,7 +138,7 @@ defmodule RadioBeam.Room.Events do
     state(room_id, "m.room.power_levels", sender_id, power_levels_content)
   end
 
-  def default_power_level_content(creator_id) do
+  def default_power_level_content(_creator_id, "12") do
     %{
       "ban" => 50,
       "events" => %{},
@@ -138,9 +148,13 @@ defmodule RadioBeam.Room.Events do
       "notifications" => %{"room" => 50},
       "redact" => 50,
       "state_default" => 50,
-      "users" => %{creator_id => 100},
+      "users" => %{},
       "users_default" => 0
     }
+  end
+
+  def default_power_level_content(creator_id, _room_version) do
+    creator_id |> default_power_level_content("12") |> put_in(["users", creator_id], 100)
   end
 
   def canonical_alias(room_id, sender_id, alias_localpart, server_name) do

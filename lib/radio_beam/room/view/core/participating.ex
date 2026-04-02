@@ -10,10 +10,10 @@ defmodule RadioBeam.Room.View.Core.Participating do
 
   def new!(), do: %__MODULE__{}
 
-  def key_for(_room, %PDU{event: %{type: "m.room.member"} = event}), do: {:ok, {__MODULE__, event.state_key}}
-  def key_for(_room, _pdu), do: :none
+  def key_for(_room_id, %PDU{event: %{type: "m.room.member"} = event}), do: {:ok, {__MODULE__, event.state_key}}
+  def key_for(_room_id, _pdu), do: :none
 
-  def handle_pdu(%__MODULE__{} = participating, %{id: room_id}, %PDU{event: %{type: "m.room.member"}} = pdu) do
+  def handle_pdu(%__MODULE__{} = participating, room_id, _state_mapping, %PDU{event: %{type: "m.room.member"}} = pdu) do
     latest_known_join_pdus =
       if pdu.event.content["membership"] == "join",
         do: Map.put(participating.latest_known_join_pdus, room_id, pdu),

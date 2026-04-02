@@ -6,7 +6,9 @@ defmodule Fixtures do
 
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.User.Database
+  alias RadioBeam.DAG
   alias RadioBeam.Room
+  alias RadioBeam.Room.Chronicle
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.ContentRepo.Upload.FileInfo
@@ -54,29 +56,35 @@ defmodule Fixtures do
   end
 
   def make_room_view(view_module, room) do
-    all_pdus = make_room_view_pdus(room.dag)
+    all_pdus = make_room_view_pdus(room.chronicle)
 
     view_state = view_module.new!()
 
     Enum.reduce(all_pdus, view_state, fn pdu, view_state ->
-      case view_module.handle_pdu(view_state, room, pdu) do
+      get_state_mapping = fn -> Room.Core.get_state_mapping_at(room, pdu.event.id) end
+
+      case view_module.handle_pdu(view_state, room.id, get_state_mapping, pdu) do
         {view_state, _pubsub} -> view_state
         view_state -> view_state
       end
     end)
   end
 
-  defp make_room_view_pdus(dag) do
-    make_room_view_pdus(dag, Room.DAG.forward_extremities(dag), [])
+  defp make_room_view_pdus(chronicle) do
+    make_room_view_pdus(chronicle, DAG.zid_keys(chronicle.dag), [])
   end
 
-  defp make_room_view_pdus(dag, next_event_ids, pdus) do
-    new_pdus = for event_id <- next_event_ids, do: Room.DAG.fetch!(dag, event_id)
+  defp make_room_view_pdus(chronicle, next_event_ids, pdus) do
+    new_pdus = for event_id <- next_event_ids, do: Chronicle.fetch_pdu!(chronicle, event_id)
 
     if match?([], new_pdus) do
       Enum.sort_by(pdus, & &1.stream_number, :asc)
     else
-      make_room_view_pdus(dag, new_pdus |> Stream.flat_map(& &1.prev_event_ids) |> Stream.uniq(), new_pdus ++ pdus)
+      make_room_view_pdus(
+        chronicle,
+        new_pdus |> Stream.flat_map(& &1.prev_event_ids) |> Stream.uniq(),
+        new_pdus ++ pdus
+      )
     end
   end
 
@@ -213,7 +221,7 @@ defmodule Fixtures do
   end
 
   def authz_event(event_attrs, auth_events) do
-    attrs = Map.put(event_attrs, "auth_events", auth_events)
+    attrs = event_attrs |> Map.put("auth_events", auth_events) |> Map.put("prev_events", [])
 
     {:ok, id} = Events.reference_hash(attrs, "11")
 
@@ -223,7 +231,7 @@ defmodule Fixtures do
   end
 
   def authz_create_event(sender_id \\ user_id(), content_overrides \\ %{}) do
-    room_id()
+    fn -> room_id() end
     |> Events.create(sender_id, "11", content_overrides)
     |> authz_event([])
   end

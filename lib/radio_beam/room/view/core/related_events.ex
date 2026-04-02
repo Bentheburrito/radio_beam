@@ -10,9 +10,9 @@ defmodule RadioBeam.Room.View.Core.RelatedEvents do
 
   def new!, do: %__MODULE__{}
 
-  def key_for(%{id: room_id}, _pdu), do: {:ok, {__MODULE__, room_id}}
+  def key_for(room_id, _pdu), do: {:ok, {__MODULE__, room_id}}
 
-  def handle_pdu(%__MODULE__{} = relations, %{id: _room_id}, %PDU{} = pdu) do
+  def handle_pdu(%__MODULE__{} = relations, _room_id, _state_mapping, %PDU{} = pdu) do
     related_by_event_id =
       case pdu.event.content do
         %{"m.relates_to" => %{"event_id" => related_to_id}} ->

@@ -1,28 +1,19 @@
 defmodule RadioBeam.Room.Sync.InvitedRoomResult do
   @moduledoc false
-  alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline.Event
 
   defstruct ~w|room_id stripped_state_events|a
 
-  @type t() :: %__MODULE__{room_id: Room.id(), stripped_state_events: [map()]}
+  @type t() :: %__MODULE__{stripped_state_events: [map()]}
 
-  def new!(room, user_id) do
-    stripped_state_events =
-      room.state
-      |> Room.State.get_invite_state_pdus(user_id)
-      |> Stream.map(&Event.new!(:unknown, &1, []))
-
-    %__MODULE__{room_id: room.id, stripped_state_events: stripped_state_events}
+  def new!(room_id, stripped_state_events) when is_list(stripped_state_events) do
+    %__MODULE__{room_id: room_id, stripped_state_events: stripped_state_events}
   end
 
   defimpl JSON.Encoder do
     alias RadioBeam.Room.Sync.InvitedRoomResult
 
-    @stripped_keys ~w|content sender state_key type|a
     def encode(%InvitedRoomResult{} = room_result, encoder) do
-      stripped_state_events = Enum.map(room_result.stripped_state_events, &Map.take(&1, @stripped_keys))
-      JSON.Encoder.Map.encode(%{"invite_state" => %{"events" => stripped_state_events}}, encoder)
+      JSON.Encoder.Map.encode(%{"invite_state" => %{"events" => room_result.stripped_state_events}}, encoder)
     end
   end
 end

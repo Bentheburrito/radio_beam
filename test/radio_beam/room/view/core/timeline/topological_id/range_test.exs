@@ -1,19 +1,19 @@
 defmodule RadioBeam.Room.View.Core.Timeline.TopologicalID.RangeTest do
   use ExUnit.Case, async: true
 
-  alias RadioBeam.Room.DAG
+  alias RadioBeam.Room.Chronicle
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID.Range
 
   setup do
     creator = Fixtures.create_account()
     room = Fixtures.room("11", creator.user_id)
-    root = DAG.root!(room.dag)
+    %{key: root} = RadioBeam.DAG.root!(room.chronicle.dag)
 
-    {:sent, room, pdu1} = Fixtures.send_room_msg(room, creator.user_id, "helllooooooooooo")
-    {:sent, _room, pdu2} = Fixtures.send_room_msg(room, creator.user_id, "anyone there?")
+    {:sent, room, _event_id, [pdu1]} = Fixtures.send_room_msg(room, creator.user_id, "helllooooooooooo")
+    {:sent, _room, _event_id, [pdu2]} = Fixtures.send_room_msg(room, creator.user_id, "anyone there?")
 
-    root_id = TopologicalID.new!(root, [])
+    root_id = TopologicalID.new!(Chronicle.fetch_pdu!(room.chronicle, root), [])
     first_id = TopologicalID.new!(pdu1, [root_id])
     second_id = TopologicalID.new!(pdu2, [first_id])
 

@@ -7,7 +7,7 @@ defmodule RadioBeam.Sync.NextBatchTest do
     setup do
       creator_id = Fixtures.user_id()
       room = Fixtures.room("11", creator_id)
-      {:sent, room, %{event: %{id: event_id}}} = Fixtures.send_room_msg(room, creator_id, "yo")
+      {:sent, room, event_id, _pdus} = Fixtures.send_room_msg(room, creator_id, "yo")
 
       %{room: room, event_id: event_id}
     end
@@ -38,7 +38,7 @@ defmodule RadioBeam.Sync.NextBatchTest do
     setup do
       creator_id = Fixtures.user_id()
       room = Fixtures.room("11", creator_id)
-      {:sent, room, %{event: %{id: event_id}}} = Fixtures.send_room_msg(room, creator_id, "yo")
+      {:sent, room, event_id, _pdus} = Fixtures.send_room_msg(room, creator_id, "yo")
 
       %{room: room, event_id: event_id}
     end
@@ -62,7 +62,7 @@ defmodule RadioBeam.Sync.NextBatchTest do
     setup do
       creator_id = Fixtures.user_id()
       room = Fixtures.room("11", creator_id)
-      {:sent, room, %{event: %{id: event_id}}} = Fixtures.send_room_msg(room, creator_id, "yo")
+      {:sent, room, event_id, _pdus} = Fixtures.send_room_msg(room, creator_id, "yo")
 
       %{room: room, event_id: event_id}
     end
@@ -93,7 +93,7 @@ defmodule RadioBeam.Sync.NextBatchTest do
     setup do
       creator_id = Fixtures.user_id()
       room = Fixtures.room("11", creator_id)
-      {:sent, room, %{event: %{id: event_id}}} = Fixtures.send_room_msg(room, creator_id, "yo")
+      {:sent, room, event_id, _pdus} = Fixtures.send_room_msg(room, creator_id, "yo")
 
       %{room: room, event_id: event_id}
     end

@@ -71,7 +71,8 @@ defmodule RadioBeam.Room.Server do
         end
       end)
 
-    for pdu <- pdu_stream, do: Room.View.handle_pdu(room, pdu)
+    for pdu <- pdu_stream,
+        do: Room.View.handle_pdu(room.id, fn -> Room.Core.get_state_mapping_at(room, pdu.event.id) end, pdu)
 
     {:noreply, room}
   end
@@ -79,18 +80,20 @@ defmodule RadioBeam.Room.Server do
   @impl GenServer
   def handle_call({:send, event_attrs}, _from, %Room{} = room) do
     case Room.Core.send(room, event_attrs, deps()) do
-      {:sent, %Room{} = room, %PDU{event: event} = pdu} ->
+      {:sent, %Room{} = room, event_id, visible_pdus} ->
         Database.upsert_room(room)
 
-        Room.View.handle_pdu(room, pdu)
+        Enum.each(visible_pdus, fn %PDU{event: event} = pdu ->
+          Room.View.handle_pdu(room.id, fn -> Room.Core.get_state_mapping_at(room, event.id) end, pdu)
 
-        if event.type == "m.room.member" and event.content["membership"] == "invite" do
-          # note: `mark_dirty` needs to be called after Views are updated, not
-          # just when write model is updated
-          LazyLoadMembersCache.mark_dirty(room.id, event.state_key)
-        end
+          if event.type == "m.room.member" and event.content["membership"] == "invite" do
+            # note: `mark_dirty` needs to be called after Views are updated, not
+            # just when write model is updated
+            LazyLoadMembersCache.mark_dirty(room.id, event.state_key)
+          end
+        end)
 
-        {:reply, {:ok, event.id}, room}
+        {:reply, {:ok, event_id}, room}
 
       {:error, :unauthorized} = e ->
         Logger.info("rejecting an event for being unauthorized: #{inspect(event_attrs)}")

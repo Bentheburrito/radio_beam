@@ -45,7 +45,7 @@ defmodule RadioBeam.SyncTest do
 
       assert %{
                "invite" => %{
-                 ^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream}
+                 ^room_id2 => %InvitedRoomResult{stripped_state_events: invite_state_events}
                },
                "join" => %{
                  ^room_id1 => %JoinedRoomResult{
@@ -71,12 +71,11 @@ defmodule RadioBeam.SyncTest do
              ] =
                events
 
-      invite_state = Enum.to_list(invite_state_stream)
-      assert 4 = length(invite_state)
-      assert Enum.any?(invite_state, &match?(%{type: "m.room.create"}, &1))
-      assert Enum.any?(invite_state, &match?(%{type: "m.room.join_rules"}, &1))
-      assert Enum.any?(invite_state, &match?(%{type: "m.room.name"}, &1))
-      assert Enum.any?(invite_state, &match?(%{type: "m.room.member", state_key: ^user_id}, &1))
+      assert 4 = length(invite_state_events)
+      assert Enum.any?(invite_state_events, &match?(%{type: "m.room.create"}, &1))
+      assert Enum.any?(invite_state_events, &match?(%{type: "m.room.join_rules"}, &1))
+      assert Enum.any?(invite_state_events, &match?(%{type: "m.room.name"}, &1))
+      assert Enum.any?(invite_state_events, &match?(%{type: "m.room.member", state_key: ^user_id}, &1))
     end
 
     test "successfully syncs, bundling aggregate events", %{creator: creator, account: account, device: device} do
@@ -170,7 +169,7 @@ defmodule RadioBeam.SyncTest do
 
       assert %{
                "invite" => %{
-                 ^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream}
+                 ^room_id2 => %InvitedRoomResult{stripped_state_events: invite_state_stream}
                },
                "join" => %{
                  ^room_id1 => %JoinedRoomResult{
@@ -330,7 +329,7 @@ defmodule RadioBeam.SyncTest do
 
       assert %{
                "invite" => %{
-                 ^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: invite_state_stream}
+                 ^room_id2 => %InvitedRoomResult{stripped_state_events: invite_state_stream}
                }
              } = room_results
 
@@ -861,7 +860,7 @@ defmodule RadioBeam.SyncTest do
 
       assert %{
                "rooms" => %{
-                 "invite" => %{^room_id2 => %InvitedRoomResult{room_id: ^room_id2, stripped_state_events: _events}}
+                 "invite" => %{^room_id2 => %InvitedRoomResult{stripped_state_events: _events}}
                }
              } = Task.await(sync_task)
 

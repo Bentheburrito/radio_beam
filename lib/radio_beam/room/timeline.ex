@@ -118,7 +118,7 @@ defmodule RadioBeam.Room.Timeline do
       |> Stream.uniq_by(& &1.sender)
       |> Enum.map(fn pdu ->
         # TODO: use Room.get_members instead of accessing state directly...
-        {:ok, %{event: %{id: event_id}}} = Room.State.fetch(room.state, "m.room.member", pdu.sender)
+        {:ok, event_id} = Room.Core.get_state_mapping(room, "m.room.member", pdu.sender)
         event_id
       end)
 

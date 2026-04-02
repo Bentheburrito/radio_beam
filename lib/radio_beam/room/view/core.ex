@@ -3,22 +3,23 @@ defmodule RadioBeam.Room.View.Core do
   A View calculates a read model given a series of room events/PDUs. An
   instance of a view is called a "view state".
   """
-  alias RadioBeam.Room
   alias RadioBeam.Room.PDU
+  alias RadioBeam.Room.View.Core.InviteStateEvents
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Timeline
 
   @views [
+    InviteStateEvents,
     Participating,
     RelatedEvents,
     Timeline
   ]
 
-  def handle_pdu(%Room{} = room, %PDU{} = pdu, deps) do
+  def handle_pdu(room_id, state_mapping_at_pdu, %PDU{} = pdu, deps) do
     %{fetch_view: fetch_view, save_view!: save_view!, broadcast!: broadcast!} = deps
 
-    for view <- @views, {:ok, view_key} <- [view.key_for(room, pdu)] do
+    for view <- @views, {:ok, view_key} <- [view.key_for(room_id, pdu)] do
       view_state =
         case fetch_view.(view_key) do
           {:ok, %^view{} = view_state} -> view_state
@@ -26,7 +27,7 @@ defmodule RadioBeam.Room.View.Core do
         end
 
       view_state
-      |> view.handle_pdu(room, pdu)
+      |> view.handle_pdu(room_id, state_mapping_at_pdu, pdu)
       |> maybe_broadcast(broadcast!)
       |> save_view!.(view_key)
     end

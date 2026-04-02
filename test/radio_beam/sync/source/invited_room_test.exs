@@ -32,7 +32,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
       {:ok, room_id} = Room.create(creator_id)
       {:ok, _} = Room.invite(room_id, creator_id, inputs.user_id)
 
-      assert {:ok, %InvitedRoomResult{room_id: ^room_id}, {:next_batch, ^room_id, "sent"}} =
+      assert {:ok, %InvitedRoomResult{}, {:next_batch, ^room_id, "sent"}} =
                Task.await(task)
     end
 
@@ -57,7 +57,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
       {:ok, other_room_id} = Room.create(other_id)
       {:ok, _} = Room.invite(other_room_id, other_id, inputs.user_id)
 
-      assert {:ok, %InvitedRoomResult{room_id: ^other_room_id}, {:next_batch, ^other_room_id, "sent"}} =
+      assert {:ok, %InvitedRoomResult{}, {:next_batch, ^other_room_id, "sent"}} =
                Task.await(task)
     end
   end
@@ -70,7 +70,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
       {:ok, room_id} = Room.create(creator_id)
       {:ok, _} = Room.invite(room_id, creator_id, inputs.user_id)
 
-      assert {:ok, %InvitedRoomResult{room_id: ^room_id}, "sent"} = InvitedRoom.run(inputs, room_id, me)
+      assert {:ok, %InvitedRoomResult{}, "sent"} = InvitedRoom.run(inputs, room_id, me)
     end
 
     test "ignores new invites from ignored users", %{inputs: inputs} do
@@ -88,7 +88,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
       {:ok, other_room_id} = Room.create(other_id)
       {:ok, _} = Room.invite(other_room_id, other_id, inputs.user_id)
 
-      assert {:ok, %InvitedRoomResult{room_id: ^other_room_id}, "sent"} = InvitedRoom.run(inputs, other_room_id, me)
+      assert {:ok, %InvitedRoomResult{}, "sent"} = InvitedRoom.run(inputs, other_room_id, me)
     end
   end
 end

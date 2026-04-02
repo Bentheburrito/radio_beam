@@ -18,6 +18,7 @@ defmodule RadioBeam.Room.AuthorizedEventTest do
         |> Events.text_message(user_id, body)
         |> Map.put("auth_events", [auth_event_id])
         |> Map.put("origin_server_ts", origin_server_ts)
+        |> Map.put("prev_events", ["$asdfasdf"])
 
       {:ok, event_id} = Events.reference_hash(text_message_event_attrs, "11")
 
@@ -46,10 +47,11 @@ defmodule RadioBeam.Room.AuthorizedEventTest do
       origin_server_ts = 1234
 
       create_event_attrs =
-        room_id
+        fn -> room_id end
         |> Events.create(user_id, room_version, %{})
         |> Map.put("auth_events", [auth_event_id])
         |> Map.put("origin_server_ts", origin_server_ts)
+        |> Map.put("prev_events", [])
 
       {:ok, event_id} = Events.reference_hash(create_event_attrs, room_version)
 
@@ -71,7 +73,7 @@ defmodule RadioBeam.Room.AuthorizedEventTest do
 
     test "raises if some required field (id) is missing" do
       assert_raise KeyError, fn ->
-        "!asdfasdf"
+        fn -> "!asdfasdf" end
         |> Events.create("@user:localhost", "11", %{})
         |> Map.put("auth_events", ["$asdf"])
         |> Map.put("origin_server_ts", 123)
