@@ -51,6 +51,8 @@ defmodule RadioBeam.Database.Mnesia do
 
     :mnesia.stop()
 
+    ensure_data_dir_exists!()
+
     nodes = [node()]
 
     case :mnesia.create_schema(nodes) do
@@ -62,6 +64,18 @@ defmodule RadioBeam.Database.Mnesia do
     :mnesia.start()
 
     create_tables(nodes)
+  end
+
+  defp ensure_data_dir_exists! do
+    case Application.get_env(:mnesia, :dir) do
+      path_charlist when is_list(path_charlist) ->
+        with {:error, posix} <- File.mkdir_p(path_charlist) do
+          raise "Failed to initialize Mnesia database - tried to create schema directory at #{inspect(path_charlist)} but received error #{inspect(posix)}"
+        end
+
+      _not_a_charlist ->
+        raise "Failed to initialize Mnesia database - please ensure MNESIA_DIR env var is set to a valid directory."
+    end
   end
 
   @copy_type if Mix.env() == :test, do: :ram_copies, else: :disc_copies
