@@ -7,6 +7,9 @@ defmodule RadioBeam.Admin do
   alias RadioBeam.Admin.UserGeneratedReport
   alias RadioBeam.Room
   alias RadioBeam.User
+  alias RadioBeam.User.LocalAccount
+
+  require Logger
 
   ### ABUSE / CONTENT REPORTING ###
 
@@ -58,4 +61,25 @@ defmodule RadioBeam.Admin do
   end
 
   def all_reports, do: Database.all_reports()
+
+  ### USER ACCOUNT MANAGEMENT ###
+
+  @doc """
+  Lock a user's account, preventing them from using it.
+
+  If `lock_until` is provided, it should be the `t:DateTime` after which the
+  account will unlock automatically. Defaults to `:infinity`.
+  """
+  def lock_account(user_id, admin_id, lock_until \\ :infinity) do
+    admin_ids = admin_ids()
+
+    if admin_id in admin_ids and user_id not in admin_ids do
+      User.update_local_account(user_id, &LocalAccount.lock(&1, admin_id, locked_until: lock_until))
+    else
+      Logger.error("non-admin #{inspect(admin_id)} tried to lock #{inspect(user_id)}'s account.")
+      {:error, :unauthorized}
+    end
+  end
+
+  defp admin_ids, do: RadioBeam.Config.admins()
 end

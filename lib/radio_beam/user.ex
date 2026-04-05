@@ -120,6 +120,8 @@ defmodule RadioBeam.User do
     end
   end
 
+  def update_local_account(user_id, callback), do: Database.update_user_account(user_id, callback)
+
   def get_timeline_preferences(user_id, filter_or_filter_id \\ :none) do
     case Database.fetch_user_client_config(user_id) do
       {:ok, config} ->

@@ -146,7 +146,16 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
   end
 
   def authenticate_user_by_access_token(token, ip, oauth2_module \\ oauth2_module()) do
-    oauth2_module.authenticate_user_by_access_token(token, ip)
+    with {:ok, user_id, device_id} <- oauth2_module.authenticate_user_by_access_token(token, ip) do
+      if account_locked?(user_id), do: {:error, :account_locked}, else: {:ok, user_id, device_id}
+    end
+  end
+
+  defp account_locked?(user_id) do
+    case Database.fetch_user_account(user_id) do
+      {:ok, %LocalAccount{} = account} -> LocalAccount.locked?(account)
+      {:error, :not_found} -> false
+    end
   end
 
   def refresh_token(refresh_token, oauth2_module \\ oauth2_module()) do

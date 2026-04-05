@@ -2,6 +2,7 @@ defmodule RadioBeam.User.LocalAccountTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.User.LocalAccount
+  alias RadioBeam.User.LocalAccount.LockState
 
   describe "new/1" do
     @password "Ar3allyg00dpwd!@#$"
@@ -61,6 +62,62 @@ defmodule RadioBeam.User.LocalAccountTest do
 
     # too short
     refute LocalAccount.strong_password?("t00SML!")
+  end
+
+  describe "lock/2,3" do
+    test "adds a new %LockState{} to the account's `:state_changes`" do
+      account = Fixtures.create_account()
+      assert [] = account.state_changes
+
+      admin_id = Fixtures.user_id()
+
+      account = LocalAccount.lock(account, admin_id)
+      assert [%LockState{locked_by_id: ^admin_id} = ls1] = account.state_changes
+
+      epoch = DateTime.from_unix!(0)
+
+      account = LocalAccount.lock(account, admin_id, locked_at: epoch)
+      assert [%LockState{locked_at: ^epoch}, ^ls1] = account.state_changes
+    end
+  end
+
+  describe "locked?/1,2" do
+    test "returns `true` if the given account is considered locked at the given `at` DateTime, and `false` otherwise" do
+      account = Fixtures.create_account()
+      admin_id = Fixtures.user_id()
+
+      locked_at = DateTime.utc_now()
+      locked_until = DateTime.add(locked_at, 1, :day)
+
+      refute LocalAccount.locked?(account)
+
+      account = LocalAccount.lock(account, admin_id, locked_at: locked_at, locked_until: locked_until)
+
+      assert LocalAccount.locked?(account)
+      assert LocalAccount.locked?(account, DateTime.utc_now())
+      assert LocalAccount.locked?(account, locked_at)
+      assert LocalAccount.locked?(account, locked_until)
+      assert LocalAccount.locked?(account, DateTime.add(locked_at, 1, :minute))
+      assert LocalAccount.locked?(account, DateTime.add(locked_until, -1, :minute))
+
+      refute LocalAccount.locked?(account, DateTime.add(locked_at, -1, :minute))
+      refute LocalAccount.locked?(account, DateTime.add(locked_until, 1, :minute))
+      refute LocalAccount.locked?(account, DateTime.from_unix!(0))
+
+      account = LocalAccount.lock(account, admin_id, locked_at: locked_at)
+
+      assert LocalAccount.locked?(account)
+      assert LocalAccount.locked?(account, DateTime.utc_now())
+      assert LocalAccount.locked?(account, locked_at)
+      assert LocalAccount.locked?(account, locked_until)
+      assert LocalAccount.locked?(account, DateTime.add(locked_at, 1, :minute))
+      assert LocalAccount.locked?(account, DateTime.add(locked_until, -1, :minute))
+
+      refute LocalAccount.locked?(account, DateTime.add(locked_at, -1, :minute))
+      # locked_until defaults to :infinity
+      assert LocalAccount.locked?(account, DateTime.add(locked_until, 1, :minute))
+      refute LocalAccount.locked?(account, DateTime.from_unix!(0))
+    end
   end
 
   defp super_long_user_id do

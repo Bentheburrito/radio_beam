@@ -18,6 +18,9 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken do
         |> assign(:user_id, user_id)
         |> assign(:device_id, device_id)
 
+      {:error, :account_locked} ->
+        conn |> json_error(401, :user_locked, ["Your account has been locked by an administrator"]) |> halt()
+
       {:error, :token_expired} ->
         conn |> json_error(401, :unknown_token, ["Unknown token", true]) |> halt()
 

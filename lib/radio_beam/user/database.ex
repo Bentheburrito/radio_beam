@@ -14,6 +14,8 @@ defmodule RadioBeam.User.Database do
 
   @callback insert_new_user_account(LocalAccount.t()) :: :ok | {:error, :already_exists}
   @callback fetch_user_account(User.id()) :: {:ok, LocalAccount.t()} | {:error, :not_found}
+  @callback update_user_account(User.id(), (LocalAccount.t() -> LocalAccount.t())) ::
+              {:ok, LocalAccount.t()} | {:error, :not_found}
 
   @callback insert_new_device(Device.t()) :: :ok | {:error, :already_exists}
   @callback update_user_device_with(User.id(), Device.id(), (Device.t() ->
@@ -40,6 +42,7 @@ defmodule RadioBeam.User.Database do
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.User.Database, :backend])
   defdelegate insert_new_user_account(user_account), to: @database_backend
   defdelegate fetch_user_account(user_id), to: @database_backend
+  defdelegate update_user_account(user_id, callback), to: @database_backend
   defdelegate insert_new_device(device), to: @database_backend
   defdelegate update_user_device_with(user_id, device_id, callback), to: @database_backend
   defdelegate fetch_user_device(user_id, device_id), to: @database_backend

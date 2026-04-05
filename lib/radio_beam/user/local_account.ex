@@ -2,16 +2,41 @@ defmodule RadioBeam.User.LocalAccount do
   @moduledoc """
   Domain struct for a user's account on a local homeserver.
   """
+  alias RadioBeam.User.LocalAccount.LockState
 
-  defstruct ~w|user_id pwd_hash registered_at|a
+  @attrs ~w|user_id pwd_hash registered_at state_changes|a
+  @enforce_keys @attrs
+  defstruct @attrs
   @type t() :: %__MODULE__{}
 
   @max_user_id_size_bytes 255
 
   def new(user_id, password) do
     case validate_user_id(user_id) ++ validate_password(password) do
-      [] -> {:ok, %__MODULE__{user_id: user_id, pwd_hash: hash(password), registered_at: DateTime.utc_now()}}
-      [_ | _] = errors -> {:error, errors}
+      [] ->
+        {:ok,
+         %__MODULE__{user_id: user_id, pwd_hash: hash(password), registered_at: DateTime.utc_now(), state_changes: []}}
+
+      [_ | _] = errors ->
+        {:error, errors}
+    end
+  end
+
+  def lock(%__MODULE__{} = account, admin_id, lock_state_opts \\ []) do
+    update_in(account.state_changes, &[LockState.new!(admin_id, lock_state_opts) | &1])
+  end
+
+  def locked?(%__MODULE__{} = account, at \\ DateTime.utc_now()) do
+    case Enum.find(account.state_changes, &is_struct(&1, LockState)) do
+      nil ->
+        false
+
+      %LockState{locked_until: :infinity} = lock_state ->
+        DateTime.compare(at, lock_state.locked_at) in ~w|gt eq|a
+
+      %LockState{} = lock_state ->
+        DateTime.compare(at, lock_state.locked_at) in ~w|gt eq|a and
+          DateTime.compare(at, lock_state.locked_until) in ~w|lt eq|a
     end
   end
 

@@ -361,6 +361,22 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
+  def update_user_account(user_id, callback) do
+    transaction(fn ->
+      case :mnesia.read(Tables.LocalAccount, user_id, :write) do
+        [] ->
+          {:error, :not_found}
+
+        [record] ->
+          %LocalAccount{} = account = record |> record_to_domain_struct() |> callback.()
+          record = local_account(id: account.user_id, local_account: account)
+          :mnesia.write(Tables.LocalAccount, record, :write)
+          {:ok, account}
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
   def fetch_key_store(user_id) do
     transaction(fn ->
       case :mnesia.read(Tables.KeyStore, user_id, :read) do

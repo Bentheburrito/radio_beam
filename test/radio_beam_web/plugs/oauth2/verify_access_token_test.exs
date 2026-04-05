@@ -65,5 +65,21 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
       assert {401, _headers, body} = sent_resp(conn)
       %{"errcode" => "M_UNKNOWN_TOKEN", "soft_logout" => true} = JSON.decode!(body)
     end
+
+    test "returns M_USER_LOCKED (401) when a user's account has been locked", %{account: account, device: device} do
+      {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(device)
+
+      {:ok, _} = RadioBeam.Admin.lock_account(account.user_id, hd(RadioBeam.Config.admins()))
+
+      conn =
+        :post
+        |> conn("/_matrix/v3/some_endpoint")
+        |> put_req_header("authorization", "Bearer #{access_token}")
+        |> VerifyAccessToken.call([])
+
+      assert {401, _headers, body} = sent_resp(conn)
+      %{"errcode" => "M_USER_LOCKED", "error" => error, "soft_logout" => true} = JSON.decode!(body)
+      assert error =~ "account has been locked"
+    end
   end
 end

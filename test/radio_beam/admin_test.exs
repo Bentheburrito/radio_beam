@@ -4,6 +4,7 @@ defmodule RadioBeam.AdminTest do
   alias RadioBeam.Admin
   alias RadioBeam.Admin.UserGeneratedReport
   alias RadioBeam.Room
+  alias RadioBeam.User.LocalAccount
 
   describe "report_user/3" do
     test "inserts a new UserGeneratedReport" do
@@ -144,6 +145,27 @@ defmodule RadioBeam.AdminTest do
 
       assert {:error, :not_found} = Admin.report_room_event(room_id, event_id, reporter_id, "spam (by anonymoous)")
       assert [] = Enum.filter(Admin.all_reports(), &(&1.target == {room_id, event_id}))
+    end
+  end
+
+  describe "lock_account/2,3" do
+    test "locks the given account, optionally specifying a DateTime to automatically unlock it" do
+      account = Fixtures.create_account()
+      [admin_id | _] = RadioBeam.Config.admins()
+
+      refute LocalAccount.locked?(account)
+
+      assert {:ok, %LocalAccount{} = locked_account} = Admin.lock_account(account.user_id, admin_id)
+      assert LocalAccount.locked?(locked_account)
+
+      assert {:ok, %LocalAccount{} = locked_account2} =
+               Admin.lock_account(account.user_id, admin_id, DateTime.add(DateTime.utc_now(), 1, :second))
+
+      assert LocalAccount.locked?(locked_account2)
+
+      Process.sleep(:timer.seconds(1) + 1)
+
+      refute LocalAccount.locked?(locked_account2)
     end
   end
 end
