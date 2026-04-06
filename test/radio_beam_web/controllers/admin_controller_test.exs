@@ -1,6 +1,8 @@
 defmodule RadioBeamWeb.AdminControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
+  import ExUnit.CaptureLog, only: [capture_log: 1]
+
   alias RadioBeam.Room
 
   describe "report_room/2" do
@@ -120,6 +122,103 @@ defmodule RadioBeamWeb.AdminControllerTest do
       conn = post(conn, ~p"/_matrix/client/v3/users/#{user_id}/report", %{"reason" => "they were mean to me"})
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "already reported"
+    end
+  end
+
+  describe "change_account_lock/2" do
+    test "indicates the account was locked when `locked: true` as an admin", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      account = Fixtures.create_account()
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{locked: true})
+
+      assert %{"locked" => true} = json_response(conn, 200)
+    end
+
+    test "indicates the account was unlocked when `locked: false` as an admin", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      account = Fixtures.create_account()
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{locked: false})
+
+      assert %{"locked" => false} = json_response(conn, 200)
+    end
+
+    test "errors (403) when the user is not an admin", %{conn: conn, account: %{user_id: non_admin_id}} do
+      account = Fixtures.create_account()
+
+      logs =
+        capture_log(fn ->
+          conn = put(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{locked: true})
+          assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+        end)
+
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+    end
+
+    test "errors (404) when the requested account does not exist locally", %{conn: conn, account: %{user_id: admin_id}} do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/lock/@idontfreakinexistman:localhost", %{locked: true})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+  end
+
+  describe "check_account_lock/2" do
+    test "returns the correct locked status of an account when an admin requests it", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      account = Fixtures.create_account()
+
+      conn = get(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{})
+      assert %{"locked" => false} = json_response(conn, 200)
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{locked: true})
+      assert %{"locked" => true} = json_response(conn, 200)
+
+      conn = get(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{})
+      assert %{"locked" => true} = json_response(conn, 200)
+    end
+
+    test "errors (403) when the requesting user is not an admin", %{
+      conn: conn,
+      account: %{user_id: non_admin_id}
+    } do
+      account = Fixtures.create_account()
+
+      logs =
+        capture_log(fn ->
+          conn = get(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{})
+          assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+        end)
+
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+    end
+
+    test "errors (404) when the requested account doesn't exist locally", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      conn = get(conn, ~p"/_matrix/client/v1/admin/lock/@broareyouhigh:localhost", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
 

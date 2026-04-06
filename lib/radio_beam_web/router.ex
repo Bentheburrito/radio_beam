@@ -23,6 +23,7 @@ defmodule RadioBeamWeb.Router do
   alias RadioBeamWeb.Plugs
 
   # Rate Limits
+  @admin new!(5000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5))
   @device_lifecycle new!(30 / minutes(5), 10 / hours(24), 2 / hours(24), 15 / minutes(15))
   @device_upkeep new!(80 / minutes(1), 10 / minutes(30), 5 / minutes(10), 80 / minutes(15))
   @exp_read_user_bursts new!(100 / minutes(1), 40 / minutes(3), 40 / minutes(2), 50 / minutes(5))
@@ -153,6 +154,11 @@ defmodule RadioBeamWeb.Router do
           get "/:event_id", RelationsController, :get_children, rl(@room_event_read)
           get "/:event_id/:rel_type", RelationsController, :get_children, rl(@room_event_read)
           get "/:event_id/:rel_type/:event_type", RelationsController, :get_children, rl(@room_event_read)
+        end
+
+        scope "/admin" do
+          put "/lock/:user_id", AdminController, :change_account_lock, rl(@admin)
+          get "/lock/:user_id", AdminController, :check_account_lock, rl(@admin)
         end
       end
 

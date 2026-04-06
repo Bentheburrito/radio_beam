@@ -5,6 +5,7 @@ defmodule RadioBeam.Admin do
   """
   alias RadioBeam.Admin.Database
   alias RadioBeam.Admin.UserGeneratedReport
+  alias RadioBeam.Config
   alias RadioBeam.Room
   alias RadioBeam.User
   alias RadioBeam.User.LocalAccount
@@ -71,15 +72,39 @@ defmodule RadioBeam.Admin do
   account will unlock automatically. Defaults to `:infinity`.
   """
   def lock_account(user_id, admin_id, lock_until \\ :infinity) do
-    admin_ids = admin_ids()
+    opts = [locked_until: lock_until]
 
-    if admin_id in admin_ids and user_id not in admin_ids do
-      User.update_local_account(user_id, &LocalAccount.lock(&1, admin_id, locked_until: lock_until))
-    else
-      Logger.error("non-admin #{inspect(admin_id)} tried to lock #{inspect(user_id)}'s account.")
-      {:error, :unauthorized}
+    with :ok <- validate_admin(admin_id),
+         :ok <- validate_lockable_user(user_id) do
+      User.update_local_account(user_id, &LocalAccount.lock(&1, admin_id, opts))
     end
   end
 
-  defp admin_ids, do: RadioBeam.Config.admins()
+  def unlock_account(user_id, admin_id) do
+    opts = [locked_until: DateTime.utc_now()]
+
+    with :ok <- validate_admin(admin_id) do
+      User.update_local_account(user_id, &LocalAccount.lock(&1, admin_id, opts))
+    end
+  end
+
+  defp validate_lockable_user(user_id) do
+    if user_id in Config.admins(), do: {:error, :unauthorized}, else: :ok
+  end
+
+  def get_account_locked_status(user_id, admin_id) do
+    with :ok <- validate_admin(admin_id),
+         :ok <- validate_user_exists(user_id) do
+      {:locked?, User.account_locked?(user_id)}
+    end
+  end
+
+  defp validate_admin(user_id) do
+    if user_id in Config.admins() do
+      :ok
+    else
+      Logger.error("non-admin #{inspect(user_id)} tried to take an action")
+      {:error, :unauthorized}
+    end
+  end
 end

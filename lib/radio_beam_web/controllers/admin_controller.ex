@@ -8,7 +8,8 @@ defmodule RadioBeamWeb.AdminController do
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RadioBeamWeb.Schemas.Admin] when action not in [:whois]
+  plug RadioBeamWeb.Plugs.EnforceSchema,
+       [mod: RadioBeamWeb.Schemas.Admin] when action not in [:whois, :check_account_lock]
 
   @already_reported_msg "You have already reported this content."
   @not_found_msg "The event was not found or you are not joined to the room."
@@ -44,6 +45,30 @@ defmodule RadioBeamWeb.AdminController do
       {:ok, _} -> json(conn, %{})
       {:error, :not_found} -> json_error(conn, 404, :not_found, "User not found")
       {:error, :already_exists} -> json_error(conn, 403, :forbidden, @already_reported_msg)
+    end
+  end
+
+  def change_account_lock(conn, %{"user_id" => user_id}) do
+    admin_id = conn.assigns.user_id
+    apply_lock? = conn.assigns.request["locked"]
+
+    lock_result =
+      if apply_lock?, do: Admin.lock_account(user_id, admin_id), else: Admin.unlock_account(user_id, admin_id)
+
+    case lock_result do
+      {:ok, _account} -> json(conn, %{locked: apply_lock?})
+      {:error, :unauthorized} -> json_error(conn, 403, :forbidden, "Unauthorized")
+      {:error, :not_found} -> json_error(conn, 404, :not_found, "User is non-local, doesn't exist, or was deactivated")
+    end
+  end
+
+  def check_account_lock(conn, %{"user_id" => user_id}) do
+    admin_id = conn.assigns.user_id
+
+    case Admin.get_account_locked_status(user_id, admin_id) do
+      {:locked?, locked?} when is_boolean(locked?) -> json(conn, %{locked: locked?})
+      {:error, :unauthorized} -> json_error(conn, 403, :forbidden, "Unauthorized")
+      {:error, :not_found} -> json_error(conn, 404, :not_found, "User is non-local, doesn't exist, or was deactivated")
     end
   end
 

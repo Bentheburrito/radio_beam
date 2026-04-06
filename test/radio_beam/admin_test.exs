@@ -168,4 +168,19 @@ defmodule RadioBeam.AdminTest do
       refute LocalAccount.locked?(locked_account2)
     end
   end
+
+  describe "unlock_account/2" do
+    test "unlocks the given account" do
+      account = Fixtures.create_account()
+      [admin_id | _] = RadioBeam.Config.admins()
+
+      refute LocalAccount.locked?(account)
+
+      {:ok, %LocalAccount{} = account} = Admin.lock_account(account.user_id, admin_id)
+      assert LocalAccount.locked?(account)
+
+      assert {:ok, %LocalAccount{} = account} = Admin.unlock_account(account.user_id, admin_id)
+      refute LocalAccount.locked?(account)
+    end
+  end
 end
