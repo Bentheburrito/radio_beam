@@ -72,12 +72,12 @@ defmodule RadioBeam.User.LocalAccountTest do
       admin_id = Fixtures.user_id()
 
       account = LocalAccount.lock(account, admin_id)
-      assert [%State{changed_by_id: ^admin_id} = ls1] = account.state_changes
+      assert [%State{state_name: :locked, changed_by_id: ^admin_id} = ls1] = account.state_changes
 
       epoch = DateTime.from_unix!(0)
 
       account = LocalAccount.lock(account, admin_id, changed_at: epoch)
-      assert [%State{changed_at: ^epoch}, ^ls1] = account.state_changes
+      assert [%State{state_name: :locked, changed_at: ^epoch}, ^ls1] = account.state_changes
     end
   end
 
@@ -117,6 +117,62 @@ defmodule RadioBeam.User.LocalAccountTest do
       # effective_until defaults to :infinity
       assert LocalAccount.locked?(account, DateTime.add(effective_until, 1, :minute))
       refute LocalAccount.locked?(account, DateTime.from_unix!(0))
+    end
+  end
+
+  describe "suspend/2,3" do
+    test "adds a new %State{} to the account's `:state_changes`" do
+      account = Fixtures.create_account()
+      assert [] = account.state_changes
+
+      admin_id = Fixtures.user_id()
+
+      account = LocalAccount.suspend(account, admin_id)
+      assert [%State{state_name: :suspended, changed_by_id: ^admin_id} = ls1] = account.state_changes
+
+      epoch = DateTime.from_unix!(0)
+
+      account = LocalAccount.suspend(account, admin_id, changed_at: epoch)
+      assert [%State{state_name: :suspended, changed_at: ^epoch}, ^ls1] = account.state_changes
+    end
+  end
+
+  describe "suspended?/1,2" do
+    test "returns `true` if the given account is suspended at the given `at` DateTime, and `false` otherwise" do
+      account = Fixtures.create_account()
+      admin_id = Fixtures.user_id()
+
+      changed_at = DateTime.utc_now()
+      effective_until = DateTime.add(changed_at, 1, :day)
+
+      refute LocalAccount.suspended?(account)
+
+      account = LocalAccount.suspend(account, admin_id, changed_at: changed_at, effective_until: effective_until)
+
+      assert LocalAccount.suspended?(account)
+      assert LocalAccount.suspended?(account, DateTime.utc_now())
+      assert LocalAccount.suspended?(account, changed_at)
+      assert LocalAccount.suspended?(account, effective_until)
+      assert LocalAccount.suspended?(account, DateTime.add(changed_at, 1, :minute))
+      assert LocalAccount.suspended?(account, DateTime.add(effective_until, -1, :minute))
+
+      refute LocalAccount.suspended?(account, DateTime.add(changed_at, -1, :minute))
+      refute LocalAccount.suspended?(account, DateTime.add(effective_until, 1, :minute))
+      refute LocalAccount.suspended?(account, DateTime.from_unix!(0))
+
+      account = LocalAccount.suspend(account, admin_id, changed_at: changed_at)
+
+      assert LocalAccount.suspended?(account)
+      assert LocalAccount.suspended?(account, DateTime.utc_now())
+      assert LocalAccount.suspended?(account, changed_at)
+      assert LocalAccount.suspended?(account, effective_until)
+      assert LocalAccount.suspended?(account, DateTime.add(changed_at, 1, :minute))
+      assert LocalAccount.suspended?(account, DateTime.add(effective_until, -1, :minute))
+
+      refute LocalAccount.suspended?(account, DateTime.add(changed_at, -1, :minute))
+      # effective_until defaults to :infinity
+      assert LocalAccount.suspended?(account, DateTime.add(effective_until, 1, :minute))
+      refute LocalAccount.suspended?(account, DateTime.from_unix!(0))
     end
   end
 

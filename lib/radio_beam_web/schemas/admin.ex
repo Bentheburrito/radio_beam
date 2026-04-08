@@ -6,4 +6,5 @@ defmodule RadioBeamWeb.Schemas.Admin do
   def report_user, do: %{"reason" => [:string, :optional]}
 
   def change_account_lock, do: %{"locked" => :boolean}
+  def change_account_suspension, do: %{"suspended" => :boolean}
 end

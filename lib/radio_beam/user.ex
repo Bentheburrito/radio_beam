@@ -124,6 +124,7 @@ defmodule RadioBeam.User do
   def update_local_account(user_id, callback), do: Database.update_user_account(user_id, callback)
 
   def account_locked?(user_id), do: OAuth2.account_locked?(user_id)
+  def account_suspended?(user_id), do: OAuth2.account_suspended?(user_id)
 
   def get_timeline_preferences(user_id, filter_or_filter_id \\ :none) do
     case Database.fetch_user_client_config(user_id) do

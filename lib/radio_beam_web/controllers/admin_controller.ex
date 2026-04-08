@@ -9,7 +9,7 @@ defmodule RadioBeamWeb.AdminController do
   require Logger
 
   plug RadioBeamWeb.Plugs.EnforceSchema,
-       [mod: RadioBeamWeb.Schemas.Admin] when action not in [:whois, :check_account_lock]
+       [mod: RadioBeamWeb.Schemas.Admin] when action not in [:whois, :check_account_lock, :check_account_suspension]
 
   @already_reported_msg "You have already reported this content."
   @not_found_msg "The event was not found or you are not joined to the room."
@@ -53,7 +53,9 @@ defmodule RadioBeamWeb.AdminController do
     apply_lock? = conn.assigns.request["locked"]
 
     lock_result =
-      if apply_lock?, do: Admin.lock_account(user_id, admin_id), else: Admin.unlock_account(user_id, admin_id)
+      if apply_lock?,
+        do: Admin.lock_account(user_id, admin_id),
+        else: Admin.remove_account_restrictions(user_id, admin_id)
 
     case lock_result do
       {:ok, _account} -> json(conn, %{locked: apply_lock?})
@@ -67,6 +69,32 @@ defmodule RadioBeamWeb.AdminController do
 
     case Admin.get_account_locked_status(user_id, admin_id) do
       {:locked?, locked?} when is_boolean(locked?) -> json(conn, %{locked: locked?})
+      {:error, :unauthorized} -> json_error(conn, 403, :forbidden, "Unauthorized")
+      {:error, :not_found} -> json_error(conn, 404, :not_found, "User is non-local, doesn't exist, or was deactivated")
+    end
+  end
+
+  def change_account_suspension(conn, %{"user_id" => user_id}) do
+    admin_id = conn.assigns.user_id
+    apply_suspension? = conn.assigns.request["suspended"]
+
+    suspend_result =
+      if apply_suspension?,
+        do: Admin.suspend_account(user_id, admin_id),
+        else: Admin.remove_account_restrictions(user_id, admin_id)
+
+    case suspend_result do
+      {:ok, _account} -> json(conn, %{suspended: apply_suspension?})
+      {:error, :unauthorized} -> json_error(conn, 403, :forbidden, "Unauthorized")
+      {:error, :not_found} -> json_error(conn, 404, :not_found, "User is non-local, doesn't exist, or was deactivated")
+    end
+  end
+
+  def check_account_suspension(conn, %{"user_id" => user_id}) do
+    admin_id = conn.assigns.user_id
+
+    case Admin.get_account_suspended_status(user_id, admin_id) do
+      {:suspended?, suspended?} when is_boolean(suspended?) -> json(conn, %{suspended: suspended?})
       {:error, :unauthorized} -> json_error(conn, 403, :forbidden, "Unauthorized")
       {:error, :not_found} -> json_error(conn, 404, :not_found, "User is non-local, doesn't exist, or was deactivated")
     end

@@ -222,6 +222,103 @@ defmodule RadioBeamWeb.AdminControllerTest do
     end
   end
 
+  describe "change_account_suspension/2" do
+    test "indicates the account was suspended when `suspended: true` as an admin", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      account = Fixtures.create_account()
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{suspended: true})
+
+      assert %{"suspended" => true} = json_response(conn, 200)
+    end
+
+    test "indicates the account was unsuspended when `suspended: false` as an admin", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      account = Fixtures.create_account()
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{suspended: false})
+
+      assert %{"suspended" => false} = json_response(conn, 200)
+    end
+
+    test "errors (403) when the user is not an admin", %{conn: conn, account: %{user_id: non_admin_id}} do
+      account = Fixtures.create_account()
+
+      logs =
+        capture_log(fn ->
+          conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{suspended: true})
+          assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+        end)
+
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+    end
+
+    test "errors (404) when the requested account does not exist locally", %{conn: conn, account: %{user_id: admin_id}} do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/@idontfreakinexistman:localhost", %{suspended: true})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+  end
+
+  describe "check_account_suspension/2" do
+    test "returns the correct suspended status of an account when an admin requests it", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      account = Fixtures.create_account()
+
+      conn = get(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{})
+      assert %{"suspended" => false} = json_response(conn, 200)
+
+      conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{suspended: true})
+      assert %{"suspended" => true} = json_response(conn, 200)
+
+      conn = get(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{})
+      assert %{"suspended" => true} = json_response(conn, 200)
+    end
+
+    test "errors (403) when the requesting user is not an admin", %{
+      conn: conn,
+      account: %{user_id: non_admin_id}
+    } do
+      account = Fixtures.create_account()
+
+      logs =
+        capture_log(fn ->
+          conn = get(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{})
+          assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+        end)
+
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+    end
+
+    test "errors (404) when the requested account doesn't exist locally", %{
+      conn: conn,
+      account: %{user_id: admin_id}
+    } do
+      current_admins = RadioBeam.admins()
+      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+
+      conn = get(conn, ~p"/_matrix/client/v1/admin/suspend/@broareyouhigh:localhost", %{})
+      assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
+    end
+  end
+
   describe "whois/2" do
     setup do
       device_display_name = "My Awesome Computer"

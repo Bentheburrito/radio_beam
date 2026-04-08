@@ -159,6 +159,8 @@ defmodule RadioBeamWeb.Router do
         scope "/admin" do
           put "/lock/:user_id", AdminController, :change_account_lock, rl(@admin)
           get "/lock/:user_id", AdminController, :check_account_lock, rl(@admin)
+          put "/suspend/:user_id", AdminController, :change_account_suspension, rl(@admin)
+          get "/suspend/:user_id", AdminController, :check_account_suspension, rl(@admin)
         end
       end
 

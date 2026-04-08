@@ -169,18 +169,50 @@ defmodule RadioBeam.AdminTest do
     end
   end
 
-  describe "unlock_account/2" do
-    test "unlocks the given account" do
+  describe "suspend_account/2,3" do
+    test "suspends the given account, optionally specifying a DateTime to automatically unsuspend it" do
+      account = Fixtures.create_account()
+      [admin_id | _] = RadioBeam.Config.admins()
+
+      refute LocalAccount.suspended?(account)
+
+      assert {:ok, %LocalAccount{} = suspended_account} = Admin.suspend_account(account.user_id, admin_id)
+      assert LocalAccount.suspended?(suspended_account)
+
+      assert {:ok, %LocalAccount{} = suspended_account2} =
+               Admin.suspend_account(account.user_id, admin_id, DateTime.add(DateTime.utc_now(), 1, :second))
+
+      assert LocalAccount.suspended?(suspended_account2)
+
+      Process.sleep(:timer.seconds(1) + 1)
+
+      refute LocalAccount.suspended?(suspended_account2)
+    end
+  end
+
+  describe "remove_account_restrictions/2" do
+    test "unlocks/unsuspends the given account" do
       account = Fixtures.create_account()
       [admin_id | _] = RadioBeam.Config.admins()
 
       refute LocalAccount.locked?(account)
+      refute LocalAccount.suspended?(account)
 
       {:ok, %LocalAccount{} = account} = Admin.lock_account(account.user_id, admin_id)
       assert LocalAccount.locked?(account)
+      refute LocalAccount.suspended?(account)
 
-      assert {:ok, %LocalAccount{} = account} = Admin.unlock_account(account.user_id, admin_id)
+      assert {:ok, %LocalAccount{} = account} = Admin.remove_account_restrictions(account.user_id, admin_id)
       refute LocalAccount.locked?(account)
+      refute LocalAccount.suspended?(account)
+
+      {:ok, %LocalAccount{} = account} = Admin.suspend_account(account.user_id, admin_id)
+      refute LocalAccount.locked?(account)
+      assert LocalAccount.suspended?(account)
+
+      assert {:ok, %LocalAccount{} = account} = Admin.remove_account_restrictions(account.user_id, admin_id)
+      refute LocalAccount.locked?(account)
+      refute LocalAccount.suspended?(account)
     end
   end
 end

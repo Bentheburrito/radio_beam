@@ -72,23 +72,32 @@ defmodule RadioBeam.Admin do
   account will unlock automatically. Defaults to `:infinity`.
   """
   def lock_account(user_id, admin_id, lock_until \\ :infinity) do
-    opts = [effective_until: lock_until]
+    update_account(user_id, admin_id, &LocalAccount.lock(&1, admin_id, effective_until: lock_until))
+  end
 
+  @doc """
+  Suspend a user's account, preventing them from sending most kinds of messages.
+
+  If `suspend_until` is provided, it should be the `t:DateTime` after which the
+  account will become unsuspended automatically. Defaults to `:infinity`.
+  """
+  def suspend_account(user_id, admin_id, suspend_until \\ :infinity) do
+    update_account(user_id, admin_id, &LocalAccount.suspend(&1, admin_id, effective_until: suspend_until))
+  end
+
+  @doc "Restores a user's account abilities, removing any locks or suspensions."
+  def remove_account_restrictions(user_id, admin_id) do
+    update_account(user_id, admin_id, &LocalAccount.remove_restrictions(&1, admin_id))
+  end
+
+  defp update_account(user_id, admin_id, account_action_fxn) do
     with :ok <- validate_admin(admin_id),
-         :ok <- validate_lockable_user(user_id) do
-      User.update_local_account(user_id, &LocalAccount.lock(&1, admin_id, opts))
+         :ok <- validate_actionable_user(user_id) do
+      User.update_local_account(user_id, account_action_fxn)
     end
   end
 
-  def unlock_account(user_id, admin_id) do
-    opts = [effective_until: DateTime.utc_now()]
-
-    with :ok <- validate_admin(admin_id) do
-      User.update_local_account(user_id, &LocalAccount.remove_restrictions(&1, admin_id, opts))
-    end
-  end
-
-  defp validate_lockable_user(user_id) do
+  defp validate_actionable_user(user_id) do
     if user_id in Config.admins(), do: {:error, :unauthorized}, else: :ok
   end
 
@@ -96,6 +105,13 @@ defmodule RadioBeam.Admin do
     with :ok <- validate_admin(admin_id),
          :ok <- validate_user_exists(user_id) do
       {:locked?, User.account_locked?(user_id)}
+    end
+  end
+
+  def get_account_suspended_status(user_id, admin_id) do
+    with :ok <- validate_admin(admin_id),
+         :ok <- validate_user_exists(user_id) do
+      {:suspended?, User.account_suspended?(user_id)}
     end
   end
 

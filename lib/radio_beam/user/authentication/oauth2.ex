@@ -151,6 +151,13 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
     end
   end
 
+  def account_suspended?(user_id) do
+    case Database.fetch_user_account(user_id) do
+      {:ok, %LocalAccount{} = account} -> LocalAccount.suspended?(account)
+      {:error, :not_found} -> false
+    end
+  end
+
   def account_locked?(user_id) do
     case Database.fetch_user_account(user_id) do
       {:ok, %LocalAccount{} = account} -> LocalAccount.locked?(account)
