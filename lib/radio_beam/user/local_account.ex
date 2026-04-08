@@ -2,7 +2,7 @@ defmodule RadioBeam.User.LocalAccount do
   @moduledoc """
   Domain struct for a user's account on a local homeserver.
   """
-  alias RadioBeam.User.LocalAccount.LockState
+  alias RadioBeam.User.LocalAccount.State
 
   @attrs ~w|user_id pwd_hash registered_at state_changes|a
   @enforce_keys @attrs
@@ -22,21 +22,49 @@ defmodule RadioBeam.User.LocalAccount do
     end
   end
 
-  def lock(%__MODULE__{} = account, admin_id, lock_state_opts \\ []) do
-    update_in(account.state_changes, &[LockState.new!(admin_id, lock_state_opts) | &1])
+  def lock(%__MODULE__{} = account, admin_id, state_opts \\ []), do: put_state(account, :locked, admin_id, state_opts)
+
+  def suspend(%__MODULE__{} = account, admin_id, state_opts \\ []),
+    do: put_state(account, :suspended, admin_id, state_opts)
+
+  def remove_restrictions(%__MODULE__{} = account, admin_id, state_opts \\ []),
+    do: put_state(account, :unrestricted, admin_id, state_opts)
+
+  defp put_state(%__MODULE__{} = account, state_name, admin_id, state_opts) do
+    update_in(account.state_changes, &[State.new!(state_name, admin_id, state_opts) | &1])
   end
 
   def locked?(%__MODULE__{} = account, at \\ DateTime.utc_now()) do
-    case Enum.find(account.state_changes, &is_struct(&1, LockState)) do
+    case List.first(account.state_changes) do
       nil ->
         false
 
-      %LockState{locked_until: :infinity} = lock_state ->
-        DateTime.compare(at, lock_state.locked_at) in ~w|gt eq|a
+      %State{state_name: :locked, effective_until: :infinity} = state ->
+        DateTime.compare(at, state.changed_at) in ~w|gt eq|a
 
-      %LockState{} = lock_state ->
-        DateTime.compare(at, lock_state.locked_at) in ~w|gt eq|a and
-          DateTime.compare(at, lock_state.locked_until) in ~w|lt eq|a
+      %State{state_name: :locked} = state ->
+        DateTime.compare(at, state.changed_at) in ~w|gt eq|a and
+          DateTime.compare(at, state.effective_until) in ~w|lt eq|a
+
+      %State{} ->
+        false
+    end
+  end
+
+  def suspended?(%__MODULE__{} = account, at \\ DateTime.utc_now()) do
+    case Enum.find(account.state_changes, &is_struct(&1, State)) do
+      nil ->
+        false
+
+      %State{state_name: :suspended, effective_until: :infinity} = state ->
+        DateTime.compare(at, state.changed_at) in ~w|gt eq|a
+
+      %State{state_name: :suspended} = state ->
+        DateTime.compare(at, state.changed_at) in ~w|gt eq|a and
+          DateTime.compare(at, state.effective_until) in ~w|lt eq|a
+
+      %State{} ->
+        false
     end
   end
 

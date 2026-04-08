@@ -72,7 +72,7 @@ defmodule RadioBeam.Admin do
   account will unlock automatically. Defaults to `:infinity`.
   """
   def lock_account(user_id, admin_id, lock_until \\ :infinity) do
-    opts = [locked_until: lock_until]
+    opts = [effective_until: lock_until]
 
     with :ok <- validate_admin(admin_id),
          :ok <- validate_lockable_user(user_id) do
@@ -81,10 +81,10 @@ defmodule RadioBeam.Admin do
   end
 
   def unlock_account(user_id, admin_id) do
-    opts = [locked_until: DateTime.utc_now()]
+    opts = [effective_until: DateTime.utc_now()]
 
     with :ok <- validate_admin(admin_id) do
-      User.update_local_account(user_id, &LocalAccount.lock(&1, admin_id, opts))
+      User.update_local_account(user_id, &LocalAccount.remove_restrictions(&1, admin_id, opts))
     end
   end
 
