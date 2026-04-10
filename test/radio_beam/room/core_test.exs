@@ -5,8 +5,7 @@ defmodule RadioBeam.Room.CoreTest do
       for(
         chronicle_backend <- [RadioBeam.Room.Chronicle.Map],
         dag_backend <- [RadioBeam.DAG.Map],
-        room_version <-
-          :radio_beam |> Application.compile_env!([:capabilities, :"m.room_versions", :available]) |> Map.keys(),
+        room_version <- Map.keys(RadioBeam.Config.supported_room_versions()),
         do: %{
           chronicle_backend: chronicle_backend,
           dag_backend: dag_backend,
@@ -49,10 +48,16 @@ defmodule RadioBeam.Room.CoreTest do
       maybe_deprecated_string_pl = if version in ~w|1 2 3 4 5 6 7 8 9|, do: "60", else: 60
 
       power_levels_content = %{
-        "users" => %{creator_id => 99},
         "ban" => maybe_deprecated_string_pl,
         "state_default" => 51
       }
+
+      power_levels_content =
+        if version in ~w|3 4 5 6 7 8 9 10 11| do
+          Map.put(power_levels_content, "users", %{creator_id => 99})
+        else
+          power_levels_content
+        end
 
       alias_localpart = "computer-rv-#{version}"
       alias = "##{alias_localpart}:#{server_name}"

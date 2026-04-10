@@ -52,7 +52,7 @@ defmodule RadioBeam.Room.ChronicleTest do
 
       assert [] = event.auth_events
       assert %{"room_version" => ^room_version} = event.content
-      assert event.origin_server_ts <= System.os_time(:millisecond)
+      assert event.origin_server_ts <= RadioBeam.Time.now()
       assert [] = event.prev_event_ids
       assert :none = event.prev_state_content
       assert ^creator_id = event.sender

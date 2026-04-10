@@ -101,7 +101,7 @@ defmodule RadioBeam.Room.Events do
       "sender" => creator_id,
       "state_key" => "",
       "content" => Map.put(create_content, "room_version", "12"),
-      "origin_server_ts" => System.os_time(:millisecond)
+      "origin_server_ts" => RadioBeam.Time.now()
     }
   end
 

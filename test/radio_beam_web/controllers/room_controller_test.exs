@@ -79,8 +79,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
         "name" => "A room",
         "preset" => "public_chat",
         "topic" => "It's just a room",
-        # creator defaults to 100, couldn't set room name if required PL is 101
-        "power_level_content_override" => %{"events" => %{"m.room.name" => 101}}
+        "power_level_content_override" => %{"events" => %{"m.room.name" => "101"}}
       }
 
       conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
@@ -163,7 +162,10 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
 
     test "rejects if inviter is in the room but does not have permission to invite", %{conn: conn, account: account} do
-      {:ok, room_id} = Room.create(account.user_id, power_levels: %{"invite" => 101})
+      %{user_id: creator_id} = Fixtures.create_account()
+      {:ok, room_id} = Room.create(creator_id, power_levels: %{"invite" => 101})
+      {:ok, _} = Room.invite(room_id, creator_id, account.user_id)
+      {:ok, _} = Room.join(room_id, account.user_id)
 
       invitee_id = "@lmao:localhost"
 

@@ -13,14 +13,16 @@ config :radio_beam,
   access_token_lifetime: {60, :minute},
   refresh_token_lifetime: {2, :week},
   capabilities: %{
-    "m.change_password": %{enabled: false},
-    "m.room_versions": %{
-      available: Map.new(3..11, &{"#{&1}", "stable"}),
-      default: "11"
-    },
-    "m.set_displayname": %{enabled: false},
-    "m.set_avatar_url": %{enabled: false},
-    "m.3pid_changes": %{enabled: false}
+    "m.3pid_changes" => %{enabled: false},
+    "m.account_moderation" => %{lock: true, suspend: true},
+    "m.change_password" => %{enabled: false},
+    "m.forget_forced_upon_leave" => %{enabled: false},
+    "m.get_login_token" => %{enabled: false},
+    "m.profile_fields" => %{enabled: false},
+    "m.room_versions" => %{available: Map.new(3..12, &{"#{&1}", "stable"}), default: "12"},
+    # deprecated
+    "m.set_avatar_url" => %{enabled: false},
+    "m.set_displayname" => %{enabled: false}
   },
   generators: [timestamp_type: :utc_datetime, binary_id: true],
   # TOIMPL: m.login.token

@@ -4,8 +4,7 @@ defmodule RadioBeam.RoomTest do
   alias RadioBeam.Room
   alias RadioBeam.RoomRegistry
 
-  @room_versions_to_test Application.compile_env!(:radio_beam, [:capabilities, :"m.room_versions", :available])
-                         |> Map.keys()
+  @room_versions_to_test Map.keys(RadioBeam.Config.supported_room_versions())
 
   describe "create/4" do
     setup do
@@ -27,13 +26,19 @@ defmodule RadioBeam.RoomTest do
       server_name = RadioBeam.server_name()
 
       for room_version <- @room_versions_to_test do
-        maybe_deprecated_string_pl = if room_version in ~w|10 11|, do: 60, else: "60"
+        maybe_deprecated_string_pl = if room_version in ~w|3 4 5 6 7 8 9|, do: "60", else: 60
 
         power_levels_content = %{
-          "users" => %{creator.user_id => 99},
           "ban" => maybe_deprecated_string_pl,
           "state_default" => 51
         }
+
+        power_levels_content =
+          if room_version in ~w|3 4 5 6 7 8 9 10 11| do
+            Map.put(power_levels_content, "users", %{creator.user_id => 99})
+          else
+            power_levels_content
+          end
 
         alias_localpart = "computer-rv-#{room_version}"
 
@@ -144,7 +149,12 @@ defmodule RadioBeam.RoomTest do
     } do
       {:ok, room_id} = Room.create(account1.user_id, power_levels: %{"invite" => 101})
 
-      assert {:error, :unauthorized} = Room.invite(room_id, account1.user_id, account2.user_id)
+      {:ok, _} = Room.invite(room_id, account1.user_id, account2.user_id)
+      {:ok, _} = Room.join(room_id, account2.user_id)
+
+      account3 = Fixtures.create_account()
+
+      assert {:error, :unauthorized} = Room.invite(room_id, account2.user_id, account3.user_id)
     end
   end
 
