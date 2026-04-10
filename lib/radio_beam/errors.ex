@@ -16,8 +16,10 @@ defmodule RadioBeam.Errors do
   def unknown_token(message \\ "The access/refresh token is not known. Please re-authenticate", soft_logout? \\ false),
     do: "M_UNKNOWN_TOKEN" |> std_error_res(message) |> Map.put(:soft_logout, soft_logout?)
 
-  def user_locked(message \\ "The access/refresh token is not known. Please re-authenticate"),
+  def user_locked(message \\ "Your account has been locked"),
     do: "M_USER_LOCKED" |> std_error_res(message) |> Map.put(:soft_logout, true)
+
+  def user_suspended(message \\ "Your account has been suspended"), do: std_error_res("M_USER_SUSPENDED", message)
 
   def missing_token(message \\ "Please provide an access token"), do: std_error_res("M_MISSING_TOKEN", message)
 

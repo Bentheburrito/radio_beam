@@ -6,7 +6,6 @@ defmodule RadioBeam.User do
 
   alias RadioBeam.PubSub
   alias RadioBeam.Room
-  alias RadioBeam.User.Authentication.OAuth2
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
@@ -122,9 +121,6 @@ defmodule RadioBeam.User do
   end
 
   def update_local_account(user_id, callback), do: Database.update_user_account(user_id, callback)
-
-  def account_locked?(user_id), do: OAuth2.account_locked?(user_id)
-  def account_suspended?(user_id), do: OAuth2.account_suspended?(user_id)
 
   def get_timeline_preferences(user_id, filter_or_filter_id \\ :none) do
     case Database.fetch_user_client_config(user_id) do

@@ -22,6 +22,7 @@ defmodule RadioBeam do
       Sync,
       Transaction,
       User,
+      User.Authentication,
       User.Authentication.LegacyAPI,
       User.Authentication.OAuth2,
       User.EventFilter,

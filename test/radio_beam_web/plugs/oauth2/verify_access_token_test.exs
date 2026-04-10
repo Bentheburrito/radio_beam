@@ -81,5 +81,21 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenTest do
       %{"errcode" => "M_USER_LOCKED", "error" => error, "soft_logout" => true} = JSON.decode!(body)
       assert error =~ "account has been locked"
     end
+
+    test "returns M_USER_SUSPENDED (403) when a user's account has been suspended", %{account: account, device: device} do
+      {:ok, access_token, _claims} = OAuth2.Builtin.Guardian.encode_and_sign(device)
+
+      {:ok, _} = RadioBeam.Admin.suspend_account(account.user_id, hd(RadioBeam.Config.admins()))
+
+      conn =
+        :post
+        |> conn("/_matrix/v3/some_endpoint")
+        |> put_req_header("authorization", "Bearer #{access_token}")
+        |> VerifyAccessToken.call([])
+
+      assert {403, _headers, body} = sent_resp(conn)
+      %{"errcode" => "M_USER_SUSPENDED", "error" => error} = JSON.decode!(body)
+      assert error =~ "account has been suspended"
+    end
   end
 end

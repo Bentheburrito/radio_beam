@@ -8,6 +8,7 @@ defmodule RadioBeam.Admin do
   alias RadioBeam.Config
   alias RadioBeam.Room
   alias RadioBeam.User
+  alias RadioBeam.User.Authentication
   alias RadioBeam.User.LocalAccount
 
   require Logger
@@ -104,14 +105,14 @@ defmodule RadioBeam.Admin do
   def get_account_locked_status(user_id, admin_id) do
     with :ok <- validate_admin(admin_id),
          :ok <- validate_user_exists(user_id) do
-      {:locked?, User.account_locked?(user_id)}
+      {:locked?, Authentication.account_locked?(user_id)}
     end
   end
 
   def get_account_suspended_status(user_id, admin_id) do
     with :ok <- validate_admin(admin_id),
          :ok <- validate_user_exists(user_id) do
-      {:suspended?, User.account_suspended?(user_id)}
+      {:suspended?, Authentication.account_suspended?(user_id)}
     end
   end
 
