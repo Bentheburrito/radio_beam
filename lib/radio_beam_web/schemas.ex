@@ -9,11 +9,8 @@ defmodule RadioBeamWeb.Schemas do
     end
   end
 
-  def room_id(value) do
-    with {:ok, _} <- Schema.room_id(value) do
-      {:ok, value}
-    end
-  end
+  def room_id("!" <> _ = value), do: {:ok, value}
+  def room_id(_value), do: {:error, :invalid_room_id}
 
   @doc """
   Parses a string-ified integer. If given an int, it is simply returned in an

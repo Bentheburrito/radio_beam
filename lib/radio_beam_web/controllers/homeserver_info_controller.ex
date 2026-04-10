@@ -20,6 +20,6 @@ defmodule RadioBeamWeb.HomeserverInfoController do
   end
 
   def well_known_client(conn, _params) do
-    json(conn, %{"m.homeserver" => "#{conn.scheme}://#{conn.host}:#{conn.port}"})
+    json(conn, %{"m.homeserver" => %{"base_url" => "#{conn.scheme}://#{conn.host}:#{conn.port}"}})
   end
 end
