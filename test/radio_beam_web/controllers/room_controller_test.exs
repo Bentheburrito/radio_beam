@@ -271,6 +271,81 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
   end
 
+  describe "room admin membership tools (kick/2, ban/2, unban/2)" do
+    setup %{account: creator} do
+      account = Fixtures.create_account()
+      account2 = Fixtures.create_account()
+
+      {:ok, room_id} = Room.create(creator.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
+      {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
+      {:ok, _event_id} = Room.join(room_id, account.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id)
+
+      %{room_id: room_id, user_id1: account.user_id, user_id2: account2.user_id}
+    end
+
+    test "allows room admins to kick the given user from the room", %{conn: conn, room_id: room_id, user_id1: user_id} do
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/kick", %{"user_id" => user_id, "reason" => "nvm"})
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "allows room admins to ban the given user from the room", %{conn: conn, room_id: room_id, user_id1: user_id} do
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/ban", %{"user_id" => user_id, "reason" => "nvm"})
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "allows room admins to unban the given user from the room", %{
+      conn: conn,
+      room_id: room_id,
+      account: %{user_id: creator_id},
+      user_id1: user_id
+    } do
+      {:ok, _event_id} = Room.ban(room_id, creator_id, user_id, "go away")
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/unban", %{"user_id" => user_id, "reason" => "nvm"})
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "forbids regular members from kicking, banning, or unbanning", %{
+      conn: conn,
+      account: %{user_id: user_id},
+      user_id1: creator_id,
+      user_id2: bad_actor_id
+    } do
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
+      {:ok, _event_id} = Room.join(room_id, user_id)
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/kick", %{"user_id" => bad_actor_id, "reason" => "bye"})
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "you lack permission"
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/ban", %{"user_id" => bad_actor_id, "reason" => "I said bye"})
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "you lack permission"
+
+      {:ok, _event_id} = Room.ban(room_id, creator_id, bad_actor_id, "I got this one")
+
+      conn =
+        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/unban", %{
+          "user_id" => creator_id,
+          "reason" => "maybe they deserve a second chance"
+        })
+
+      assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
+      assert error =~ "you lack permission"
+    end
+  end
+
   describe "leave/2" do
     test "successfully leaves a room the sender has joined", %{conn: conn, account: account} do
       creator = Fixtures.create_account("@calicocutpantssupporter:#{RadioBeam.server_name()}")
@@ -291,8 +366,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       {:ok, room_id} = Room.create(creator.user_id)
 
-      conn =
-        post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/leave", %{"reason" => "lol"})
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/leave", %{"reason" => "lol"})
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error_message} = json_response(conn, 403)
       assert ^error_message = "You need to be invited or joined to this room to leave"

@@ -99,6 +99,33 @@ defmodule RadioBeam.Room do
     Room.Server.send(room_id, event)
   end
 
+  @doc "Tries to kick the given user from the given room"
+  @spec kick(room_id :: String.t(), kicker_id :: String.t(), user_id :: String.t(), reason :: String.t() | nil) ::
+          {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
+  def kick(room_id, kicker_id, user_id, reason \\ nil) do
+    event = Events.membership(room_id, kicker_id, user_id, :leave, reason)
+
+    Room.Server.send(room_id, event)
+  end
+
+  @doc "Tries to ban the given user from the given room"
+  @spec ban(room_id :: String.t(), banner_id :: String.t(), user_id :: String.t(), reason :: String.t() | nil) ::
+          {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
+  def ban(room_id, banner_id, user_id, reason \\ nil) do
+    event = Events.membership(room_id, banner_id, user_id, :ban, reason)
+
+    Room.Server.send(room_id, event)
+  end
+
+  @doc "Tries to unban the given user from the given room"
+  @spec unban(room_id :: String.t(), unbanner_id :: String.t(), user_id :: String.t(), reason :: String.t() | nil) ::
+          {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}
+  def unban(room_id, unbanner_id, user_id, reason \\ nil) do
+    event = Events.membership(room_id, unbanner_id, user_id, :leave, reason)
+
+    Room.Server.send(room_id, event)
+  end
+
   @doc "Sets the name of the room"
   @spec set_name(room_id :: String.t(), user_id :: String.t(), name :: String.t()) ::
           {:ok, String.t()} | {:error, :unauthorized | :room_does_not_exist | :internal}

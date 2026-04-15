@@ -9,7 +9,7 @@ defmodule RadioBeamWeb.RoomController do
   alias RadioBeam.{Errors, Room, Transaction}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
-  @schema_actions [:create, :invite, :join, :leave, :get_nearest_event, :get_event_context, :put_typing]
+  @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing|a
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in @schema_actions
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema, with_params?: true] when action == :send
@@ -128,14 +128,50 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
+  @leave_msg "You need to be invited or joined to this room to leave"
   def leave(conn, %{"room_id" => room_id}) do
     joiner_id = conn.assigns.user_id
     request = conn.assigns.request
 
     case Room.leave(room_id, joiner_id, request["reason"]) do
       {:ok, _event_id} -> json(conn, %{})
-      # TODO: should we translate all errors to 404, since it could leak existence of a room?
-      {:error, error} -> handle_common_error(conn, error, "You need to be invited or joined to this room to leave")
+      {:error, _error} -> handle_common_error(conn, :forbidden, @leave_msg)
+    end
+  end
+
+  @kick_msg "The room does not exist, the user is not in the room, or you lack permission to kick the user"
+  def kick(conn, %{"room_id" => room_id}) do
+    kicker_id = conn.assigns.user_id
+    request = conn.assigns.request
+    target_id = request["user_id"]
+
+    case Room.kick(room_id, kicker_id, target_id, request["reason"]) do
+      {:ok, _event_id} -> json(conn, %{})
+      {:error, _error} -> handle_common_error(conn, :forbidden, @kick_msg)
+    end
+  end
+
+  @ban_msg "The room does not exist, the user is not in the room, or you lack permission to ban the user"
+  def ban(conn, %{"room_id" => room_id}) do
+    banner_id = conn.assigns.user_id
+    request = conn.assigns.request
+    target_id = request["user_id"]
+
+    case Room.ban(room_id, banner_id, target_id, request["reason"]) do
+      {:ok, _event_id} -> json(conn, %{})
+      {:error, _error} -> handle_common_error(conn, :forbidden, @ban_msg)
+    end
+  end
+
+  @unban_msg "The room does not exist, the user is not banned from the room, or you lack permission to unban"
+  def unban(conn, %{"room_id" => room_id}) do
+    unbanner_id = conn.assigns.user_id
+    request = conn.assigns.request
+    target_id = request["user_id"]
+
+    case Room.unban(room_id, unbanner_id, target_id, request["reason"]) do
+      {:ok, _event_id} -> json(conn, %{})
+      {:error, _error} -> handle_common_error(conn, :forbidden, @unban_msg)
     end
   end
 

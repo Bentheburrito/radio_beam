@@ -13,6 +13,7 @@ defmodule RadioBeamWeb.Utils do
     {status, error_body} =
       case error do
         :unauthorized -> {403, Errors.forbidden(unauth_message)}
+        :forbidden -> {403, Errors.forbidden(unauth_message)}
         :room_does_not_exist -> {404, Errors.not_found("Room not found")}
         :not_found -> {404, Errors.not_found("Resource not found")}
         :internal -> {500, Errors.unknown("An internal error occurred. Please try again")}

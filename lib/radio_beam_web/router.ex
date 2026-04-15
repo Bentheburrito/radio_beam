@@ -211,11 +211,11 @@ defmodule RadioBeamWeb.Router do
           post "/:room_id/invite", RoomController, :invite, rl(@room_event_write)
           post "/:room_id/join", RoomController, :join, rl(@room_event_write)
           post "/:room_id/leave", RoomController, :leave, rl(@room_event_write)
+          post "/:room_id/kick", RoomController, :kick, rl(@admin)
+          post "/:room_id/ban", RoomController, :ban, rl(@admin)
+          post "/:room_id/unban", RoomController, :unban, rl(@admin)
           # TOIMPL:
           # post "/:room_id/forget", RoomController, :forget
-          # post "/:room_id/kick", RoomController, :kick
-          # post "/:room_id/ban", RoomController, :ban
-          # post "/:room_id/unban", RoomController, :unban
 
           put "/:room_id/send/:event_type", RoomController, :send, rl(@room_event_write)
           put "/:room_id/send/:event_type/:transaction_id", RoomController, :send, rl(@room_event_write)

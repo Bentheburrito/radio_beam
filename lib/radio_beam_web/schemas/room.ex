@@ -3,6 +3,7 @@ defmodule RadioBeamWeb.Schemas.Room do
 
   alias Polyjuice.Util.Schema
   alias RadioBeamWeb.Schemas.InstantMessaging
+  alias RadioBeamWeb.Schemas
 
   def invite do
     %{"user_id" => &Schema.user_id/1, "reason" => optional(:string)}
@@ -14,6 +15,10 @@ defmodule RadioBeamWeb.Schemas.Room do
     # TOIMPL: third_party_signed
     %{"third_party_signed" => optional(:any), "reason" => optional(:string)}
   end
+
+  def kick, do: %{"user_id" => &Schemas.user_id/1, "reason" => optional(:string)}
+  def ban, do: %{"user_id" => &Schemas.user_id/1, "reason" => optional(:string)}
+  def unban, do: %{"user_id" => &Schemas.user_id/1, "reason" => optional(:string)}
 
   def create do
     available_room_versions = RadioBeam.supported_room_versions()

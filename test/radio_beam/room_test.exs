@@ -181,6 +181,197 @@ defmodule RadioBeam.RoomTest do
     end
   end
 
+  describe "kick/3,4" do
+    setup do
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
+      account3 = Fixtures.create_account()
+
+      {:ok, room_id} = Room.create(account1.user_id)
+
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id, "requested assistance")
+      {:ok, _event_id} = Room.join(room_id, account3.user_id, "requested assistance")
+
+      %{room_id: room_id, account1: account1, account2: account2, account3: account3}
+    end
+
+    test "allows the room creator to kick someone from the room", %{
+      room_id: room_id,
+      account1: account1,
+      account2: account2
+    } do
+      assert {:ok, _event_id} = Room.kick(room_id, account1.user_id, account2.user_id, "wrong person")
+    end
+
+    test "fails with :unauthorized when the kicker does not have adequate power level", %{
+      room_id: room_id,
+      account2: account2,
+      account3: account3
+    } do
+      assert {:error, :unauthorized} = Room.kick(room_id, account2.user_id, account3.user_id, "I was here first")
+    end
+
+    test "allows non-creator admin with adequate power level to kick users with a lower power level", %{
+      room_id: room_id,
+      account1: account1,
+      account2: account2,
+      account3: account3
+    } do
+      assert {:error, :unauthorized} = Room.kick(room_id, account2.user_id, account3.user_id, "I was here first")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{"users" => %{account2.user_id => 49}})
+
+      assert {:error, :unauthorized} =
+               Room.kick(room_id, account2.user_id, account3.user_id, "still not enough power level")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{
+          "users" => %{account2.user_id => 50, account3.user_id => 50}
+        })
+
+      assert {:error, :unauthorized} =
+               Room.kick(room_id, account2.user_id, account3.user_id, "shouldn't be able to kick a fellow mod")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{
+          "users" => %{account2.user_id => 50, account3.user_id => 49}
+        })
+
+      assert {:ok, _} = Room.kick(room_id, account2.user_id, account3.user_id, "NOW I can do this")
+    end
+  end
+
+  describe "ban/3,4" do
+    setup do
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
+      account3 = Fixtures.create_account()
+
+      {:ok, room_id} = Room.create(account1.user_id)
+
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id, "requested assistance")
+      {:ok, _event_id} = Room.join(room_id, account3.user_id, "requested assistance")
+
+      %{room_id: room_id, account1: account1, account2: account2, account3: account3}
+    end
+
+    test "allows the room creator to ban someone from the room", %{
+      room_id: room_id,
+      account1: account1,
+      account2: account2
+    } do
+      assert {:ok, _event_id} = Room.ban(room_id, account1.user_id, account2.user_id, "wrong person")
+    end
+
+    test "fails with :unauthorized when the banner does not have adequate power level", %{
+      room_id: room_id,
+      account2: account2,
+      account3: account3
+    } do
+      assert {:error, :unauthorized} = Room.ban(room_id, account2.user_id, account3.user_id, "I was here first")
+    end
+
+    test "allows non-creator admin with adequate power level to ban users with a lower power level", %{
+      room_id: room_id,
+      account1: account1,
+      account2: account2,
+      account3: account3
+    } do
+      assert {:error, :unauthorized} = Room.ban(room_id, account2.user_id, account3.user_id, "I was here first")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{"users" => %{account2.user_id => 49}})
+
+      assert {:error, :unauthorized} =
+               Room.ban(room_id, account2.user_id, account3.user_id, "still not enough power level")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{
+          "users" => %{account2.user_id => 50, account3.user_id => 50}
+        })
+
+      assert {:error, :unauthorized} =
+               Room.ban(room_id, account2.user_id, account3.user_id, "shouldn't be able to ban a fellow mod")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{
+          "users" => %{account2.user_id => 50, account3.user_id => 49}
+        })
+
+      assert {:ok, _} = Room.ban(room_id, account2.user_id, account3.user_id, "NOW I can do this")
+    end
+  end
+
+  describe "unban/3,4" do
+    setup do
+      account1 = Fixtures.create_account()
+      account2 = Fixtures.create_account()
+      account3 = Fixtures.create_account()
+
+      {:ok, room_id} = Room.create(account1.user_id)
+
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id, "requested assistance")
+      {:ok, _event_id} = Room.join(room_id, account3.user_id, "requested assistance")
+
+      {:ok, _event_id} = Room.ban(room_id, account1.user_id, account3.user_id)
+
+      %{room_id: room_id, account1: account1, account2: account2, account3: account3}
+    end
+
+    test "allows the room creator to unban someone from the room", %{
+      room_id: room_id,
+      account1: account1,
+      account2: account3
+    } do
+      assert {:ok, _event_id} = Room.unban(room_id, account1.user_id, account3.user_id, "sorry that was a mistake")
+    end
+
+    test "fails with :unauthorized when the unbanner does not have adequate power level", %{
+      room_id: room_id,
+      account2: account2,
+      account3: account3
+    } do
+      assert {:error, :unauthorized} = Room.unban(room_id, account2.user_id, account3.user_id, "come back!")
+    end
+
+    test "allows non-creator admin with adequate power level to unban users with a lower power level", %{
+      room_id: room_id,
+      account1: account1,
+      account2: account2,
+      account3: account3
+    } do
+      assert {:error, :unauthorized} = Room.unban(room_id, account2.user_id, account3.user_id, "come back!")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{"users" => %{account2.user_id => 49}})
+
+      assert {:error, :unauthorized} =
+               Room.unban(room_id, account2.user_id, account3.user_id, "still not enough power level")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{
+          "users" => %{account2.user_id => 50, account3.user_id => 50}
+        })
+
+      assert {:error, :unauthorized} =
+               Room.unban(room_id, account2.user_id, account3.user_id, "shouldn't be able to unban even a fellow mod")
+
+      {:ok, _} =
+        Room.put_state(room_id, account1.user_id, "m.room.power_levels", "", %{
+          "users" => %{account2.user_id => 50, account3.user_id => 49}
+        })
+
+      assert {:ok, _} = Room.unban(room_id, account2.user_id, account3.user_id, "NOW I can do this")
+    end
+  end
+
   describe "send/4" do
     setup do
       account1 = Fixtures.create_account()
