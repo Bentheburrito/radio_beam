@@ -45,10 +45,12 @@ defmodule RadioBeamWeb.SyncControllerTest do
     test "successfully syncs with a room", %{conn: conn, creator: creator, account: account, device_id: device_id} do
       conn = get(conn, ~p"/_matrix/client/v3/sync", %{})
 
-      assert %{"account_data" => account_data, "next_batch" => since} = response = json_response(conn, 200)
+      assert %{"account_data" => %{"events" => account_data}, "next_batch" => since} =
+               response = json_response(conn, 200)
+
       refute is_map_key(response, "rooms")
 
-      assert 0 = map_size(account_data)
+      assert 0 = length(account_data)
 
       # ---
 
@@ -66,7 +68,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}", %{})
 
       assert %{
-               "account_data" => account_data,
+               "account_data" => %{"events" => account_data},
                "to_device" => %{"events" => [%{"content" => %{"hello" => "world"}}]},
                "rooms" =>
                  %{
@@ -86,8 +88,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       assert Enum.any?(invite_state, &match?(%{"type" => "m.room.name"}, &1))
       assert Enum.any?(invite_state, &match?(%{"type" => "m.room.member", "state_key" => ^user_id}, &1))
 
-      assert 1 = map_size(account_data)
-      assert %{"m.some_config" => %{"hello" => "world"}} = account_data
+      assert [%{"type" => "m.some_config", "content" => %{"hello" => "world"}}] = account_data
 
       # ---
 
@@ -119,7 +120,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
       conn = get(conn, ~p"/_matrix/client/v3/sync?since=#{since}&filter=#{filter}", %{})
 
       assert %{
-               "account_data" => account_data,
+               "account_data" => %{"events" => account_data},
                "to_device" => %{
                  "events" => [%{"content" => %{"hello" => "world"}}, %{"content" => %{"hello2" => "world"}}]
                },
@@ -130,7 +131,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
                  %{
                    "join" => %{
                      ^room_id1 => %{
-                       "account_data" => room_account_data,
+                       "account_data" => %{"events" => room_account_data},
                        # "state" => %{"events" => []},
                        "state" => %{"events" => state_events},
                        "timeline" => timeline
@@ -159,8 +160,8 @@ defmodule RadioBeamWeb.SyncControllerTest do
              } =
                timeline
 
-      assert %{"m.some_config" => %{"hello" => "world"}} = account_data
-      assert %{"m.some_config" => %{"hello" => "room"}} = room_account_data
+      assert [%{"type" => "m.some_config", "content" => %{"hello" => "world"}}] = account_data
+      assert [%{"type" => "m.some_config", "content" => %{"hello" => "room"}}] = room_account_data
     end
   end
 

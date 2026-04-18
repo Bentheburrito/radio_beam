@@ -88,11 +88,13 @@ defmodule RadioBeam.User.Device do
         {:error, :different_keys}
 
       Polyjuice.Util.JSON.signed?(key_params_with_new_signature, user_id, verify_key) ->
+        verify_key_id = Polyjuice.Util.VerifyKey.id(verify_key)
+
         identity_keys =
           RadioBeam.AccessExtras.put_nested(
             device.identity_keys,
-            ["signatures", user_id, device.id],
-            key_params_with_new_signature["signatures"][user_id][device.id]
+            ["signatures", user_id, verify_key_id],
+            key_params_with_new_signature["signatures"][user_id][verify_key_id]
           )
 
         {:ok, put_in(device.identity_keys, identity_keys)}

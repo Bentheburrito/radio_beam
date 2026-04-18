@@ -91,8 +91,8 @@ defmodule RadioBeam.User.CrossSigningKey do
         signatures =
           RadioBeam.AccessExtras.put_nested(
             csk.signatures,
-            [signer_id, VerifyKey.id(csk)],
-            csk_params_with_new_signature["signatures"][signer_id][VerifyKey.id(csk)]
+            [signer_id, VerifyKey.id(signer_key)],
+            csk_params_with_new_signature["signatures"][signer_id][VerifyKey.id(signer_key)]
           )
 
         {:ok, put_in(csk.signatures, signatures)}

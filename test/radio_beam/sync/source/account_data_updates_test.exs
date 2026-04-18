@@ -28,7 +28,7 @@ defmodule RadioBeam.Sync.Source.AccountDataUpdatesTest do
 
       User.put_account_data(inputs.user_id, :global, "org.company.some.event", %{"the" => "content"})
 
-      assert {:ok, %{"org.company.some.event" => %{"the" => "content"}}, nil} = Task.await(task)
+      assert {:ok, [%{"type" => "org.company.some.event", "content" => %{"the" => "content"}}], nil} = Task.await(task)
     end
   end
 end

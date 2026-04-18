@@ -11,7 +11,7 @@ defmodule RadioBeam.Sync.Source.AccountDataUpdates do
   alias RadioBeam.User
 
   @impl Source
-  def top_level_path(_key, _result), do: ["account_data"]
+  def top_level_path(_key, _result), do: ["account_data", "events"]
 
   @impl Source
   def inputs, do: [:user_id]
@@ -29,7 +29,13 @@ defmodule RadioBeam.Sync.Source.AccountDataUpdates do
     receive do
       {:account_data_updated, ^user_id} ->
         {:ok, account_data} = User.get_account_data(user_id)
-        {:ok, account_data.global, nil}
+        {:ok, global_events(account_data), nil}
     end
+  end
+
+  defp global_events(account_data) do
+    account_data
+    |> Map.get(:global, %{})
+    |> Enum.map(fn {type, content} -> %{"type" => type, "content" => content} end)
   end
 end

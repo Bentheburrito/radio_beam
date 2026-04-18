@@ -222,8 +222,14 @@ defmodule RadioBeam.User.KeyStore do
     others_failures = Core.try_put_others_msk_signatures(others_msk_signatures, signer_user_id, deps)
 
     case Map.merge(self_failures, others_failures) do
-      failures when map_size(failures) == 0 -> :ok
-      failures -> {:error, failures}
+      failures when map_size(failures) == 0 ->
+        PubSub.broadcast(PubSub.user_membership_or_crypto_id_changed(), :crypto_id_changed)
+        :ok
+
+      failures ->
+        # TODO: flatten query map and compare map_size of failures to that - if # of failures < # of queries, broadcast, else don't
+        PubSub.broadcast(PubSub.user_membership_or_crypto_id_changed(), :crypto_id_changed)
+        {:error, failures}
     end
   end
 

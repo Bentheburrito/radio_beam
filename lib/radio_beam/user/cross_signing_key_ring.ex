@@ -69,4 +69,17 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
 
   defp signed?(%CrossSigningKey{} = signed, user_id, key),
     do: Polyjuice.Util.JSON.signed?(CrossSigningKey.to_map(signed, user_id), user_id, key)
+
+  def put_signature(%__MODULE__{} = key_ring, user_key_id, user_id, key_params, signer_id, signer_key) do
+    with {:ok, %CrossSigningKey{} = user_key, key_type} <- fetch_key_by_id(key_ring, user_key_id),
+         {:ok, new_user_key} <- CrossSigningKey.put_signature(user_key, user_id, key_params, signer_id, signer_key) do
+      changes = Keyword.put([last_cross_signing_change_at: RadioBeam.Time.now()], key_type, new_user_key)
+      {:ok, struct!(key_ring, changes)}
+    end
+  end
+
+  defp fetch_key_by_id(%__MODULE__{master: %{id: id} = key}, id), do: {:ok, key, :master}
+  defp fetch_key_by_id(%__MODULE__{user: %{id: id} = key}, id), do: {:ok, key, :user}
+  defp fetch_key_by_id(%__MODULE__{self: %{id: id} = key}, id), do: {:ok, key, :self}
+  defp fetch_key_by_id(%__MODULE__{}, _id), do: {:error, :signature_key_not_known}
 end

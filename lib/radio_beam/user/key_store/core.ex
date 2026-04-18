@@ -4,6 +4,7 @@ defmodule RadioBeam.User.KeyStore.Core do
   """
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.User.CrossSigningKey
+  alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
   alias RadioBeam.User.KeyStore
 
@@ -157,11 +158,11 @@ defmodule RadioBeam.User.KeyStore.Core do
           try_update_msk_with_device_signature(key_store, signer_user_id, signer_device_id, key_params, deps)
 
         # the SSK and USK must be signed by the MSK
-        %{self: %CrossSigningKey{id: ^maybe_key_id} = ssk} ->
-          try_put_user_or_self_signature(signer_user_id, key_store, ssk, key_params)
+        %{self: %CrossSigningKey{id: ^maybe_key_id}} ->
+          try_put_user_or_self_signature(signer_user_id, key_store, maybe_key_id, key_params)
 
-        %{user: %CrossSigningKey{id: ^maybe_key_id} = usk} ->
-          try_put_user_or_self_signature(signer_user_id, key_store, usk, key_params)
+        %{user: %CrossSigningKey{id: ^maybe_key_id}} ->
+          try_put_user_or_self_signature(signer_user_id, key_store, maybe_key_id, key_params)
 
         _else ->
           {:error, :signature_key_not_known}
@@ -170,13 +171,15 @@ defmodule RadioBeam.User.KeyStore.Core do
   end
 
   defp try_update_msk_with_device_signature(%KeyStore{} = key_store, signer_user_id, signer_device_id, key_params, deps) do
-    %CrossSigningKey{} = msk = key_store.cross_signing_key_ring.master
+    %CrossSigningKeyRing{} = key_ring = key_store.cross_signing_key_ring
+    msk_id = key_store.cross_signing_key_ring.master.id
     algo_and_device_id = "ed25519:#{signer_device_id}"
 
     with :ok <- assert_signature_present(key_params, signer_user_id, algo_and_device_id),
          {:ok, verify_key} <- make_verify_key_from_device(signer_user_id, signer_device_id, algo_and_device_id, deps),
-         {:ok, new_msk} <- CrossSigningKey.put_signature(msk, signer_user_id, key_params, signer_user_id, verify_key) do
-      {:ok, put_in(key_store.cross_signing_key_ring.master, new_msk)}
+         {:ok, new_key_ring} <-
+           CrossSigningKeyRing.put_signature(key_ring, msk_id, signer_user_id, key_params, signer_user_id, verify_key) do
+      {:ok, put_in(key_store.cross_signing_key_ring, new_key_ring)}
     end
   end
 
@@ -195,14 +198,12 @@ defmodule RadioBeam.User.KeyStore.Core do
     end
   end
 
-  defp try_put_user_or_self_signature(signer_user_id, key_store, usk_or_ssk, key_params) do
+  defp try_put_user_or_self_signature(signer_user_id, key_store, key_id, key_params) do
     case key_store.cross_signing_key_ring do
-      %{master: %CrossSigningKey{} = msk} ->
-        with {:ok, csk} <- CrossSigningKey.put_signature(usk_or_ssk, signer_user_id, key_params, signer_user_id, msk) do
-          case csk do
-            %CrossSigningKey{usages: ["user"]} -> {:ok, put_in(key_store.cross_signing_key_ring.user, csk)}
-            %CrossSigningKey{usages: ["self"]} -> {:ok, put_in(key_store.cross_signing_key_ring.self, csk)}
-          end
+      %{master: %CrossSigningKey{} = msk} = key_ring ->
+        with {:ok, key_ring} <-
+               CrossSigningKeyRing.put_signature(key_ring, key_id, signer_user_id, key_params, signer_user_id, msk) do
+          {:ok, put_in(key_store.cross_signing_key_ring, key_ring)}
         end
 
       _else ->
@@ -243,9 +244,10 @@ defmodule RadioBeam.User.KeyStore.Core do
 
   defp try_update_master_key_with_usk_signature(user_key_store, user_id, keyb64, key_params, signer_id, signer_usk) do
     case user_key_store do
-      %KeyStore{cross_signing_key_ring: %{master: %CrossSigningKey{id: ^keyb64} = user_msk}} ->
-        with {:ok, new_user_msk} <- CrossSigningKey.put_signature(user_msk, user_id, key_params, signer_id, signer_usk) do
-          {:ok, put_in(user_key_store.cross_signing_key_ring.master, new_user_msk)}
+      %KeyStore{cross_signing_key_ring: %{master: %CrossSigningKey{id: ^keyb64}} = key_ring} ->
+        with {:ok, key_ring} <-
+               CrossSigningKeyRing.put_signature(key_ring, keyb64, user_id, key_params, signer_id, signer_usk) do
+          {:ok, put_in(user_key_store.cross_signing_key_ring, key_ring)}
         end
 
       _master_key_did_not_match ->

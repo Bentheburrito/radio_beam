@@ -173,7 +173,10 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
           timeline: timeline,
           state: %{events: Enum.map(room_result.state_events, to_event)},
           ephemeral: %{events: encode_ephemeral(room_result.typing)},
-          account_data: room_result.account_data
+          account_data: %{
+            "events" =>
+              Enum.map(room_result.account_data, fn {type, content} -> %{"type" => type, "content" => content} end)
+          }
         },
         encoder
       )

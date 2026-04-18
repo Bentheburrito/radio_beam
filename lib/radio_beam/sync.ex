@@ -13,10 +13,16 @@ defmodule RadioBeam.Sync do
     with %{} = tl_preferences <- User.get_timeline_preferences(user_id, Keyword.get(opts, :filter, :none)) do
       opts = Enum.reduce(tl_preferences, opts, fn {k, v}, opts -> Keyword.put(opts, k, v) end)
 
-      %{"account_data" => Map.get(tl_preferences.account_data, :global, %{})}
+      %{"account_data" => %{"events" => global_events(tl_preferences)}}
       |> Map.merge(SinkServer.sync_v2(user_id, device_id, opts))
       |> Map.merge(device_otk_usages(user_id, device_id))
     end
+  end
+
+  defp global_events(tl_preferences) do
+    tl_preferences.account_data
+    |> Map.get(:global, %{})
+    |> Enum.map(fn {type, content} -> %{"type" => type, "content" => content} end)
   end
 
   # TODO: make this a Source
