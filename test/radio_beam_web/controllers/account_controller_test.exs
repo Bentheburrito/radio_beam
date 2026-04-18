@@ -139,4 +139,80 @@ defmodule RadioBeamWeb.AccountControllerTest do
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
+
+  describe "put_tag/2" do
+    test "returns an empty JSON object (200) when setting a tag", %{conn: conn, account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      conn = put(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/#{room_id}/tags/m.favourite", %{order: 0.5})
+
+      assert %{} = resp = json_response(conn, 200)
+      assert 0 = map_size(resp)
+    end
+
+    test "returns M_INVALID_PARAM (400) when given an invalid room ID", %{conn: conn, account: %{user_id: user_id}} do
+      conn = put(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!asdfasdhf/tags/m.favourite", %{order: 0.5})
+
+      assert %{"errcode" => "M_INVALID_PARAM", "error" => "invalid room ID"} = json_response(conn, 400)
+    end
+
+    test "returns M_BAD_JSON (400) when given an invalid order", %{conn: conn, account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      conn = put(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/#{room_id}/tags/m.favourite", %{order: 1.5})
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+      assert error =~ "invalid_order"
+    end
+  end
+
+  describe "get_tags/2" do
+    test "returns an empty JSON object (200) when no tags have been put on the room", %{
+      conn: conn,
+      account: %{user_id: user_id}
+    } do
+      {:ok, room_id} = Room.create(user_id)
+      conn = get(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/#{room_id}/tags", %{})
+
+      assert %{"tags" => tags} = json_response(conn, 200)
+      assert 0 = map_size(tags)
+
+      conn = get(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!asdgyuf/tags", %{})
+
+      assert %{"tags" => tags} = json_response(conn, 200)
+      assert 0 = map_size(tags)
+    end
+
+    test "returns tags (200) on the room", %{
+      conn: conn,
+      account: %{user_id: user_id}
+    } do
+      {:ok, room_id} = Room.create(user_id)
+      conn = put(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/#{room_id}/tags/m.favourite", %{order: 0.5})
+      conn = put(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/#{room_id}/tags/u.my_tag", %{order: 0.9})
+
+      conn = get(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/#{room_id}/tags", %{})
+
+      assert %{"tags" => %{"m.favourite" => %{"order" => 0.5}, "u.my_tag" => %{"order" => 0.9}} = tags} =
+               json_response(conn, 200)
+
+      assert 2 = map_size(tags)
+    end
+  end
+
+  describe "delete_tag/2" do
+    test "returns an empty JSON object (200) when deleting a tag", %{conn: conn, account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      :ok = User.put_room_tag(user_id, room_id, "m.favourite", 0.5)
+
+      conn = delete(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/#{room_id}/tags/m.favourite", %{})
+
+      assert %{} = resp = json_response(conn, 200)
+      assert 0 = map_size(resp)
+    end
+
+    test "returns M_INVALID_PARAM (400) when given an invalid room ID", %{conn: conn, account: %{user_id: user_id}} do
+      conn = delete(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!asdfasdhf/tags/m.favourite", %{})
+
+      assert %{"errcode" => "M_INVALID_PARAM", "error" => "invalid room ID"} = json_response(conn, 400)
+    end
+  end
 end

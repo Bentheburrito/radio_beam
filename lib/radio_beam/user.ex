@@ -95,11 +95,14 @@ defmodule RadioBeam.User do
 
   @spec put_account_data(id(), Room.id() | :global, String.t(), any()) ::
           {:ok, User.t()} | {:error, :invalid_room_id | :invalid_type | :not_found}
-  def put_account_data(user_id, scope, type, content) do
+  def put_account_data(user_id, scope, type, content_or_updater) do
     if exists?(user_id) do
       with {:ok, scope} <- verify_scope(scope),
            {:ok, _config} <-
-             Database.upsert_user_client_config_with(user_id, &ClientConfig.put_account_data(&1, scope, type, content)) do
+             Database.upsert_user_client_config_with(
+               user_id,
+               &ClientConfig.put_account_data(&1, scope, type, content_or_updater)
+             ) do
         user_id |> PubSub.account_data_updated() |> PubSub.broadcast({:account_data_updated, user_id})
         :ok
       end
@@ -112,6 +115,25 @@ defmodule RadioBeam.User do
 
   defp verify_scope("!" <> _rest = room_id) do
     if Room.exists?(room_id), do: {:ok, room_id}, else: {:error, :invalid_room_id}
+  end
+
+  def put_room_tag(user_id, room_id, tag, order) do
+    put_account_data(user_id, room_id, "m.tag", &RadioBeam.AccessExtras.put_nested(&1, ["tags", tag, "order"], order))
+  end
+
+  def get_room_tags(user_id, room_id) do
+    case Database.fetch_user_client_config(user_id) do
+      {:ok, config} -> config.account_data[room_id]["m.tag"] || %{"tags" => %{}}
+      {:error, :not_found} -> %{"tags" => %{}}
+    end
+  end
+
+  def delete_room_tag(user_id, room_id, tag),
+    do: put_account_data(user_id, room_id, "m.tag", &delete_tag_updater(&1, tag))
+
+  defp delete_tag_updater(content, tag) do
+    {_, content} = pop_in(content["tags"][tag])
+    content
   end
 
   def get_account_data(user_id) do

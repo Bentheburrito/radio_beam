@@ -1,10 +1,15 @@
 defmodule RadioBeamWeb.AccountController do
   use RadioBeamWeb, :controller
 
-  require Logger
+  import RadioBeamWeb.Utils, only: [json_error: 4]
 
   alias RadioBeam.Errors
   alias RadioBeam.User
+  alias RadioBeamWeb.Schemas.Account, as: AccountSchema
+
+  require Logger
+
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: AccountSchema] when action in ~w|put_tag|a
 
   def get_config(%{assigns: %{user_id: user_id}} = conn, %{"user_id" => user_id, "type" => type} = params) do
     scope = Map.get(params, "room_id", :global)
@@ -42,5 +47,26 @@ defmodule RadioBeamWeb.AccountController do
 
   def put_config(conn, _params) do
     conn |> put_status(403) |> json(Errors.forbidden("You cannot put account data for other users"))
+  end
+
+  def put_tag(conn, %{"room_id" => room_id, "tag" => tag}) do
+    user_id = conn.assigns.user_id
+    order = Map.fetch!(conn.assigns.request, "order")
+
+    case User.put_room_tag(user_id, room_id, tag, order) do
+      :ok -> json(conn, %{})
+      {:error, :invalid_room_id} -> json_error(conn, 400, :endpoint_error, [:invalid_param, "invalid room ID"])
+    end
+  end
+
+  def get_tags(conn, %{"room_id" => room_id}), do: json(conn, User.get_room_tags(conn.assigns.user_id, room_id))
+
+  def delete_tag(conn, %{"room_id" => room_id, "tag" => tag}) do
+    user_id = conn.assigns.user_id
+
+    case User.delete_room_tag(user_id, room_id, tag) do
+      :ok -> json(conn, %{})
+      {:error, :invalid_room_id} -> json_error(conn, 400, :endpoint_error, [:invalid_param, "invalid room ID"])
+    end
   end
 end

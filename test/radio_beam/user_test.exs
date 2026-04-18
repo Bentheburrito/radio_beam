@@ -155,4 +155,106 @@ defmodule RadioBeam.UserTest do
                User.put_account_data("@hellooo:localhost", room_id, "m.some_config", %{"other" => "value"})
     end
   end
+
+  describe "put_room_tag/4" do
+    setup do
+      %{account: Fixtures.create_account()}
+    end
+
+    test "puts new room tags under the m.tag type for the given room ID scope", %{account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      :ok = User.put_room_tag(user_id, room_id, "u.some_tag", 0.9)
+
+      assert {:ok, %{^room_id => %{"m.tag" => %{"tags" => %{"u.some_tag" => %{"order" => 0.9}}}}}} =
+               User.get_account_data(user_id)
+
+      :ok = User.put_room_tag(user_id, room_id, "m.favourite", 0.1)
+
+      assert {:ok,
+              %{
+                ^room_id => %{
+                  "m.tag" => %{"tags" => %{"u.some_tag" => %{"order" => 0.9}, "m.favourite" => %{"order" => 0.1}}}
+                }
+              }} =
+               User.get_account_data(user_id)
+    end
+  end
+
+  describe "get_room_tag/2" do
+    setup do
+      %{account: Fixtures.create_account()}
+    end
+
+    test "gets all tags on the given room", %{account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      {:ok, other_room_id} = Room.create(user_id)
+
+      assert %{"tags" => tags} = User.get_room_tags(user_id, room_id)
+      assert 0 = map_size(tags)
+
+      assert %{"tags" => tags} = User.get_room_tags(user_id, other_room_id)
+      assert 0 = map_size(tags)
+
+      :ok = User.put_room_tag(user_id, room_id, "u.some_tag", 0.9)
+
+      assert %{"tags" => %{"u.some_tag" => %{"order" => 0.9}} = tags} = User.get_room_tags(user_id, room_id)
+      assert 1 = map_size(tags)
+
+      assert %{"tags" => tags} = User.get_room_tags(user_id, other_room_id)
+      assert 0 = map_size(tags)
+
+      :ok = User.put_room_tag(user_id, room_id, "m.favourite", 0.1)
+
+      assert %{"tags" => %{"u.some_tag" => %{"order" => 0.9}, "m.favourite" => %{"order" => 0.1}} = tags} =
+               User.get_room_tags(user_id, room_id)
+
+      assert 2 = map_size(tags)
+
+      assert %{"tags" => tags} = User.get_room_tags(user_id, other_room_id)
+      assert 0 = map_size(tags)
+    end
+  end
+
+  describe "delete_room_tag/2" do
+    setup do
+      %{account: Fixtures.create_account()}
+    end
+
+    test "deletes the given tag on the room", %{account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      {:ok, other_room_id} = Room.create(user_id)
+
+      :ok = User.put_room_tag(user_id, room_id, "u.some_tag", 0.9)
+      :ok = User.put_room_tag(user_id, room_id, "m.favourite", 0.1)
+      :ok = User.put_room_tag(user_id, other_room_id, "u.some_tag", 0.9)
+
+      assert %{"tags" => %{"u.some_tag" => %{"order" => 0.9}, "m.favourite" => %{"order" => 0.1}} = tags} =
+               User.get_room_tags(user_id, room_id)
+
+      assert 2 = map_size(tags)
+      assert %{"tags" => %{"u.some_tag" => %{"order" => 0.9}} = tags} = User.get_room_tags(user_id, other_room_id)
+      assert 1 = map_size(tags)
+
+      assert :ok = User.delete_room_tag(user_id, room_id, "u.some_tag")
+
+      assert %{"tags" => %{"m.favourite" => %{"order" => 0.1}} = tags} = User.get_room_tags(user_id, room_id)
+      assert 1 = map_size(tags)
+      assert %{"tags" => %{"u.some_tag" => %{"order" => 0.9}} = tags} = User.get_room_tags(user_id, other_room_id)
+      assert 1 = map_size(tags)
+
+      assert :ok = User.delete_room_tag(user_id, other_room_id, "u.some_tag")
+
+      assert %{"tags" => %{"m.favourite" => %{"order" => 0.1}} = tags} = User.get_room_tags(user_id, room_id)
+      assert 1 = map_size(tags)
+      assert %{"tags" => tags} = User.get_room_tags(user_id, other_room_id)
+      assert 0 = map_size(tags)
+
+      assert :ok = User.delete_room_tag(user_id, room_id, "m.favourite")
+
+      assert %{"tags" => tags} = User.get_room_tags(user_id, room_id)
+      assert 0 = map_size(tags)
+      assert %{"tags" => tags} = User.get_room_tags(user_id, other_room_id)
+      assert 0 = map_size(tags)
+    end
+  end
 end

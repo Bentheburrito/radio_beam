@@ -42,5 +42,16 @@ defmodule RadioBeam.User.ClientConfigTest do
       assert {:error, :invalid_type} =
                ClientConfig.put_account_data(config, room_id, "m.push_rules", %{"other" => "value"})
     end
+
+    test "accepts a function to update content", %{account: account} do
+      config = ClientConfig.new!(account.user_id)
+
+      assert {:ok, %ClientConfig{account_data: %{global: %{"m.some_config" => %{"other" => "value"}}}} = config} =
+               ClientConfig.put_account_data(config, :global, "m.some_config", %{"other" => "value"})
+
+      assert {:ok,
+              %ClientConfig{account_data: %{global: %{"m.some_config" => %{"other" => "value", "another" => "val"}}}}} =
+               ClientConfig.put_account_data(config, :global, "m.some_config", &Map.put(&1, "another", "val"))
+    end
   end
 end

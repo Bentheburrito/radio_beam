@@ -14,12 +14,21 @@ defmodule RadioBeam.User.ClientConfig do
 
   @doc """
   Puts global or room account data for a user. Any existing content for a scope
-  + key is overwritten (not merged).
+  + key is overwritten (not merged), unless `content` is an arity-1 function,
+  in which case it will be invoked with current content and should return an
+  updated copy. If the account data didn't exist before, the content updater is
+  given an empty map.
   """
   def put_account_data(config, scope \\ :global, type, content)
 
   @invalid_types ~w|m.fully_read m.push_rules|
   def put_account_data(_config, _scope, type, _content) when type in @invalid_types, do: {:error, :invalid_type}
+
+  def put_account_data(%__MODULE__{} = config, scope, type, content_updater) when is_function(content_updater, 1) do
+    updated_content = content_updater.(config.account_data[scope][type] || %{})
+    account_data = RadioBeam.AccessExtras.put_nested(config.account_data, [scope, type], updated_content)
+    {:ok, struct!(config, account_data: account_data)}
+  end
 
   def put_account_data(%__MODULE__{} = config, scope, type, content) do
     account_data = RadioBeam.AccessExtras.put_nested(config.account_data, [scope, type], content)

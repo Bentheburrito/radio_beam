@@ -256,6 +256,10 @@ defmodule RadioBeamWeb.Router do
           put "/account_data/:type", AccountController, :put_config, rl(@user_metadata_read)
           get "/rooms/:room_id/account_data/:type", AccountController, :get_config, rl(@user_metadata_read)
           put "/rooms/:room_id/account_data/:type", AccountController, :put_config, rl(@user_metadata_read)
+
+          get "/rooms/:room_id/tags", AccountController, :get_tags, rl(@user_metadata_read)
+          put "/rooms/:room_id/tags/:tag", AccountController, :put_tag, rl(@user_metadata_write)
+          delete "/rooms/:room_id/tags/:tag", AccountController, :delete_tag, rl(@user_metadata_write)
         end
 
         post "/join/:room_id_or_alias", RoomController, :join, rl(@room_event_write)
