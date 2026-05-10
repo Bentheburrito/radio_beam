@@ -245,7 +245,7 @@ defmodule RadioBeam.ContentRepo do
   defp thumbnail_file_path(%Upload{} = upload, {width, height, method}, repo_path) do
     Path.join([
       parse_repo_path(repo_path),
-      Base.encode64(upload.id.server_name),
+      safe_server_name_to_file_path(upload.id.server_name),
       "#{upload.file.sha256}_#{width}x#{height}_#{method}.#{upload.file.type}"
     ])
   end
@@ -253,9 +253,20 @@ defmodule RadioBeam.ContentRepo do
   defp upload_file_path(%Upload{} = upload, repo_path) do
     Path.join([
       parse_repo_path(repo_path),
-      Base.encode64(upload.id.server_name),
+      safe_server_name_to_file_path(upload.id.server_name),
       "#{upload.file.sha256}.#{upload.file.type}"
     ])
+  end
+
+  @friendly_prefix_length 100
+  @spec safe_server_name_to_file_path(String.t()) :: iodata()
+  defp safe_server_name_to_file_path(server_name) do
+    friendly_prefix = server_name |> String.slice(0..@friendly_prefix_length) |> String.replace(~r/[^a-z]+/, "_")
+    b64_hash = :sha256 |> :crypto.hash(server_name) |> Base.url_encode64(padding: false)
+
+    # prefix a user-friendly normalization of the server name, to make it easy
+    # to find media from a particular server.
+    [friendly_prefix, ?-, b64_hash]
   end
 
   defp parse_repo_path(:default), do: Application.app_dir(:radio_beam)
