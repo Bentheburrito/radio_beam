@@ -30,6 +30,36 @@ case System.get_env("AUTHORIZATION_MODULE", "builtin") do
       secret_key: System.fetch_env!("GUARDIAN_TOKEN_SECRET_KEY")
 end
 
+# Rate Limiting
+import Kernel, except: [/: 2]
+import RadioBeam.RateLimit, only: [/: 2, new!: 4]
+import :timer, only: [seconds: 1, minutes: 1, hours: 1]
+
+if Config.config_env() == :test do
+  absurdly_high_limit = 2 ** 16 / seconds(1)
+
+  do_whatever_the_hell_you_want =
+    new!(absurdly_high_limit, absurdly_high_limit, absurdly_high_limit, absurdly_high_limit)
+
+  config :radio_beam, RadioBeam.RateLimit,
+    admin: do_whatever_the_hell_you_want,
+    infrequent_bursts: do_whatever_the_hell_you_want,
+    frequent_cheap: do_whatever_the_hell_you_want,
+    exp_write: do_whatever_the_hell_you_want,
+    heavily_restrict_ip: do_whatever_the_hell_you_want,
+    unauth_static_read: do_whatever_the_hell_you_want,
+    user_sync: do_whatever_the_hell_you_want
+else
+  config :radio_beam, RadioBeam.RateLimit,
+    admin: new!(5000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5)),
+    infrequent_bursts: new!(200 / minutes(1), 50 / hours(1), 40 / hours(1), 40 / minutes(2)),
+    frequent_cheap: new!(5000 / seconds(5), 500 / minutes(2), 100 / minutes(2), 5000 / seconds(30)),
+    exp_write: new!(100 / seconds(15), 30 / minutes(2), 15 / minutes(2), 80 / seconds(30)),
+    heavily_restrict_ip: new!(100 / seconds(30), 10 / minutes(1), 10 / minutes(1), 5 / minutes(2)),
+    unauth_static_read: new!(200 / seconds(30), 10 / minutes(1), 10 / minutes(1), 100 / minutes(2)),
+    user_sync: new!(10_000 / seconds(3), 50 / minutes(1), 25 / minutes(1), 100 / minutes(1))
+end
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server

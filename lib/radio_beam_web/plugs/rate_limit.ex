@@ -30,4 +30,10 @@ defmodule RadioBeamWeb.Plugs.RateLimit do
         |> halt()
     end
   end
+
+  def call(%{assigns: %{rate_limit: rate_limit_name}} = conn, opts) when is_atom(rate_limit_name) do
+    conn.assigns.rate_limit
+    |> put_in(RateLimit.fetch_by_name!(rate_limit_name))
+    |> call(opts)
+  end
 end

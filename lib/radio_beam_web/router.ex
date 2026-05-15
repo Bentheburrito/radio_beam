@@ -1,10 +1,7 @@
 defmodule RadioBeamWeb.Router do
   use RadioBeamWeb, :router
 
-  import :timer, only: [seconds: 1, minutes: 1, hours: 1]
-  import RadioBeam.RateLimit, only: [new!: 4, /: 2]
   import RadioBeamWeb.Utils, only: [rl: 1]
-  import Kernel, except: [/: 2]
 
   alias RadioBeamWeb.AccountController
   alias RadioBeamWeb.AdminController
@@ -21,44 +18,6 @@ defmodule RadioBeamWeb.Router do
   alias RadioBeamWeb.SyncController
 
   alias RadioBeamWeb.Plugs
-
-  # Rate Limits
-  @admin new!(5000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5))
-  @device_lifecycle new!(30 / minutes(5), 10 / hours(24), 2 / hours(24), 15 / minutes(15))
-  @device_upkeep new!(80 / minutes(1), 10 / minutes(30), 5 / minutes(10), 80 / minutes(15))
-  @exp_read_user_bursts new!(100 / minutes(1), 40 / minutes(3), 40 / minutes(2), 50 / minutes(5))
-  @exp_write_user_bursts new!(50 / minutes(1), 15 / minutes(5), 15 / minutes(5), 30 / minutes(5))
-  @cheap_write_user_bursts new!(1000 / minutes(1), 200 / minutes(5), 200 / minutes(5), 500 / minutes(5))
-  @frequent_ephemeral_write new!(500 / minutes(1), 50 / minutes(2), 25 / minutes(2), 50 / minutes(3))
-  @infrequent_cheap_static_read new!(300 / minutes(1), 50 / minutes(1), 25 / minutes(1), 150 / minutes(1))
-  @room_event_read new!(500 / minutes(1), 50 / minutes(1), 25 / minutes(1), 100 / minutes(2))
-  @room_event_write new!(1_500 / seconds(10), 20 / minutes(1), 15 / minutes(1), 300 / minutes(1))
-  # for endpoints likely to be hit by scrapers (e.g. root "/") that we don't care get rate limited aggressively
-  @unauth_heavily_restrict_ip new!(30 / minutes(5), 1 / minutes(1), 1 / minutes(1), 5 / minutes(2))
-  @unauth_static_read new!(200 / minutes(1), 1 / minutes(1), 1 / minutes(1), 100 / minutes(2))
-  @user_metadata_read new!(500 / minutes(1), 100 / minutes(2), 50 / minutes(2), 100 / minutes(2))
-  @user_metadata_write new!(400 / minutes(1), 80 / minutes(1), 40 / minutes(1), 100 / minutes(2))
-  @user_sync new!(5_000 / minutes(1), 100 / minutes(1), 80 / minutes(1), 100 / minutes(1))
-
-  if Mix.env() == :test do
-    @absurdly_high_limit 2 ** 16
-    @do_whatever_the_hell_you_want new!(
-                                     @absurdly_high_limit / minutes(1),
-                                     @absurdly_high_limit / minutes(1),
-                                     @absurdly_high_limit / minutes(1),
-                                     @absurdly_high_limit / minutes(1)
-                                   )
-
-    @device_lifecycle @do_whatever_the_hell_you_want
-    @exp_write_user_bursts @do_whatever_the_hell_you_want
-    @infrequent_cheap_static_read @do_whatever_the_hell_you_want
-    @room_event_read @do_whatever_the_hell_you_want
-    @room_event_write @do_whatever_the_hell_you_want
-    @unauth_heavily_restrict_ip @do_whatever_the_hell_you_want
-    @user_metadata_read @do_whatever_the_hell_you_want
-    @user_metadata_write @do_whatever_the_hell_you_want
-    @user_sync @do_whatever_the_hell_you_want
-  end
 
   @cs_api_cors %{
     "access-control-allow-origin" => "*",
@@ -95,24 +54,24 @@ defmodule RadioBeamWeb.Router do
   scope [] do
     pipe_through :cs_api
 
-    get "/", HomeserverInfoController, :home, rl(@unauth_heavily_restrict_ip)
-    get "/.well-known/matrix/client", HomeserverInfoController, :well_known_client, rl(@unauth_static_read)
+    get "/", HomeserverInfoController, :home, rl(:heavily_restrict_ip)
+    get "/.well-known/matrix/client", HomeserverInfoController, :well_known_client, rl(:unauth_static_read)
   end
 
   scope "/oauth2" do
     pipe_through :cs_api
 
-    post "/clients/register", OAuth2Controller, :register_client, rl(@device_lifecycle)
+    post "/clients/register", OAuth2Controller, :register_client, rl(:infrequent_bursts)
 
-    post "/token", OAuth2Controller, :get_token, rl(@device_upkeep)
-    post "/revoke", OAuth2Controller, :revoke_token, rl(@device_upkeep)
+    post "/token", OAuth2Controller, :get_token, rl(:infrequent_bursts)
+    post "/revoke", OAuth2Controller, :revoke_token, rl(:infrequent_bursts)
   end
 
   scope "/oauth2" do
     pipe_through :oauth2_authz_code_grant
 
-    get "/auth", OAuth2Controller, :authenticate, rl(@device_lifecycle)
-    post "/auth", OAuth2Controller, :authenticate, rl(@device_lifecycle)
+    get "/auth", OAuth2Controller, :authenticate, rl(:infrequent_bursts)
+    post "/auth", OAuth2Controller, :authenticate, rl(:infrequent_bursts)
   end
 
   ### LEGACY AUTH API - DEPRECATED ###
@@ -121,10 +80,10 @@ defmodule RadioBeamWeb.Router do
 
     scope "/client" do
       scope "/v3" do
-        get "/login", HomeserverInfoController, :login_types, rl(@device_upkeep)
-        post "/login", LegacyAuthAPIController, :login, rl(@device_upkeep)
-        post "/register", LegacyAuthAPIController, :register, rl(@device_lifecycle)
-        post "/refresh", LegacyAuthAPIController, :refresh, rl(@device_upkeep)
+        get "/login", HomeserverInfoController, :login_types, rl(:infrequent_bursts)
+        post "/login", LegacyAuthAPIController, :login, rl(:infrequent_bursts)
+        post "/register", LegacyAuthAPIController, :register, rl(:infrequent_bursts)
+        post "/refresh", LegacyAuthAPIController, :refresh, rl(:infrequent_bursts)
       end
     end
   end
@@ -135,134 +94,134 @@ defmodule RadioBeamWeb.Router do
 
     # these will be deprecated in the future
     scope "/media" do
-      post "/v1/create", ContentRepoController, :create, rl(@exp_write_user_bursts)
-      post "/v3/upload", ContentRepoController, :upload, rl(@exp_write_user_bursts)
+      post "/v1/create", ContentRepoController, :create, rl(:exp_write)
+      post "/v3/upload", ContentRepoController, :upload, rl(:exp_write)
 
-      put "/v3/upload/:server_name/:media_id", ContentRepoController, :upload, rl(@exp_write_user_bursts)
+      put "/v3/upload/:server_name/:media_id", ContentRepoController, :upload, rl(:exp_write)
     end
 
     scope "/client" do
       scope "/v1" do
         scope "/media" do
-          get "/config", ContentRepoController, :config, rl(@infrequent_cheap_static_read)
-          get "/download/:server_name/:media_id/:filename", ContentRepoController, :download, rl(@exp_read_user_bursts)
-          get "/download/:server_name/:media_id", ContentRepoController, :download, rl(@exp_read_user_bursts)
-          get "/thumbnail/:server_name/:media_id", ContentRepoController, :thumbnail, rl(@exp_read_user_bursts)
+          get "/config", ContentRepoController, :config, rl(:infrequent_bursts)
+          get "/download/:server_name/:media_id/:filename", ContentRepoController, :download, rl(:infrequent_bursts)
+          get "/download/:server_name/:media_id", ContentRepoController, :download, rl(:infrequent_bursts)
+          get "/thumbnail/:server_name/:media_id", ContentRepoController, :thumbnail, rl(:infrequent_bursts)
         end
 
         scope "/rooms/:room_id/relations" do
-          get "/:event_id", RelationsController, :get_children, rl(@room_event_read)
-          get "/:event_id/:rel_type", RelationsController, :get_children, rl(@room_event_read)
-          get "/:event_id/:rel_type/:event_type", RelationsController, :get_children, rl(@room_event_read)
+          get "/:event_id", RelationsController, :get_children, rl(:user_sync)
+          get "/:event_id/:rel_type", RelationsController, :get_children, rl(:user_sync)
+          get "/:event_id/:rel_type/:event_type", RelationsController, :get_children, rl(:user_sync)
         end
 
         scope "/admin" do
-          put "/lock/:user_id", AdminController, :change_account_lock, rl(@admin)
-          get "/lock/:user_id", AdminController, :check_account_lock, rl(@admin)
-          put "/suspend/:user_id", AdminController, :change_account_suspension, rl(@admin)
-          get "/suspend/:user_id", AdminController, :check_account_suspension, rl(@admin)
+          put "/lock/:user_id", AdminController, :change_account_lock, rl(:admin)
+          get "/lock/:user_id", AdminController, :check_account_lock, rl(:admin)
+          put "/suspend/:user_id", AdminController, :change_account_suspension, rl(:admin)
+          get "/suspend/:user_id", AdminController, :check_account_suspension, rl(:admin)
         end
       end
 
       scope "/v3" do
-        get "/admin/whois/:user_id", AdminController, :whois, rl(@infrequent_cheap_static_read)
+        get "/admin/whois/:user_id", AdminController, :whois, rl(:admin)
 
-        get "/capabilities", HomeserverInfoController, :capabilities, rl(@infrequent_cheap_static_read)
+        get "/capabilities", HomeserverInfoController, :capabilities, rl(:frequent_cheap)
 
-        get "/devices", ClientController, :get_device, rl(@user_metadata_read)
-        get "/devices/:device_id", ClientController, :get_device, rl(@user_metadata_read)
-        put "/devices/:device_id", ClientController, :put_device_display_name, rl(@user_metadata_write)
+        get "/devices", ClientController, :get_device, rl(:frequent_cheap)
+        get "/devices/:device_id", ClientController, :get_device, rl(:frequent_cheap)
+        put "/devices/:device_id", ClientController, :put_device_display_name, rl(:frequent_cheap)
 
-        get "/sync", SyncController, :sync, rl(@user_sync)
+        get "/sync", SyncController, :sync, rl(:user_sync)
 
-        post "/createRoom", RoomController, :create, rl(@exp_write_user_bursts)
-        get "/joined_rooms", RoomController, :joined, rl(@user_metadata_read)
+        post "/createRoom", RoomController, :create, rl(:exp_write)
+        get "/joined_rooms", RoomController, :joined, rl(:infrequent_bursts)
 
-        put "/sendToDevice/:type/:transaction_id", ClientController, :send_to_device, rl(@user_metadata_write)
+        put "/sendToDevice/:type/:transaction_id", ClientController, :send_to_device, rl(:infrequent_bursts)
 
         scope "/keys" do
-          get "/changes", KeyStoreController, :changes, rl(@user_metadata_read)
-          post "/claim", KeyStoreController, :claim, rl(@user_metadata_write)
-          post "/device_signing/upload", KeyStoreController, :upload_cross_signing, rl(@user_metadata_write)
-          post "/query", KeyStoreController, :query, rl(@user_metadata_read)
-          post "/signatures/upload", KeyStoreController, :upload_signatures, rl(@user_metadata_write)
-          post "/upload", KeyStoreController, :upload, rl(@user_metadata_write)
+          get "/changes", KeyStoreController, :changes, rl(:infrequent_bursts)
+          post "/claim", KeyStoreController, :claim, rl(:infrequent_bursts)
+          post "/device_signing/upload", KeyStoreController, :upload_cross_signing, rl(:infrequent_bursts)
+          post "/query", KeyStoreController, :query, rl(:infrequent_bursts)
+          post "/signatures/upload", KeyStoreController, :upload_signatures, rl(:infrequent_bursts)
+          post "/upload", KeyStoreController, :upload, rl(:infrequent_bursts)
         end
 
         scope "/room_keys" do
-          get "/keys", RoomKeysController, :get_keys, rl(@user_metadata_read)
-          get "/keys/:room_id", RoomKeysController, :get_keys, rl(@user_metadata_read)
-          get "/keys/:room_id/:session_id", RoomKeysController, :get_keys, rl(@user_metadata_read)
-          put "/keys", RoomKeysController, :put_keys, rl(@user_metadata_write)
-          put "/keys/:room_id", RoomKeysController, :put_keys, rl(@user_metadata_write)
-          put "/keys/:room_id/:session_id", RoomKeysController, :put_keys, rl(@user_metadata_write)
-          delete "/keys", RoomKeysController, :delete_keys, rl(@user_metadata_write)
-          delete "/keys/:room_id", RoomKeysController, :delete_keys, rl(@user_metadata_write)
-          delete "/keys/:room_id/:session_id", RoomKeysController, :delete_keys, rl(@user_metadata_write)
+          get "/keys", RoomKeysController, :get_keys, rl(:frequent_cheap)
+          get "/keys/:room_id", RoomKeysController, :get_keys, rl(:frequent_cheap)
+          get "/keys/:room_id/:session_id", RoomKeysController, :get_keys, rl(:frequent_cheap)
+          put "/keys", RoomKeysController, :put_keys, rl(:infrequent_bursts)
+          put "/keys/:room_id", RoomKeysController, :put_keys, rl(:infrequent_bursts)
+          put "/keys/:room_id/:session_id", RoomKeysController, :put_keys, rl(:infrequent_bursts)
+          delete "/keys", RoomKeysController, :delete_keys, rl(:infrequent_bursts)
+          delete "/keys/:room_id", RoomKeysController, :delete_keys, rl(:infrequent_bursts)
+          delete "/keys/:room_id/:session_id", RoomKeysController, :delete_keys, rl(:infrequent_bursts)
 
-          post "/version", RoomKeysController, :create_backup, rl(@user_metadata_write)
-          get "/version", RoomKeysController, :get_backup_info, rl(@user_metadata_read)
-          get "/version/:version", RoomKeysController, :get_backup_info, rl(@user_metadata_read)
-          put "/version/:version", RoomKeysController, :put_backup_auth_data, rl(@user_metadata_write)
-          delete "/version/:version", RoomKeysController, :delete_backup, rl(@user_metadata_write)
+          post "/version", RoomKeysController, :create_backup, rl(:infrequent_bursts)
+          get "/version", RoomKeysController, :get_backup_info, rl(:frequent_cheap)
+          get "/version/:version", RoomKeysController, :get_backup_info, rl(:infrequent_bursts)
+          put "/version/:version", RoomKeysController, :put_backup_auth_data, rl(:infrequent_bursts)
+          delete "/version/:version", RoomKeysController, :delete_backup, rl(:infrequent_bursts)
         end
 
         scope "/rooms" do
-          post "/:room_id/invite", RoomController, :invite, rl(@room_event_write)
-          post "/:room_id/join", RoomController, :join, rl(@room_event_write)
-          post "/:room_id/leave", RoomController, :leave, rl(@room_event_write)
-          post "/:room_id/kick", RoomController, :kick, rl(@admin)
-          post "/:room_id/ban", RoomController, :ban, rl(@admin)
-          post "/:room_id/unban", RoomController, :unban, rl(@admin)
+          post "/:room_id/invite", RoomController, :invite, rl(:infrequent_bursts)
+          post "/:room_id/join", RoomController, :join, rl(:infrequent_bursts)
+          post "/:room_id/leave", RoomController, :leave, rl(:infrequent_bursts)
+          post "/:room_id/kick", RoomController, :kick, rl(:admin)
+          post "/:room_id/ban", RoomController, :ban, rl(:admin)
+          post "/:room_id/unban", RoomController, :unban, rl(:admin)
           # TOIMPL:
           # post "/:room_id/forget", RoomController, :forget
 
-          put "/:room_id/send/:event_type", RoomController, :send, rl(@room_event_write)
-          put "/:room_id/send/:event_type/:transaction_id", RoomController, :send, rl(@room_event_write)
-          put "/:room_id/state/:event_type/:state_key", RoomController, :put_state, rl(@room_event_write)
-          put "/:room_id/state/:event_type", RoomController, :put_state, rl(@room_event_write)
+          put "/:room_id/send/:event_type", RoomController, :send, rl(:infrequent_bursts)
+          put "/:room_id/send/:event_type/:transaction_id", RoomController, :send, rl(:infrequent_bursts)
+          put "/:room_id/state/:event_type/:state_key", RoomController, :put_state, rl(:infrequent_bursts)
+          put "/:room_id/state/:event_type", RoomController, :put_state, rl(:infrequent_bursts)
 
-          put "/:room_id/redact/:event_id/:transaction_id", RoomController, :redact, rl(@room_event_write)
+          put "/:room_id/redact/:event_id/:transaction_id", RoomController, :redact, rl(:admin)
 
-          get "/:room_id/event/:event_id", RoomController, :get_event, rl(@room_event_read)
-          get "/:room_id/joined_members", RoomController, :get_joined_members, rl(@room_event_read)
-          get "/:room_id/members", RoomController, :get_members, rl(@room_event_read)
-          get "/:room_id/state", RoomController, :get_state, rl(@room_event_read)
-          get "/:room_id/state/:event_type/:state_key", RoomController, :get_state_event, rl(@room_event_read)
-          get "/:room_id/state/:event_type", RoomController, :get_state_event, rl(@room_event_read)
-          get "/:room_id/messages", SyncController, :get_messages, rl(@room_event_read)
-          get "/:room_id/timestamp_to_event", RoomController, :get_nearest_event, rl(@room_event_read)
-          get "/:room_id/context/:event_id", SyncController, :get_event_context, rl(@room_event_read)
+          get "/:room_id/event/:event_id", RoomController, :get_event, rl(:infrequent_bursts)
+          get "/:room_id/joined_members", RoomController, :get_joined_members, rl(:infrequent_bursts)
+          get "/:room_id/members", RoomController, :get_members, rl(:infrequent_bursts)
+          get "/:room_id/state", RoomController, :get_state, rl(:infrequent_bursts)
+          get "/:room_id/state/:event_type/:state_key", RoomController, :get_state_event, rl(:infrequent_bursts)
+          get "/:room_id/state/:event_type", RoomController, :get_state_event, rl(:infrequent_bursts)
+          get "/:room_id/messages", SyncController, :get_messages, rl(:user_sync)
+          get "/:room_id/timestamp_to_event", RoomController, :get_nearest_event, rl(:infrequent_bursts)
+          get "/:room_id/context/:event_id", SyncController, :get_event_context, rl(:infrequent_bursts)
 
-          put "/:room_id/typing/:user_id", RoomController, :put_typing, rl(@frequent_ephemeral_write)
+          put "/:room_id/typing/:user_id", RoomController, :put_typing, rl(:frequent_cheap)
 
-          post "/:room_id/report", AdminController, :report_room, rl(@cheap_write_user_bursts)
-          post "/:room_id/report/:event_id", AdminController, :report_room_event, rl(@cheap_write_user_bursts)
+          post "/:room_id/report", AdminController, :report_room, rl(:infrequent_bursts)
+          post "/:room_id/report/:event_id", AdminController, :report_room_event, rl(:infrequent_bursts)
         end
 
         scope "/users" do
-          post "/:user_id/report", AdminController, :report_user, rl(@cheap_write_user_bursts)
+          post "/:user_id/report", AdminController, :report_user, rl(:infrequent_bursts)
         end
 
         scope "/account" do
-          get "/whoami", OAuth2Controller, :whoami, rl(@user_metadata_read)
+          get "/whoami", OAuth2Controller, :whoami, rl(:infrequent_bursts)
         end
 
         scope "/user/:user_id" do
-          post "/filter", FilterController, :put, rl(@user_metadata_write)
-          get "/filter/:filter_id", FilterController, :get, rl(@user_metadata_read)
+          post "/filter", FilterController, :put, rl(:infrequent_bursts)
+          get "/filter/:filter_id", FilterController, :get, rl(:infrequent_bursts)
 
-          get "/account_data/:type", AccountController, :get_config, rl(@user_metadata_read)
-          put "/account_data/:type", AccountController, :put_config, rl(@user_metadata_read)
-          get "/rooms/:room_id/account_data/:type", AccountController, :get_config, rl(@user_metadata_read)
-          put "/rooms/:room_id/account_data/:type", AccountController, :put_config, rl(@user_metadata_read)
+          get "/account_data/:type", AccountController, :get_config, rl(:frequent_cheap)
+          put "/account_data/:type", AccountController, :put_config, rl(:frequent_cheap)
+          get "/rooms/:room_id/account_data/:type", AccountController, :get_config, rl(:frequent_cheap)
+          put "/rooms/:room_id/account_data/:type", AccountController, :put_config, rl(:frequent_cheap)
 
-          get "/rooms/:room_id/tags", AccountController, :get_tags, rl(@user_metadata_read)
-          put "/rooms/:room_id/tags/:tag", AccountController, :put_tag, rl(@user_metadata_write)
-          delete "/rooms/:room_id/tags/:tag", AccountController, :delete_tag, rl(@user_metadata_write)
+          get "/rooms/:room_id/tags", AccountController, :get_tags, rl(:infrequent_bursts)
+          put "/rooms/:room_id/tags/:tag", AccountController, :put_tag, rl(:infrequent_bursts)
+          delete "/rooms/:room_id/tags/:tag", AccountController, :delete_tag, rl(:infrequent_bursts)
         end
 
-        post "/join/:room_id_or_alias", RoomController, :join, rl(@room_event_write)
+        post "/join/:room_id_or_alias", RoomController, :join, rl(:infrequent_bursts)
         # TOIMPL:
         # post "/knock/:room_id_or_alias", RoomController, :knock
       end
@@ -274,10 +233,10 @@ defmodule RadioBeamWeb.Router do
     pipe_through :cs_api
 
     scope "/client" do
-      get "/versions", HomeserverInfoController, :versions, rl(@unauth_static_read)
+      get "/versions", HomeserverInfoController, :versions, rl(:unauth_static_read)
 
       scope "/v1" do
-        get "/auth_metadata", OAuth2Controller, :get_auth_metadata, rl(@unauth_static_read)
+        get "/auth_metadata", OAuth2Controller, :get_auth_metadata, rl(:unauth_static_read)
       end
     end
   end

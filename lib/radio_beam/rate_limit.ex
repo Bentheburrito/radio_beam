@@ -15,11 +15,15 @@ defmodule RadioBeam.RateLimit do
   user ID + device ID (if the Authorization header was present), and an
   IP address.
   """
-  use Hammer, backend: :ets
+  use Hammer, backend: :atomic
 
   import Kernel, except: [/: 2]
 
   defstruct ~w|global_endpoint user_endpoint user_device ip|a
+
+  def fetch_by_name!(name) do
+    :radio_beam |> Application.fetch_env!(__MODULE__) |> Keyword.fetch!(name)
+  end
 
   @doc """
   Define a new `limit`, `scale` pair to give to a rate limit. Read as "`limit`
