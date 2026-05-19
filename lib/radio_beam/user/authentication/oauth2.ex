@@ -163,6 +163,7 @@ defmodule RadioBeam.User.Authentication.OAuth2 do
     Enum.map_join(scope, " ", fn
       {:device_id, device_id} -> "urn:matrix:client:device:#{device_id}"
       {:cs_api, [:read, :write]} -> "urn:matrix:client:api:*"
+      {:account, [:read, :write]} -> "urn:matrix:com.radiobeam.account:*"
     end)
   end
 

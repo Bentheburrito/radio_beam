@@ -1,0 +1,2 @@
+css/app.css:sha256-bAgoO96wrd1DIma7CBkKXIz4wc9KexOrNCgthEavHWg=
+js/app.js:sha256-kiX+lmf7p+et6GmCMh91SvRmrFZZg+8n6My39fPC6bE=

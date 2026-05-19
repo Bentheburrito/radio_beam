@@ -2,9 +2,11 @@ defmodule RadioBeamWeb.AccountController do
   use RadioBeamWeb, :controller
 
   import RadioBeamWeb.Utils, only: [json_error: 4]
+  import RadioBeamWeb.AccountHTML, only: [fmt_unix: 1]
 
   alias RadioBeam.Errors
   alias RadioBeam.User
+  alias RadioBeam.User.Authentication.OAuth2
   alias RadioBeamWeb.Schemas.Account, as: AccountSchema
 
   require Logger
@@ -67,6 +69,133 @@ defmodule RadioBeamWeb.AccountController do
     case User.delete_room_tag(user_id, room_id, tag) do
       :ok -> json(conn, %{})
       {:error, :invalid_room_id} -> json_error(conn, 400, :endpoint_error, [:invalid_param, "invalid room ID"])
+    end
+  end
+
+  def login(conn, _params) do
+    base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}"
+    redirect_uri = "#{base_url}/account/callback"
+
+    {:ok, client} =
+      OAuth2.register_client(%{
+        "application_type" => "web",
+        "client_name" => "RadioBeam Local Account Management on #{RadioBeam.server_name()}",
+        "client_uri" => base_url,
+        "grant_types" => ["authorization_code", "refresh_token"],
+        "redirect_uris" => [redirect_uri],
+        "response_types" => ["code"],
+        "token_endpoint_auth_method" => "none"
+      })
+
+    state = 32 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+    code_verifier = 24 |> :crypto.strong_rand_bytes() |> Base.encode64()
+    code_challenge = Base.url_encode64(:crypto.hash(:sha256, code_verifier), padding: false)
+    device_id = 12 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+
+    oauth2_query_params = %{
+      client_id: client.client_id,
+      scope: OAuth2.scope_to_urn(account: [:read, :write], device_id: device_id),
+      state: state,
+      redirect_uri: redirect_uri,
+      response_type: "code",
+      response_mode: "query",
+      code_challenge: code_challenge,
+      code_challenge_method: :S256
+    }
+
+    conn
+    |> put_session(:am_client, client.client_id)
+    |> put_session(:am_state, state)
+    |> put_session(:am_verifier, code_verifier)
+    |> put_session(:am_redirect_uri_str, to_string(redirect_uri))
+    |> redirect(to: ~p"/oauth2/auth?#{oauth2_query_params}")
+  end
+
+  def home(conn, _params) do
+    if is_nil(conn.assigns[:user_id]) do
+      login(conn, %{})
+    else
+      conn
+      |> assign(:server_name, RadioBeam.server_name())
+      |> assign(:user_id, conn.assigns.user_id)
+      |> assign(:device_id, conn.assigns.device_id)
+      |> assign(:devices, User.get_all_device_info(conn.assigns.user_id))
+      |> render(:home)
+    end
+  end
+
+  def update_device_name(conn, %{"device" => device_id, "new_display_name" => display_name}) do
+    if is_nil(conn.assigns[:user_id]) do
+      login(conn, %{})
+    else
+      User.put_device_display_name(conn.assigns.user_id, device_id, display_name)
+
+      redirect(conn, to: ~p"/account")
+    end
+  end
+
+  def logout(conn, %{"device" => device_id}) do
+    if is_nil(conn.assigns[:user_id]) do
+      login(conn, %{})
+    else
+      :ok = User.delete_device(conn.assigns.user_id, device_id)
+
+      redirect(conn, to: ~p"/account")
+    end
+  end
+
+  def logout(conn, _params) do
+    if is_nil(conn.assigns[:user_id]) do
+      login(conn, %{})
+    else
+      with %{"access_token" => token} <- get_session(conn) do
+        OAuth2.revoke_token(token)
+        :ok = User.delete_device(conn.assigns.user_id, conn.assigns.device_id)
+      end
+
+      conn
+      |> clear_session()
+      |> login(%{})
+    end
+  end
+
+  def callback(conn, %{"code" => authz_code, "state" => state}) do
+    case get_session(conn) do
+      %{
+        "am_client" => client_id,
+        "am_state" => ^state,
+        "am_verifier" => code_verifier,
+        "am_redirect_uri_str" => redirect_uri_str
+      } ->
+        display_name = "Account Management browser session (created at #{fmt_unix(RadioBeam.Time.now())})"
+
+        case OAuth2.exchange_authz_code_for_tokens(
+               authz_code,
+               code_verifier,
+               client_id,
+               URI.new!(redirect_uri_str),
+               [display_name: display_name],
+               conn.scheme,
+               "#{conn.host}:#{conn.port}"
+             ) do
+          {:ok, access_token, refresh_token, _scope, expires_in} ->
+            conn
+            |> clear_session()
+            |> put_session(:access_token, access_token)
+            |> put_session(:refresh_token, refresh_token)
+            |> put_session(:expires_at, DateTime.add(DateTime.utc_now(), expires_in, :second))
+            |> redirect(to: ~p"/account")
+
+          {:error, reason} ->
+            conn
+            |> put_flash(:error, "Could not log in, reason: #{inspect(reason)}")
+            |> login(%{})
+        end
+
+      %{} ->
+        conn
+        |> put_flash(:error, "Could not log in, reason: invalid or missing OAuth2 callback parameters.")
+        |> login(%{})
     end
   end
 end

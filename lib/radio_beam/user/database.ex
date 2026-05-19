@@ -24,6 +24,7 @@ defmodule RadioBeam.User.Database do
                                                                | {:error, term()})) ::
               {:ok, Device.t()} | {:ok, return_value()} | {:error, term()}
   @callback fetch_user_device(User.id(), Device.id()) :: {:ok, Device.t()} | {:error, :not_found}
+  @callback soft_delete_user_device(User.id(), Device.id()) :: :ok
   @callback get_all_devices_of_user(User.id()) :: [Device.t()]
 
   @callback upsert_user_client_config_with(User.id(), (ClientConfig.t() | nil ->
@@ -46,6 +47,7 @@ defmodule RadioBeam.User.Database do
   defdelegate insert_new_device(device), to: @database_backend
   defdelegate update_user_device_with(user_id, device_id, callback), to: @database_backend
   defdelegate fetch_user_device(user_id, device_id), to: @database_backend
+  defdelegate soft_delete_user_device(user_id, device_id), to: @database_backend
   defdelegate get_all_devices_of_user(user_id), to: @database_backend
   defdelegate upsert_user_client_config_with(user_id, callback), to: @database_backend
   defdelegate fetch_user_client_config(user_id), to: @database_backend

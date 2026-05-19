@@ -7,29 +7,8 @@
     <.live_title default="RadioBeam" suffix=" · Matrix Homeserver">
       {assigns[:page_title]}
     </.live_title>
-    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
-    <%!-- <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}></script> --%>
-    <script>
-      // moved this outside of the anon fxn, so it could be referenced by 'onclick' attr
-      const setTheme = (theme) => {
-        if (theme === "system") {
-          localStorage.removeItem("phx:theme");
-          document.documentElement.removeAttribute("data-theme");
-        } else {
-          localStorage.setItem("phx:theme", theme);
-          document.documentElement.setAttribute("data-theme", theme);
-        }
-      };
-      (() => {
-        if (!document.documentElement.hasAttribute("data-theme")) {
-          setTheme(localStorage.getItem("phx:theme") || "system");
-        }
-        window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
-
-        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
-        
-      })();
-    </script>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} integrity={RadioBeamWeb.Router.lookup_asset_hash("css/app.css")}/>
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"} integrity={RadioBeamWeb.Router.lookup_asset_hash("js/app.js")}></script>
   </head>
   <body>
     {@inner_content}

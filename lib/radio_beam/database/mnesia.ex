@@ -290,6 +290,23 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
+  def soft_delete_user_device(user_id, device_id) do
+    transaction(fn ->
+      case :mnesia.read(Tables.Device, {user_id, device_id}, :write) do
+        [] ->
+          :ok
+
+        [device(user_device_id_tuple: {^user_id, _}) = record] ->
+          :mnesia.write(Tables.Device, device(record, user_device_id_tuple: {:deleted, user_id, device_id}), :write)
+          :mnesia.delete(Tables.Device, {user_id, device_id}, :write)
+
+        [_record] ->
+          :ok
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
   def get_all_devices_of_user(user_id) do
     match_spec = [{device(user_device_id_tuple: {user_id, :_}, device: :_), [], [:"$_"]}]
 

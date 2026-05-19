@@ -286,12 +286,14 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
         case parse_scope(scope) do
           {:ok, {:cs_api, perms}} -> {:ok, Map.put(validated_scope_map, :cs_api, perms)}
           {:ok, {:device_id, device_id}} -> {:ok, Map.put(validated_scope_map, :device_id, device_id)}
+          {:ok, {:account, perms}} -> {:ok, Map.put(validated_scope_map, :account, perms)}
           {:error, :unrecognized_scope} -> {:ok, validated_scope_map}
         end
       end)
 
     case scope do
       {:ok, %{device_id: "" <> _, cs_api: [:read, :write]}} -> scope
+      {:ok, %{device_id: "" <> _, account: [:read, :write]}} -> scope
       _else -> {:error, :missing_scope}
     end
   end
@@ -314,6 +316,8 @@ defmodule RadioBeam.User.Authentication.OAuth2.Builtin do
   defp parse_scope("urn:matrix:org.matrix.msc2967.client:device:" <> device_id) do
     parse_scope("urn:matrix:client:device:" <> device_id)
   end
+
+  defp parse_scope("urn:matrix:com.radiobeam.account:*"), do: {:ok, {:account, [:read, :write]}}
 
   defp parse_scope(_), do: {:error, :unrecognized_scope}
 

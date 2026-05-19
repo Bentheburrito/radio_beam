@@ -1,0 +1,33 @@
+<Layouts.app flash={@flash}>
+  <.header>
+    Welcome {@user_id}
+    <:subtitle>Here you can manage your Matrix account on {@server_name}</:subtitle>
+  </.header>
+
+  <.button href="/account/logout" variant="primary" type="button">🚪⮨ Log Out</.button>
+
+  <h2><b>Devices</b></h2>
+
+  <div :for={device_info <- @devices} class="list-row">
+    <hr class="mt-4 mb-4 text-slate-500"/>
+    <.form :let={f} for={Phoenix.Component.to_form(%{"new_display_name" => device_info.display_name})} action="/account/update_device_name" method="post">
+      <div :if={@device_id == device_info.id}>
+        🟢 Current Session
+      </div>
+      <.input field={f[:new_display_name]} type="text" label="Display Name" label_class="inline text-sm font-bold mb-1" class="w-4/5 input inline" errors={f[:new_display_name].errors} required/>
+      <.input type="hidden" name="device" value={device_info.id}/>
+      <div>
+        <b>Device ID:</b> {device_info.id}
+      </div>
+      <div>
+        <b>Last Seen At:</b> {fmt_unix(device_info.last_seen_at)}
+      </div>
+      <div>
+        <b>Last Seen From IP:</b> {maybe_ip(device_info.last_seen_from_ip)}
+      </div>
+      <.button variant="primary" class="btn btn-primary mr-4">Save Changes</.button>
+      <.button href={"/account/logout?device=#{device_info.id}"} type="button">⛔Remove Device</.button>
+    </.form>
+  </div>
+
+</Layouts.app>

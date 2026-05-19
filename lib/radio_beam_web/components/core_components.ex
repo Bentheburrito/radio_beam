@@ -175,6 +175,7 @@ defmodule RadioBeamWeb.CoreComponents do
   attr :options, :list, doc: "the options to pass to Phoenix.HTML.Form.options_for_select/2"
   attr :multiple, :boolean, default: false, doc: "the multiple flag for select inputs"
   attr :class, :any, default: nil, doc: "the input class to use over defaults"
+  attr :label_class, :any, default: "label mb-1", doc: "the input label class to use over defaults"
   attr :error_class, :any, default: nil, doc: "the input error class to use over defaults"
 
   attr :rest, :global, include: ~w(accept autocomplete capture cols disabled form list max maxlength min minlength
@@ -276,7 +277,7 @@ defmodule RadioBeamWeb.CoreComponents do
     ~H"""
     <div class="fieldset mb-2">
       <label>
-        <span :if={@label} class="label mb-1">{@label}</span>
+        <span :if={@label} class={@label_class}>{@label}</span>
         <input
           type={@type}
           name={@name}

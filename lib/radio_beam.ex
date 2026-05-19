@@ -20,6 +20,7 @@ defmodule RadioBeam do
       Room.EphemeralState,
       Room.Timeline,
       Sync,
+      Time,
       Transaction,
       User,
       User.Authentication,

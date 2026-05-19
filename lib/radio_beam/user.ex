@@ -93,6 +93,8 @@ defmodule RadioBeam.User do
     Database.update_user_device_with(user_id, device_id, &Device.put_display_name!(&1, display_name))
   end
 
+  def delete_device(user_id, device_id), do: Database.soft_delete_user_device(user_id, device_id)
+
   @spec put_account_data(id(), Room.id() | :global, String.t(), any()) ::
           {:ok, User.t()} | {:error, :invalid_room_id | :invalid_type | :not_found}
   def put_account_data(user_id, scope, type, content_or_updater) do

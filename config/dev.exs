@@ -28,6 +28,12 @@ config :radio_beam, RadioBeamWeb.Endpoint,
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:radio_beam, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:radio_beam, ~w(--watch)]}
+  ],
+  https: [
+    port: 4001,
+    cipher_suite: :strong,
+    certfile: "priv/cert/selfsigned.pem",
+    keyfile: "priv/cert/selfsigned_key.pem"
   ]
 
 config :radio_beam, server_name: "localhost"
