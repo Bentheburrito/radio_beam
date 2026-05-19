@@ -47,28 +47,9 @@ defmodule RadioBeamWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {RadioBeamWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+    plug Plugs.CSP
     plug Plugs.RateLimit
   end
-
-  @external_resource "priv/static/asset_hashes.txt"
-  @asset_lookup_map "priv/static/asset_hashes.txt"
-                    |> File.stream!()
-                    |> Stream.map(&String.trim/1)
-                    |> Map.new(&(&1 |> String.split(":") |> List.to_tuple()))
-
-  def lookup_asset_hash(path), do: Map.fetch!(@asset_lookup_map, path)
-
-  @script_src @asset_lookup_map
-              |> Stream.filter(fn {key, _} -> match?("js" <> _, key) end)
-              |> Enum.map_join(" ", &"'#{elem(&1, 1)}'")
-  # @style_src @asset_lookup_map
-  #            |> Stream.filter(fn {key, _} -> match?("css" <> _, key) end)
-  #            |> Enum.map_join(" ", &"'#{elem(&1, 1)}'")
-
-  # https://stackoverflow.com/questions/77338818/content-security-policy-hashes-for-files-dont-seem-to-work
-
-  @content_security_policy "default-src 'none'; script-src #{@script_src}; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; upgrade-insecure-requests"
 
   pipeline :user_account_management do
     plug :accepts, ["html"]
@@ -76,7 +57,7 @@ defmodule RadioBeamWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {RadioBeamWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers, %{"content-security-policy" => @content_security_policy}
+    plug Plugs.CSP
     plug Plugs.OAuth2.VerifyAccessTokenCookie
     plug Plugs.RateLimit
   end

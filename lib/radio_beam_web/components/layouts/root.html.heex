@@ -7,8 +7,8 @@
     <.live_title default="RadioBeam" suffix=" · Matrix Homeserver">
       {assigns[:page_title]}
     </.live_title>
-    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} integrity={RadioBeamWeb.Router.lookup_asset_hash("css/app.css")}/>
-    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"} integrity={RadioBeamWeb.Router.lookup_asset_hash("js/app.js")}></script>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} nonce={@asset_nonce}/>
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"} nonce={@asset_nonce}></script>
   </head>
   <body>
     {@inner_content}
