@@ -112,51 +112,35 @@ defmodule RadioBeamWeb.AccountController do
   end
 
   def home(conn, _params) do
-    if is_nil(conn.assigns[:user_id]) do
-      login(conn, %{})
-    else
-      conn
-      |> assign(:server_name, RadioBeam.server_name())
-      |> assign(:user_id, conn.assigns.user_id)
-      |> assign(:device_id, conn.assigns.device_id)
-      |> assign(:devices, User.get_all_device_info(conn.assigns.user_id))
-      |> render(:home)
-    end
+    conn
+    |> assign(:server_name, RadioBeam.server_name())
+    |> assign(:user_id, conn.assigns.user_id)
+    |> assign(:device_id, conn.assigns.device_id)
+    |> assign(:devices, User.get_all_device_info(conn.assigns.user_id))
+    |> render(:home)
   end
 
   def update_device_name(conn, %{"device" => device_id, "new_display_name" => display_name}) do
-    if is_nil(conn.assigns[:user_id]) do
-      login(conn, %{})
-    else
-      User.put_device_display_name(conn.assigns.user_id, device_id, display_name)
+    User.put_device_display_name(conn.assigns.user_id, device_id, display_name)
 
-      redirect(conn, to: ~p"/account")
-    end
+    redirect(conn, to: ~p"/account")
   end
 
   def logout(conn, %{"device" => device_id}) do
-    if is_nil(conn.assigns[:user_id]) do
-      login(conn, %{})
-    else
-      :ok = User.delete_device(conn.assigns.user_id, device_id)
+    :ok = User.delete_device(conn.assigns.user_id, device_id)
 
-      redirect(conn, to: ~p"/account")
-    end
+    redirect(conn, to: ~p"/account")
   end
 
   def logout(conn, _params) do
-    if is_nil(conn.assigns[:user_id]) do
-      login(conn, %{})
-    else
-      with %{"access_token" => token} <- get_session(conn) do
-        OAuth2.revoke_token(token)
-        :ok = User.delete_device(conn.assigns.user_id, conn.assigns.device_id)
-      end
-
-      conn
-      |> clear_session()
-      |> login(%{})
+    with %{"access_token" => token} <- get_session(conn) do
+      OAuth2.revoke_token(token)
+      :ok = User.delete_device(conn.assigns.user_id, conn.assigns.device_id)
     end
+
+    conn
+    |> clear_session()
+    |> login(%{})
   end
 
   def callback(conn, %{"code" => authz_code, "state" => state}) do
