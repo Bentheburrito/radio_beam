@@ -91,7 +91,7 @@ defmodule RadioBeamWeb.Router do
     get "/", AccountController, :home, rl(:frequent_cheap)
     get "/login", AccountController, :login, rl(:infrequent_bursts)
     get "/callback", AccountController, :callback, rl(:infrequent_bursts)
-    get "/logout", AccountController, :logout, rl(:infrequent_bursts)
+    post "/logout", AccountController, :logout, rl(:infrequent_bursts)
     post "/update_device_name", AccountController, :update_device_name, rl(:infrequent_bursts)
   end
 

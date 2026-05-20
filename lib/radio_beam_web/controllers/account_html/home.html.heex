@@ -4,7 +4,10 @@
     <:subtitle>Here you can manage your Matrix account on {@server_name}</:subtitle>
   </.header>
 
-  <.button href="/account/logout" variant="primary" type="button">🚪⮨ Log Out</.button>
+  <.form :let={_f} for={Phoenix.Component.to_form(%{})} action="/account/logout" method="post">
+    <.input type="hidden" name="device" value={@device_id}/>
+    <.button variant="primary">🚪⮨ Log Out</.button>
+  </.form>
 
   <h2><b>Devices</b></h2>
 
@@ -23,8 +26,11 @@
         <b>Last Seen From IP:</b> {maybe_ip(device_info.last_seen_from_ip)}
       </div>
       <.button variant="primary" class="btn btn-primary mr-4">Save Changes</.button>
-      <.button :if={@device_id != device_info.id} href={"/account/logout?device=#{device_info.id}"} type="button">⛔Remove Device</.button>
-      <span :if={@device_id == device_info.id}>🟢 Current Session</span>
+    </.form>
+    <span :if={@device_id == device_info.id}>🟢 Current Session</span>
+    <.form :if={@device_id != device_info.id} :let={_f} for={Phoenix.Component.to_form(%{})} action="/account/logout" method="post">
+      <.input type="hidden" name="device" value={device_info.id}/>
+      <.button>⛔Remove Device</.button>
     </.form>
   </div>
 

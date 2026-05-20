@@ -126,21 +126,21 @@ defmodule RadioBeamWeb.AccountController do
     redirect(conn, to: ~p"/account")
   end
 
-  def logout(conn, %{"device" => device_id}) do
-    :ok = User.delete_device(conn.assigns.user_id, device_id)
-
-    redirect(conn, to: ~p"/account")
-  end
-
-  def logout(conn, _params) do
+  def logout(%{assigns: %{device_id: device_id}} = conn, %{"device" => device_id}) do
     with %{"access_token" => token} <- get_session(conn) do
       OAuth2.revoke_token(token)
-      :ok = User.delete_device(conn.assigns.user_id, conn.assigns.device_id)
+      :ok = User.delete_device(conn.assigns.user_id, device_id)
     end
 
     conn
     |> clear_session()
     |> login(%{})
+  end
+
+  def logout(conn, %{"device" => device_id}) do
+    :ok = User.delete_device(conn.assigns.user_id, device_id)
+
+    redirect(conn, to: ~p"/account")
   end
 
   def callback(conn, %{"code" => authz_code, "state" => state}) do

@@ -267,7 +267,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
     } do
       assert user_id |> User.get_all_device_info() |> Enum.any?(&(&1.id == device_id))
 
-      conn = get(conn, ~p"/account/logout", %{})
+      conn = post(conn, ~p"/account/logout", %{"device" => device_id})
 
       redir_path = redirected_to(conn)
       assert redir_path =~ "/oauth2/auth"
@@ -288,7 +288,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
       assert user_id |> User.get_all_device_info() |> Enum.any?(&(&1.id == device.id))
 
-      conn = get(conn, ~p"/account/logout?device=#{device.id}", %{})
+      conn = post(conn, ~p"/account/logout", %{"device" => device.id})
 
       assert redirected_to(conn) == "/account"
 
