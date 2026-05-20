@@ -73,7 +73,7 @@ defmodule RadioBeamWeb.AccountController do
   end
 
   def login(conn, _params) do
-    base_url = "#{conn.scheme}://#{conn.host}:#{conn.port}"
+    base_url = "https://#{conn.host}:#{conn.port}"
     redirect_uri = "#{base_url}/account/callback"
 
     {:ok, client} =

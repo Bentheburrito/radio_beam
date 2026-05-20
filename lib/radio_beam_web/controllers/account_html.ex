@@ -3,7 +3,8 @@ defmodule RadioBeamWeb.AccountHTML do
 
   embed_templates "account_html/*"
 
-  def fmt_unix(unix, unit \\ :millisecond) when is_integer(unix) and unix >= 0 do
+  @default_unit (Mix.env() == :test && :microsecond) || :millisecond
+  def fmt_unix(unix, unit \\ @default_unit) when is_integer(unix) and unix >= 0 do
     unix |> DateTime.from_unix!(unit) |> Calendar.strftime("%B %d %Y @ %H:%M:%S")
   end
 

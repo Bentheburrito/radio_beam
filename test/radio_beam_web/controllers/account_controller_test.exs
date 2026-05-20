@@ -215,4 +215,131 @@ defmodule RadioBeamWeb.AccountControllerTest do
       assert %{"errcode" => "M_INVALID_PARAM", "error" => "invalid room ID"} = json_response(conn, 400)
     end
   end
+
+  describe "login/2" do
+    test "redirects to the OAuth2 login with the expected query params", %{conn: conn} do
+      conn = get(conn, ~p"/account/login", %{})
+      assert redirected_to(conn) =~ "/oauth2/auth"
+
+      assert %{
+               "am_client" => "" <> _,
+               "am_state" => "" <> _,
+               "am_verifier" => "" <> _,
+               "am_redirect_uri_str" => redirect_uri_str
+             } = get_session(conn)
+
+      assert String.ends_with?(redirect_uri_str, "/account/callback")
+    end
+  end
+
+  describe "home/2" do
+    setup %{conn: conn, access_token: access_token} do
+      %{conn: init_test_session(conn, %{"access_token" => access_token})}
+    end
+
+    test "renders the home page of the logged in user", %{
+      conn: conn,
+      account: %{user_id: user_id},
+      device_id: device_id
+    } do
+      conn = get(conn, ~p"/account", %{})
+
+      server_name = RadioBeam.server_name()
+      device_info = User.get_all_device_info(user_id)
+
+      assert %{server_name: ^server_name, user_id: ^user_id, device_id: ^device_id, devices: ^device_info} =
+               conn.assigns
+
+      assert html = html_response(conn, 200)
+      assert html =~ "Welcome #{user_id}"
+    end
+  end
+
+  describe "logout/2" do
+    setup %{conn: conn, access_token: access_token} do
+      %{conn: init_test_session(conn, %{"access_token" => access_token})}
+    end
+
+    test "soft deletes the device, redirects to the login page, and clears the session", %{
+      conn: conn,
+      account: %{user_id: user_id},
+      device_id: device_id
+    } do
+      assert user_id |> User.get_all_device_info() |> Enum.any?(&(&1.id == device_id))
+
+      conn = get(conn, ~p"/account/logout", %{})
+
+      redir_path = redirected_to(conn)
+      assert redir_path =~ "/oauth2/auth"
+      refute conn |> get_session() |> is_map_key("access_token")
+
+      conn = get(conn, redir_path, %{})
+      assert html = html_response(conn, 200)
+      assert html =~ "Login to your account"
+
+      refute Enum.any?(User.get_all_device_info(user_id), &(&1.id == device_id))
+    end
+
+    test "soft deletes the target device, reloading the account homepage", %{
+      conn: conn,
+      account: %{user_id: user_id}
+    } do
+      device = Fixtures.create_device(user_id)
+
+      assert user_id |> User.get_all_device_info() |> Enum.any?(&(&1.id == device.id))
+
+      conn = get(conn, ~p"/account/logout?device=#{device.id}", %{})
+
+      assert redirected_to(conn) == "/account"
+
+      refute Enum.any?(User.get_all_device_info(user_id), &(&1.id == device.id))
+    end
+  end
+
+  describe "update_device_name/2" do
+    setup %{conn: conn, access_token: access_token} do
+      %{conn: init_test_session(conn, %{"access_token" => access_token})}
+    end
+
+    test "updates the given device name", %{conn: conn, account: %{user_id: user_id}, device_id: device_id} do
+      new_display_name = "my really cool device!!"
+
+      conn =
+        post(conn, ~p"/account/update_device_name", %{"device" => device_id, "new_display_name" => new_display_name})
+
+      redir_path = redirected_to(conn)
+      assert "/account" = redir_path
+
+      conn = get(conn, redir_path, %{})
+
+      assert html = html_response(conn, 200)
+      assert html =~ "Welcome #{user_id}"
+      assert html =~ new_display_name
+
+      assert {:ok, %{display_name: ^new_display_name}} = User.get_device_info(user_id, device_id)
+    end
+  end
+
+  describe "callback/2" do
+    test "completes the OAuth2 login flow, saving an access token to the session", %{
+      conn: conn,
+      account: %{user_id: user_id}
+    } do
+      conn = get(conn, ~p"/account/login", %{})
+      redir_path = redirected_to(conn)
+      assert redir_path =~ "/oauth2/auth"
+
+      ["@" <> localpart, _server_name] = String.split(user_id, ":")
+
+      # fake the redirect and filling out the username/password form
+      conn = get(conn, redir_path, %{})
+      conn = post(conn, ~p"/oauth2/auth", %{"user_id_localpart" => localpart, "password" => Fixtures.strong_password()})
+
+      redir_path = redirected_to(conn)
+      assert redir_path =~ "/account/callback"
+      conn = get(conn, redir_path, %{})
+
+      assert %{"access_token" => "" <> _} = get_session(conn)
+    end
+  end
 end
