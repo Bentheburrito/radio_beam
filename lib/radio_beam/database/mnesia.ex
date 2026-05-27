@@ -165,6 +165,18 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.Room.Database
+  def rebind_aliases(from_room_id, to_room_id) do
+    transaction(fn ->
+      match_head = room_alias(alias_struct: :"$1", room_id: from_room_id)
+      match_spec = [{match_head, [], [:"$1"]}]
+
+      Tables.RoomAlias
+      |> :mnesia.select(match_spec, :write)
+      |> Enum.each(&([alias_struct: &1, room_id: to_room_id] |> room_alias() |> :mnesia.write()))
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
   def fetch_room_id_by_alias(%Room.Alias{} = alias) do
     transaction(fn ->
       case :mnesia.read(Tables.RoomAlias, alias, :read) do

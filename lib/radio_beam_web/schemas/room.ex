@@ -60,6 +60,9 @@ defmodule RadioBeamWeb.Schemas.Room do
 
   def put_typing, do: %{"typing" => :boolean, "timeout" => optional(:integer)}
 
+  def upgrade,
+    do: %{"new_version" => :string, "additional_creators" => [Schema.array_of(&Schemas.user_id/1), default: []]}
+
   defp stringed_int(integer) when is_integer(integer), do: {:ok, integer}
 
   defp stringed_int(str_int) when is_binary(str_int) do

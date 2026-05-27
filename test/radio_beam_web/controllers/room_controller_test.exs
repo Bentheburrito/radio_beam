@@ -861,4 +861,37 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
+
+  describe "upgrade/2" do
+    test "upgrades the given room", %{conn: conn, account: %{user_id: user_id}} do
+      for from_version <- ~w|10 11 12|, to_version <- ~w|10 11 12|, from_version != to_version do
+        {:ok, room_id} = Room.create(user_id, version: from_version)
+        :pong = Room.Server.ping(room_id)
+
+        conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/upgrade", %{new_version: to_version})
+
+        assert %{"replacement_room" => "!" <> _} = json_response(conn, 200)
+      end
+    end
+
+    test "returns M_FORBIDDEN (403) if the user is not in the room", %{conn: conn} do
+      %{user_id: random_id} = Fixtures.create_account()
+
+      {:ok, room_id} = Room.create(random_id, version: "11")
+      :pong = Room.Server.ping(room_id)
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/upgrade", %{new_version: "12"})
+
+      assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
+    end
+
+    test "returns M_UNSUPPORTED_ROOM_VERSION for unsupported versions", %{conn: conn, account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      :pong = Room.Server.ping(room_id)
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/upgrade", %{new_version: "abcde123"})
+
+      assert %{"errcode" => "M_UNSUPPORTED_ROOM_VERSION"} = json_response(conn, 400)
+    end
+  end
 end

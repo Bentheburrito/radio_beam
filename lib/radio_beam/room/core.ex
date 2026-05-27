@@ -4,6 +4,7 @@ defmodule RadioBeam.Room.Core do
   """
   import Kernel, except: [send: 2]
 
+  alias Polyjuice.Util.RoomVersion
   alias RadioBeam.Room
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.Room.Chronicle
@@ -35,33 +36,39 @@ defmodule RadioBeam.Room.Core do
     chronicle_backend = Keyword.get(opts, :chronicle_backend, Chronicle.Map)
     dag_backend = Keyword.get(opts, :dag_backend, RadioBeam.DAG.Map)
 
-    chronicle =
+    with %^chronicle_backend{} = chronicle <- new_chronicle(dag_backend, chronicle_backend, creator_id, version, opts) do
+      create_event = Chronicle.get_create_event(chronicle)
+
+      room = %Room{
+        id: Chronicle.room_id(chronicle),
+        chronicle: chronicle,
+        redactions: Redactions.new!(),
+        relationships: Relationships.new!()
+      }
+
+      init_acc = {room, :queue.from_list([Chronicle.fetch_pdu!(chronicle, create_event.id)])}
+
+      create_event
+      |> Events.initial_state_stream(opts)
+      |> Enum.reduce_while(init_acc, fn event_attrs, {%Room{} = room, pdu_queue} ->
+        case send(room, event_attrs, deps) do
+          {:sent, %Room{} = room, _event_id, [pdu]} ->
+            {:cont, {room, :queue.in(pdu, pdu_queue)}}
+
+          {:error, _error} = error ->
+            {:halt, error}
+        end
+      end)
+    end
+  end
+
+  defp new_chronicle(dag_backend, chronicle_backend, creator_id, version, opts) do
+    maybe_chroncile =
       (&Room.generate_legacy_id/0)
       |> Events.create(creator_id, version, Keyword.get(opts, :content, %{}))
       |> chronicle_backend.new!(dag_backend)
 
-    create_event = Chronicle.get_create_event(chronicle)
-
-    room = %Room{
-      id: Chronicle.room_id(chronicle),
-      chronicle: chronicle,
-      redactions: Redactions.new!(),
-      relationships: Relationships.new!()
-    }
-
-    init_acc = {room, :queue.from_list([Chronicle.fetch_pdu!(chronicle, create_event.id)])}
-
-    create_event
-    |> Events.initial_state_stream(opts)
-    |> Enum.reduce_while(init_acc, fn event_attrs, {%Room{} = room, pdu_queue} ->
-      case send(room, event_attrs, deps) do
-        {:sent, %Room{} = room, _event_id, [pdu]} ->
-          {:cont, {room, :queue.in(pdu, pdu_queue)}}
-
-        {:error, _error} = error ->
-          {:halt, error}
-      end
-    end)
+    with {:error, :unauthorized} <- maybe_chroncile, do: {:error, :unsupported}
   end
 
   def send(%Room{} = room, %AuthorizedEvent{type: "m.room.redaction"} = event, _deps) do
@@ -128,5 +135,22 @@ defmodule RadioBeam.Room.Core do
       %{{^type, ^state_key} => event_id} -> {:ok, event_id}
       _else -> {:error, :not_found}
     end
+  end
+
+  def can_send_event?(room, user_id, event_type, state_key \\ :none) do
+    room_version = Chronicle.room_version(room.chronicle)
+
+    state_mapping =
+      room
+      |> get_state_mapping()
+      # TODO: Polyjuice RoomState protocol
+      |> Map.new(fn {state_event_type_and_key, event_id} ->
+        %RadioBeam.DAG.Vertex{payload: event} = RadioBeam.DAG.fetch!(room.chronicle.dag, event_id)
+        {state_event_type_and_key, event}
+      end)
+
+    state_event? = state_key != :none
+
+    RoomVersion.has_power?(room_version, user_id, ["events", event_type], state_event?, state_mapping)
   end
 end

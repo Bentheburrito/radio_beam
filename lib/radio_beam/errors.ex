@@ -43,6 +43,9 @@ defmodule RadioBeam.Errors do
   def unrecognized(message \\ "This homeserver does not implement that endpoint for the given HTTP method"),
     do: std_error_res("M_UNRECOGNIZED", message)
 
+  def unsupported_room_version(message \\ "This homeserver does not support that room version"),
+    do: std_error_res("M_UNSUPPORTED_ROOM_VERSION", message)
+
   def unknown(message \\ "An unknown error has occurred"), do: std_error_res("M_UNKNOWN", message)
 
   def endpoint_error(errcode, error) when is_atom(errcode) do

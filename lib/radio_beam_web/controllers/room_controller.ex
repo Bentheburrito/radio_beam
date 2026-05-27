@@ -1,7 +1,7 @@
 defmodule RadioBeamWeb.RoomController do
   use RadioBeamWeb, :controller
 
-  import RadioBeamWeb.Utils, only: [handle_common_error: 2, handle_common_error: 3, json_error: 4]
+  import RadioBeamWeb.Utils, only: [handle_common_error: 2, handle_common_error: 3, json_error: 3, json_error: 4]
 
   require Logger
 
@@ -9,12 +9,13 @@ defmodule RadioBeamWeb.RoomController do
   alias RadioBeam.{Errors, Room, Transaction}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
-  @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing|a
+  @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing upgrade|a
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in @schema_actions
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema, with_params?: true] when action == :send
 
   @missing_req_param_msg "Your request is missing one or more required parameters"
+  @upgrade_error_msg "Room not found, or you don't have permission to upgrade"
 
   def create(conn, _params) do
     creator_id = conn.assigns.user_id
@@ -356,4 +357,14 @@ defmodule RadioBeamWeb.RoomController do
   end
 
   def put_typing(conn, _params), do: json_error(conn, 404, :not_found, "Missing room ID")
+
+  def upgrade(conn, %{"room_id" => room_id}) do
+    %{"new_version" => version, "additional_creators" => addl_creator_ids} = conn.assigns.request
+
+    case Room.upgrade(room_id, conn.assigns.user_id, version, addl_creator_ids) do
+      {:ok, new_room_id} -> json(conn, %{replacement_room: new_room_id})
+      {:error, :unsupported} -> json_error(conn, 400, :unsupported_room_version)
+      {:error, :unauthorized} -> json_error(conn, 403, :forbidden, @upgrade_error_msg)
+    end
+  end
 end

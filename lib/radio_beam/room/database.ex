@@ -14,6 +14,7 @@ defmodule RadioBeam.Room.Database do
   @callback fetch_view(View.key()) :: {:ok, View.t()} | {:error, :not_found}
   @callback create_alias(Room.Alias.t(), Room.id(), ensure_room_exists?()) ::
               :ok | {:error, :alias_in_use | :room_does_not_exist}
+  @callback rebind_aliases(Room.id(), Room.id()) :: :ok
   @callback fetch_room_id_by_alias(Room.Alias.t()) :: {:ok, Room.t()} | {:error, :not_found}
 
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.Room.Database, :backend])
@@ -22,6 +23,7 @@ defmodule RadioBeam.Room.Database do
   defdelegate upsert_view(key, view), to: @database_backend
   defdelegate fetch_view(view_key), to: @database_backend
   defdelegate fetch_room_id_by_alias(alias), to: @database_backend
+  defdelegate rebind_aliases(from_room_id, to_room_id), to: @database_backend
 
   def create_alias(alias, room_id, ensure_room_exists?) do
     if alias.server_name != RadioBeam.Config.server_name() do

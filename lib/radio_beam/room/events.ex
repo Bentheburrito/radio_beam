@@ -108,6 +108,7 @@ defmodule RadioBeam.Room.Events do
   def create(gen_room_id!, creator_id, room_version, create_content) do
     create_content =
       create_content
+      |> Map.delete("additional_creators")
       |> maybe_put_creator(room_version, creator_id)
       |> Map.put("room_version", room_version)
 
@@ -141,7 +142,7 @@ defmodule RadioBeam.Room.Events do
   def default_power_level_content(_creator_id, "12") do
     %{
       "ban" => 50,
-      "events" => %{},
+      "events" => %{"m.room.tombstone" => 150},
       "events_default" => 0,
       "invite" => 0,
       "kick" => 50,
@@ -154,7 +155,7 @@ defmodule RadioBeam.Room.Events do
   end
 
   def default_power_level_content(creator_id, _room_version) do
-    creator_id |> default_power_level_content("12") |> put_in(["users", creator_id], 100)
+    creator_id |> default_power_level_content("12") |> put_in(["users", creator_id], 100) |> put_in(["events"], %{})
   end
 
   def canonical_alias(room_id, sender_id, alias_localpart, server_name) do
