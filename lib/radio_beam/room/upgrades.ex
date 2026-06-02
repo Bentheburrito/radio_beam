@@ -44,23 +44,28 @@ defmodule RadioBeam.Room.Upgrades do
       |> Map.take(@state_keys_to_transfer)
       |> Stream.map(&elem(&1, 1))
 
-    state_events_to_transfer =
+    {[power_levels_event], state_events_to_transfer} =
       old_room.id
       |> View.get_events!(creator_id, event_id_stream, false)
       |> Stream.map(&map_power_levels_content(new_version, &1, [creator_id | addl_creator_ids]))
-      |> Enum.map(&%{"content" => &1.content, "type" => &1.type, "state_key" => &1.state_key})
+      |> Stream.map(&%{"content" => &1.content, "type" => &1.type, "state_key" => &1.state_key})
+      |> Enum.split_with(&(&1["type"] == "m.room.power_levels"))
 
     deps.create_room.(creator_id,
-      content: create_event_content,
       addl_state_events: state_events_to_transfer,
+      content: create_event_content,
+      power_levels: power_levels_event["content"],
       version: new_version
     )
   end
 
+  # https://spec.matrix.org/v1.18/appendices/#canonical-json
+  # https://github.com/matrix-org/complement/pull/794
+  @max_int_allowed_in_matrix_spec 2 ** 53 - 1
   defp map_power_levels_content(version, %{type: "m.room.power_levels"} = event, [creator_id | _addl_creators])
        when version in ~w|1 2 3 4 5 6 7 8 9 10 11| do
     event.content["users"][creator_id]
-    |> put_in(100)
+    |> put_in(@max_int_allowed_in_matrix_spec)
     |> cap_tombstone_pl()
   end
 
