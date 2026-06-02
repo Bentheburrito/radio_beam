@@ -15,6 +15,7 @@ defmodule RadioBeam.Room.Server do
   require Logger
 
   @do_not_log_errors ~w|duplicate_annotation|a
+  @thread_errors ~w|cannot_thread_child_event thread_parent_unknown|a
 
   def start_link(%Room{id: room_id} = room), do: GenServer.start_link(__MODULE__, room, name: via(room_id))
 
@@ -100,6 +101,11 @@ defmodule RadioBeam.Room.Server do
         {:reply, e, room}
 
       {:error, error} = e when error in @do_not_log_errors ->
+        {:reply, e, room}
+
+      {:error, error} = e when error in @thread_errors ->
+        Logger.warning("user ID #{event_attrs["sender"]} tried to send a malformed thread reply: #{inspect(error)}")
+
         {:reply, e, room}
 
       {:error, error} ->

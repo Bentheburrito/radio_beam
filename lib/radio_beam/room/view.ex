@@ -8,7 +8,9 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.View.Core.InviteStateEvents
   alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.RelatedEvents
+  alias RadioBeam.Room.View.Core.Threads
   alias RadioBeam.Room.View.Core.Timeline
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User
 
   @type key() :: term()
@@ -95,6 +97,37 @@ defmodule RadioBeam.Room.View do
       %{^event_id => related_events_stream} -> {:ok, related_events_stream}
       %{} -> {:error, :not_found}
     end
+  end
+
+  def get_thread_event_ids(room_id, user_id, include, limit, from)
+      when is_integer(limit) and limit in 0..50 do
+    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
+         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}),
+         {:ok, %Threads{} = threads} <- Database.fetch_view({Threads, room_id}) do
+      fetch_pdu! = &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
+      event_ids = threads |> Threads.stream_event_ids() |> drop_until_from(from)
+
+      timeline
+      |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!, _bundle_aggregations? = true)
+      |> Stream.map(&Event.to_map/1)
+      |> filter_by_include(include)
+      |> Stream.take(limit)
+      |> then(&{:ok, Enum.to_list(&1)})
+    end
+  end
+
+  defp drop_until_from(event_ids, :latest), do: event_ids
+
+  defp drop_until_from(event_ids, from_event_id) do
+    event_ids
+    |> Stream.drop_while(&(&1 != from_event_id))
+    |> Stream.drop(1)
+  end
+
+  defp filter_by_include(event_maps, :all), do: event_maps
+
+  defp filter_by_include(event_maps, :participated) do
+    Stream.filter(event_maps, &get_in(&1, [:unsigned, "m.relations", "m.thread", :current_user_participated]))
   end
 
   @stripped_state_event_keys ~w|content sender state_key type|a

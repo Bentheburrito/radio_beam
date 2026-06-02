@@ -17,5 +17,13 @@ defmodule RadioBeamWeb.Schemas.Relations do
     }
   end
 
+  def get_threads do
+    %{
+      "from" => [Schema.any_of([Schema.enum(%{"latest" => :latest, "end" => :end}), :string]), default: :latest],
+      "include" => [Schema.enum(%{"all" => :all, "participated" => :participated}), default: :all],
+      "limit" => [&Filter.limit(&1, 50), default: 25]
+    }
+  end
+
   defp optional(type), do: [type, :optional]
 end

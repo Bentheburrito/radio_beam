@@ -130,6 +130,8 @@ defmodule RadioBeamWeb.Router do
           get "/thumbnail/:server_name/:media_id", ContentRepoController, :thumbnail, rl(:infrequent_bursts)
         end
 
+        get "/rooms/:room_id/threads", RelationsController, :get_threads, rl(:frequent_cheap)
+
         scope "/rooms/:room_id/relations" do
           get "/:event_id", RelationsController, :get_children, rl(:user_sync)
           get "/:event_id/:rel_type", RelationsController, :get_children, rl(:user_sync)

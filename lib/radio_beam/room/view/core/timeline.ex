@@ -166,9 +166,11 @@ defmodule RadioBeam.Room.View.Core.Timeline do
         timeline.event_metadata[event_id].bundled_event_ids
         |> Stream.map(&{&1, Map.fetch!(timeline.event_metadata, &1)})
         |> Stream.filter(event_visible?)
-        |> Enum.map(fn {event_id, metadata} -> Event.new!(metadata.topological_id, fetch_pdu!.(event_id), []) end)
+        |> Enum.map(fn {event_id, metadata} ->
+          Event.new!(metadata.topological_id, fetch_pdu!.(event_id), [], user_id)
+        end)
 
-      Event.new!(topological_id, fetch_pdu!.(event_id), visible_bundled_events)
+      Event.new!(topological_id, fetch_pdu!.(event_id), visible_bundled_events, user_id)
     end)
   end
 
@@ -266,12 +268,14 @@ defmodule RadioBeam.Room.View.Core.Timeline do
           timeline.event_metadata[event_id].bundled_event_ids
           |> Stream.map(&{&1, Map.fetch!(timeline.event_metadata, &1)})
           |> Stream.filter(event_visible?)
-          |> Enum.map(fn {event_id, metadata} -> Event.new!(metadata.topological_id, fetch_pdu!.(event_id), []) end)
+          |> Enum.map(fn {event_id, metadata} ->
+            Event.new!(metadata.topological_id, fetch_pdu!.(event_id), [], user_id)
+          end)
         else
           []
         end
 
-      Event.new!(metadata.topological_id, fetch_pdu!.(event_id), visible_bundled_events)
+      Event.new!(metadata.topological_id, fetch_pdu!.(event_id), visible_bundled_events, user_id)
     end)
   end
 
@@ -292,7 +296,7 @@ defmodule RadioBeam.Room.View.Core.Timeline do
   end
 
   defp pubsub_messages(room_id, topological_id, pdu) do
-    event = Event.new!(topological_id, pdu, [])
+    event = Event.new!(topological_id, pdu, [], nil)
     new_event_message = {PubSub.all_room_events(room_id), {:room_event, room_id, event}}
 
     if pdu.event.type == "m.room.member" do

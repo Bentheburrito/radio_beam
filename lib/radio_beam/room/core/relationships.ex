@@ -32,6 +32,14 @@ defmodule RadioBeam.Room.Core.Relationships do
     end
   end
 
+  def apply_event(%Room{} = room, %AuthorizedEvent{content: %{"m.relates_to" => %{"rel_type" => "m.thread"}}} = event) do
+    case Room.Chronicle.fetch_event(room.chronicle, event.content["m.relates_to"]["event_id"]) do
+      {:ok, %{content: %{"m.relates_to" => _}}} -> {:error, :cannot_thread_child_event}
+      {:ok, _event} -> room
+      {:error, :not_found} -> {:error, :thread_parent_unknown}
+    end
+  end
+
   # TOIMPL: other relationships
 
   def apply_event(%Room{} = room, _event), do: room

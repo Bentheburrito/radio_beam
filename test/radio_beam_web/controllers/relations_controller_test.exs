@@ -201,4 +201,45 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       assert {:ok, ^eid4} = RadioBeam.Sync.parse_event_id_at(next_batch, room_id)
     end
   end
+
+  describe "get_threads/2" do
+    test "returns a chunk of threads", %{conn: conn, account: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      :pong = Room.Server.ping(room_id)
+
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/threads", %{})
+
+      assert %{"chunk" => []} = response = json_response(conn, 200)
+      refute is_map_key(response, "next_batch")
+
+      {:ok, thread_id} = Room.send_text_message(room_id, user_id, "hello world")
+      {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id, "the world doesn't care man"))
+
+      {:ok, another_thread_id} = Room.send_text_message(room_id, user_id, "hello?")
+      {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(another_thread_id, "alone again..."))
+
+      :pong = Room.Server.ping(room_id)
+
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/threads?limit=1", %{})
+      assert %{"chunk" => [%{"event_id" => ^another_thread_id}], "next_batch" => from} = json_response(conn, 200)
+
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/threads?from=#{from}", %{})
+      assert %{"chunk" => [%{"event_id" => ^thread_id}], "next_batch" => from2} = json_response(conn, 200)
+
+      assert from != from2
+
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/threads?from=#{from2}", %{})
+
+      assert %{"chunk" => []} = response = json_response(conn, 200)
+      refute is_map_key(response, "next_batch")
+    end
+
+    @tag :capture_log
+    test "returns an empty chunk when the room doesn't exist", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v1/rooms/!asdft3/threads", %{})
+
+      assert %{"chunk" => []} = response = json_response(conn, 200)
+      refute is_map_key(response, "next_batch")
+    end
+  end
 end

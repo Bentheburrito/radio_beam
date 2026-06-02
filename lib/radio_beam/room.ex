@@ -393,6 +393,14 @@ defmodule RadioBeam.Room do
     end
   end
 
+  def get_thread_event_ids(room_id, user_id, include, limit, from \\ :latest) do
+    case Room.View.get_thread_event_ids(room_id, user_id, include, limit, from) do
+      {:ok, []} -> {:ok, [], :end}
+      {:ok, thread_event_maps} -> {:ok, thread_event_maps, List.last(thread_event_maps).event_id}
+      {:error, _} = error -> error
+    end
+  end
+
   def get_children(room_id, user_id, event_id, limit, opts) do
     with {:ok, child_event_stream} <- Room.View.get_child_events(room_id, user_id, event_id) do
       rel_type = Keyword.get(opts, :rel_type)

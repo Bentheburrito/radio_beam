@@ -1,6 +1,8 @@
 defmodule RadioBeam.RoomTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog, only: [capture_log: 1]
+
   alias RadioBeam.Room
   alias RadioBeam.RoomRegistry
 
@@ -425,6 +427,23 @@ defmodule RadioBeam.RoomTest do
       assert {:error, :duplicate_annotation} = Room.send(room_id, creator.user_id, "m.reaction", rel)
       assert {:ok, _} = Room.send(room_id, account.user_id, "m.reaction", rel)
       assert {:error, :duplicate_annotation} = Room.send(room_id, account.user_id, "m.reaction", rel)
+    end
+
+    test "will refuse to make an event with an m.relates_to a thread root", %{account1: %{user_id: creator_id}} do
+      {:ok, room_id} = Room.create(creator_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "some message")
+
+      rel = %{"m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.annotation", "key" => "👍"}}
+      assert {:ok, reaction_id} = Room.send(room_id, creator_id, "m.reaction", rel)
+
+      logs =
+        capture_log(fn ->
+          assert {:error, :cannot_thread_child_event} =
+                   Room.send(room_id, creator_id, "m.room.message", relates_to(reaction_id, "hello??"))
+        end)
+
+      assert logs =~ "tried to send a malformed thread reply: :cannot_thread_child_event"
     end
   end
 
@@ -1059,6 +1078,106 @@ defmodule RadioBeam.RoomTest do
 
       assert {:ok, %{content: %{"events_default" => 50, "invite" => 50}}} =
                Room.get_state(room_id, user_id, "m.room.power_levels", "")
+    end
+  end
+
+  describe "get_thread_event_ids/4,5" do
+    setup do
+      %{user_id: user_id} = account1 = Fixtures.create_account()
+      %{user_id: user_id2} = account2 = Fixtures.create_account()
+      %{user_id: user_id3} = account3 = Fixtures.create_account()
+
+      {:ok, room_id} = Room.create(account1.user_id)
+
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
+      {:ok, _event_id} = Room.invite(room_id, account1.user_id, account3.user_id)
+      {:ok, _event_id} = Room.join(room_id, account2.user_id, "requested assistance")
+      {:ok, _event_id} = Room.join(room_id, account3.user_id, "requested assistance")
+
+      {:ok, thread_id1} = Room.send_text_message(room_id, user_id, "I'm in the lobby")
+      {:ok, _} = Room.send(room_id, user_id2, "m.room.message", relates_to(thread_id1, "I'll be down in a minute"))
+      {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id1, "oki"))
+      {:ok, _} = Room.send(room_id, user_id3, "m.room.message", relates_to(thread_id1, "omw now"))
+
+      {:ok, _non_thread} = Room.send_text_message(room_id, user_id2, "reminder to bring a jacket, it's cold")
+
+      {:ok, thread_id2} = Room.send_text_message(room_id, user_id2, "let's plan to leave by midnight btw")
+      {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id2, "sounds good"))
+
+      %{
+        room_id: room_id,
+        account1: account1,
+        account2: account2,
+        account3: account3,
+        thread_id1: thread_id1,
+        thread_id2: thread_id2
+      }
+    end
+
+    test "returns an empty list when there are no threads in the room", %{account1: %{user_id: user_id}} do
+      {:ok, room_id} = Room.create(user_id)
+      :pong = Room.Server.ping(room_id)
+
+      for include <- ~w|all participated|a do
+        assert {:ok, [], :end} = Room.get_thread_event_ids(room_id, user_id, include, 5)
+      end
+    end
+
+    test "returns all thread root events in a room, respecting the 'include' filter", %{
+      room_id: room_id,
+      account1: %{user_id: user_id},
+      account2: %{user_id: user_id2},
+      account3: %{user_id: user_id3},
+      thread_id1: thread_id1,
+      thread_id2: thread_id2
+    } do
+      for include <- ~w|all participated|a, user_id <- [user_id, user_id2] do
+        assert {:ok, [%{event_id: ^thread_id2}, %{event_id: ^thread_id1}], ^thread_id1} =
+                 Room.get_thread_event_ids(room_id, user_id, include, 5)
+      end
+
+      assert {:ok, [%{event_id: ^thread_id1}], ^thread_id1} =
+               Room.get_thread_event_ids(room_id, user_id3, :participated, 5)
+    end
+
+    test "returns up to the limit and can paginate through threads", %{
+      room_id: room_id,
+      account1: %{user_id: user_id},
+      account2: %{user_id: user_id2},
+      thread_id1: thread_id1,
+      thread_id2: thread_id2
+    } do
+      # 3..5 bc `setup/0` already created the first two
+      thread_ids =
+        for i <- 3..5 do
+          {:ok, thread_id} = Room.send_text_message(room_id, user_id, "thread #{i}")
+          {:ok, _} = Room.send(room_id, user_id2, "m.room.message", relates_to(thread_id, "thread reply #{i}"))
+          thread_id
+        end ++ [thread_id1, thread_id2]
+
+      assert {:ok, [%{event_id: thread_id2}, %{event_id: thread_id1}], from} =
+               Room.get_thread_event_ids(room_id, user_id, :all, 2)
+
+      assert thread_id1 in thread_ids
+      assert thread_id2 in thread_ids
+
+      assert {:ok, [%{event_id: thread_id3}, %{event_id: thread_id4}], from2} =
+               Room.get_thread_event_ids(room_id, user_id, :all, 2, from)
+
+      assert thread_id3 in thread_ids
+      assert thread_id4 in thread_ids
+      refute thread_id3 in [thread_id1, thread_id2]
+      refute thread_id4 in [thread_id1, thread_id2]
+
+      assert {:ok, [%{event_id: thread_id5}], from3} = Room.get_thread_event_ids(room_id, user_id, :all, 2, from2)
+
+      assert thread_id5 in thread_ids
+
+      assert {:ok, [], :end} = Room.get_thread_event_ids(room_id, user_id, :all, 2, from3)
+    end
+
+    test "returns {:error, :not_found} when the room doesn't exist", %{account1: %{user_id: user_id}} do
+      assert {:error, :not_found} = Room.get_thread_event_ids("!asdfasdf123", user_id, :all, 4)
     end
   end
 
