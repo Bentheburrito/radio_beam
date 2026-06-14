@@ -26,11 +26,15 @@ defmodule RadioBeam.Room.EphemeralState.Server do
   end
 
   defp lookup_if_room_exists(room_id) do
+    case Registry.lookup(@registry, room_id) do
+      [{pid, _}] -> {:ok, pid}
+      _ -> start_if_room_exists(room_id)
+    end
+  end
+
+  defp start_if_room_exists(room_id) do
     if RadioBeam.Room.exists?(room_id) do
-      case Registry.lookup(@registry, room_id) do
-        [{pid, _}] -> {:ok, pid}
-        _ -> with {:error, {:already_started, pid}} <- Supervisor.start_ephemeral_state_server(room_id), do: {:ok, pid}
-      end
+      with {:error, {:already_started, pid}} <- Supervisor.start_ephemeral_state_server(room_id), do: {:ok, pid}
     else
       {:error, :not_found}
     end
