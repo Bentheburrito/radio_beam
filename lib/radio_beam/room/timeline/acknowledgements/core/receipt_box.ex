@@ -32,9 +32,10 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBox do
 
   def count(%__MODULE__{} = box), do: map_size(box.receipt_map)
 
-  def get_all(%__MODULE__{} = box, since_ts \\ :all) do
+  def get_all(%__MODULE__{} = box, for_user_id, since_ts \\ :all) do
     box.receipt_map
     |> filter_since(since_ts)
+    |> reject_others_private_receipts(for_user_id)
     |> Enum.reduce(%{}, fn {{user_id, receipt_type, thread_id}, receipt}, m_receipt_content ->
       payload = payload(thread_id, receipt.timestamp)
 
@@ -51,6 +52,12 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBox do
 
   defp filter_since(receipts, timestamp),
     do: Stream.filter(receipts, fn {_k, receipt} -> receipt.timestamp >= timestamp end)
+
+  defp reject_others_private_receipts(receipts, getting_user_id) do
+    Stream.reject(receipts, fn {{user_id, receipt_type, _thread_id}, _receipt} ->
+      user_id != getting_user_id and receipt_type == "m.read.private"
+    end)
+  end
 
   defp payload(:unthreaded, timestamp), do: %{ts: timestamp}
   defp payload(:main, timestamp), do: %{thread_id: "main", ts: timestamp}

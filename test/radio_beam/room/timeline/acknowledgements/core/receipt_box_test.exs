@@ -54,11 +54,11 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBoxTest do
     } do
       {:ok, event_id2} = Room.send_text_message(room_id, other_id, "sup")
 
-      assert %{} = empty = ReceiptBox.get_all(box)
+      assert %{} = empty = ReceiptBox.get_all(box, user_id)
       assert 0 = map_size(empty)
 
       box = ReceiptBox.put(box, user_id, event_id, "m.read")
-      assert %{^event_id => %{"m.read" => %{^user_id => %{ts: _} = payload}}} = ReceiptBox.get_all(box)
+      assert %{^event_id => %{"m.read" => %{^user_id => %{ts: _} = payload}}} = ReceiptBox.get_all(box, user_id)
       refute is_map_key(payload, :thread_id)
 
       box = ReceiptBox.put(box, user_id, event_id2, "m.read", :main)
@@ -66,7 +66,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBoxTest do
       assert %{
                ^event_id => %{"m.read" => %{^user_id => %{ts: _} = payload}},
                ^event_id2 => %{"m.read" => %{^user_id => %{ts: _, thread_id: "main"}}}
-             } = ReceiptBox.get_all(box)
+             } = ReceiptBox.get_all(box, user_id)
 
       refute is_map_key(payload, :thread_id)
 
@@ -75,7 +75,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBoxTest do
       assert %{
                ^event_id => %{"m.read" => %{^user_id => %{ts: _} = payload}},
                ^event_id2 => %{"m.read" => %{^user_id => %{ts: _, thread_id: "main"}, ^other_id => %{ts: _} = payload2}}
-             } = ReceiptBox.get_all(box)
+             } = ReceiptBox.get_all(box, user_id)
 
       refute is_map_key(payload, :thread_id)
       refute is_map_key(payload2, :thread_id)
@@ -100,22 +100,60 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBoxTest do
 
       assert %{
                ^event_id2 => %{"m.read" => %{^user_id => %{ts: _, thread_id: "main"}, ^other_id => %{ts: _} = payload2}}
-             } = content = ReceiptBox.get_all(box, now - 2)
+             } = content = ReceiptBox.get_all(box, user_id, now - 2)
 
       refute is_map_key(content, event_id)
 
       refute is_map_key(payload2, :thread_id)
 
       assert %{^event_id2 => %{"m.read" => %{^other_id => %{ts: _} = payload2}} = m_reads} =
-               content = ReceiptBox.get_all(box, now - 1)
+               content = ReceiptBox.get_all(box, user_id, now - 1)
 
       refute is_map_key(content, event_id)
       refute is_map_key(m_reads, user_id)
 
       refute is_map_key(payload2, :thread_id)
 
-      assert %{} = content = ReceiptBox.get_all(box, now)
+      assert %{} = content = ReceiptBox.get_all(box, user_id, now)
       assert 0 = map_size(content)
+    end
+
+    test "only includes the requesting user's private receipts, not others'", %{
+      box: box,
+      user_id: user_id,
+      other_id: other_id,
+      event_id: event_id
+    } do
+      box = ReceiptBox.put(box, user_id, event_id, "m.read")
+      assert %{^event_id => %{"m.read" => %{^user_id => %{ts: _} = payload}}} = ReceiptBox.get_all(box, user_id)
+      refute is_map_key(payload, :thread_id)
+
+      box = ReceiptBox.put(box, user_id, event_id, "m.read.private")
+
+      assert %{
+               ^event_id => %{"m.read" => %{^user_id => %{ts: _}}, "m.read.private" => %{^user_id => %{ts: _}}}
+             } = ReceiptBox.get_all(box, user_id)
+
+      box = ReceiptBox.put(box, other_id, event_id, "m.read")
+      box = ReceiptBox.put(box, other_id, event_id, "m.read.private")
+
+      assert %{
+               ^event_id => %{
+                 "m.read.private" => %{^user_id => %{ts: _}} = private_receipts,
+                 "m.read" => %{^user_id => %{ts: _}, ^other_id => %{ts: _}}
+               }
+             } = ReceiptBox.get_all(box, user_id)
+
+      refute is_map_key(private_receipts, other_id)
+
+      assert %{
+               ^event_id => %{
+                 "m.read.private" => %{^other_id => %{ts: _}} = private_receipts,
+                 "m.read" => %{^user_id => %{ts: _}, ^other_id => %{ts: _}}
+               }
+             } = ReceiptBox.get_all(box, other_id)
+
+      refute is_map_key(private_receipts, user_id)
     end
   end
 end
