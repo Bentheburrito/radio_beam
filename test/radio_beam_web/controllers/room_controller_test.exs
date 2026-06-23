@@ -844,6 +844,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       account: %{user_id: user_id} = account
     } do
       {:ok, room_id} = Room.create(account.user_id)
+      :pong = Room.Server.ping(room_id)
 
       for typing <- ~w|true false|a do
         req_body = %{typing: typing, timeout: 5_000}
