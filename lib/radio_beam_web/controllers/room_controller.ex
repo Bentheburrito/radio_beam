@@ -6,10 +6,11 @@ defmodule RadioBeamWeb.RoomController do
   require Logger
 
   alias RadioBeam.Room.EphemeralState
+  alias RadioBeam.Room.Timeline.Acknowledgements
   alias RadioBeam.{Errors, Room, Transaction}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
-  @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing upgrade|a
+  @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing upgrade put_receipt|a
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in @schema_actions
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema, with_params?: true] when action == :send
@@ -365,6 +366,17 @@ defmodule RadioBeamWeb.RoomController do
       {:ok, new_room_id} -> json(conn, %{replacement_room: new_room_id})
       {:error, :unsupported} -> json_error(conn, 400, :unsupported_room_version)
       {:error, :unauthorized} -> json_error(conn, 403, :forbidden, @upgrade_error_msg)
+    end
+  end
+
+  @thread_err_msg "The given thread_id is not a valid thread"
+  def put_receipt(conn, %{"room_id" => room_id, "type" => receipt_type, "event_id" => event_id}) do
+    thread_id = Map.fetch!(conn.assigns.request, "thread_id")
+    user_id = conn.assigns.user_id
+
+    case Acknowledgements.put_read_receipt(room_id, user_id, event_id, receipt_type, thread_id) do
+      :ok -> json(conn, %{})
+      {:error, e} when e in ~w|not_a_thread invalid_thread_id|a -> json_error(conn, 400, :bad_json, @thread_err_msg)
     end
   end
 end

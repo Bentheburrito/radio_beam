@@ -894,4 +894,69 @@ defmodule RadioBeamWeb.RoomControllerTest do
       assert %{"errcode" => "M_UNSUPPORTED_ROOM_VERSION"} = json_response(conn, 400)
     end
   end
+
+  describe "put_receipt/2" do
+    test "returns an empty object (200)", %{conn: conn, account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      for type <- ~w|m.read m.read.private|, request_body <- [%{thread_id: "main"}, %{}] do
+        conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/#{type}/#{event_id}", request_body)
+        assert response = json_response(conn, 200)
+        assert 0 = map_size(response)
+      end
+    end
+
+    test "returns an empty object (200) for a threaded reply", %{conn: conn, account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+
+      {:ok, thread_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      {:ok, event_id} =
+        Room.send(room_id, account.user_id, "m.room.message", %{
+          "body" => "what's up",
+          "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => thread_id}
+        })
+
+      for type <- ~w|m.read m.read.private| do
+        conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/#{type}/#{event_id}", %{thread_id: thread_id})
+        assert response = json_response(conn, 200)
+        assert 0 = map_size(response)
+      end
+    end
+
+    test "returns M_BAD_JSON (400) when the thread_id is invalid", %{conn: conn, account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      for type <- ~w|m.read m.read.private|, invalid_thread_id <- [123, %{}, nil] do
+        conn =
+          post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/#{type}/#{event_id}", %{
+            thread_id: invalid_thread_id
+          })
+
+        assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+        assert error =~ "thread_id"
+      end
+    end
+
+    test "returns M_BAD_JSON (400) when the thread_id does not point to a thread root", %{conn: conn, account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+
+      {:ok, not_a_thread_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      for type <- ~w|m.read m.read.private| do
+        conn =
+          post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/#{type}/#{event_id}", %{
+            thread_id: not_a_thread_id
+          })
+
+        assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+        assert error =~ "thread_id"
+      end
+    end
+  end
 end

@@ -63,6 +63,10 @@ defmodule RadioBeamWeb.Schemas.Room do
   def upgrade,
     do: %{"new_version" => :string, "additional_creators" => [Schema.array_of(&Schemas.user_id/1), default: []]}
 
+  def put_receipt do
+    %{"thread_id" => [Schema.any_of([Schema.enum(%{"main" => :main}), :string]), default: :unthreaded]}
+  end
+
   defp stringed_int(integer) when is_integer(integer), do: {:ok, integer}
 
   defp stringed_int(str_int) when is_binary(str_int) do
