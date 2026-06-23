@@ -3,11 +3,13 @@ defmodule RadioBeam.Room.EphemeralState.Server do
   use GenServer
 
   alias RadioBeam.PubSub
-  alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.EphemeralState.Core
   alias RadioBeam.Room.EphemeralState.Server.Supervisor
 
   @registry RadioBeam.RoomEphemeralStateRegistry
+
+  @enforce_keys [:room_id]
+  defstruct room_id: nil, ephemeral_state: Core.new!()
 
   ### API ###
 
@@ -43,31 +45,31 @@ defmodule RadioBeam.Room.EphemeralState.Server do
   ### IMPL ###
 
   @impl GenServer
-  def init(room_id), do: {:ok, {room_id, Core.new!()}}
+  def init(room_id), do: {:ok, %__MODULE__{room_id: room_id}}
 
   @impl GenServer
-  def handle_call(:all_typing, _from, {room_id, %EphemeralState{} = state}),
-    do: {:reply, Core.all_typing(state), {room_id, state}}
+  def handle_call(:all_typing, _from, %__MODULE__{} = state),
+    do: {:reply, Core.all_typing(state.ephemeral_state), state}
 
   @impl GenServer
-  def handle_call({:put_typing, user_id, timeout}, _from, {room_id, %EphemeralState{} = state}) do
-    state = Core.put_typing(state, user_id, timeout)
-    broadcast(room_id, state)
-    {:reply, state, {room_id, state}}
+  def handle_call({:put_typing, user_id, timeout}, _from, %__MODULE__{} = state) do
+    ephemeral_state = Core.put_typing(state.ephemeral_state, user_id, timeout)
+    broadcast(state.room_id, ephemeral_state)
+    {:reply, :ok, put_in(state.ephemeral_state, ephemeral_state)}
   end
 
   @impl GenServer
-  def handle_call({:delete_typing, user_id}, _from, {room_id, %EphemeralState{} = state}) do
-    state = Core.delete_typing(state, user_id)
-    broadcast(room_id, state)
-    {:reply, state, {room_id, state}}
+  def handle_call({:delete_typing, user_id}, _from, %__MODULE__{} = state) do
+    ephemeral_state = Core.delete_typing(state.ephemeral_state, user_id)
+    broadcast(state.room_id, state.ephemeral_state)
+    {:reply, :ok, put_in(state.ephemeral_state, ephemeral_state)}
   end
 
   @impl GenServer
-  def handle_info({:delete_typing, user_id}, {room_id, %EphemeralState{} = state}) do
-    state = Core.delete_typing(state, user_id)
-    broadcast(room_id, state)
-    {:noreply, {room_id, state}}
+  def handle_info({:delete_typing, user_id}, %__MODULE__{} = state) do
+    ephemeral_state = Core.delete_typing(state.ephemeral_state, user_id)
+    broadcast(state.room_id, ephemeral_state)
+    {:noreply, put_in(state.ephemeral_state, ephemeral_state)}
   end
 
   defp broadcast(room_id, state),
