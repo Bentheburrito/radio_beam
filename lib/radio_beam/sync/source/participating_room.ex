@@ -10,9 +10,11 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
   alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.Sync.Core
   alias RadioBeam.Room.Sync.JoinedRoomResult
+  alias RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBox
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room.View
   alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Sync.NextBatch
   alias RadioBeam.Sync.Source
 
   require Logger
@@ -21,7 +23,8 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
   def top_level_path(_room_id, timeline), do: ["rooms", "join", timeline.room_id]
 
   @impl Source
-  def inputs, do: ~w|account_data user_id device_id ignored_user_ids event_filter known_memberships full_state?|a
+  def inputs,
+    do: ~w|account_data user_id device_id ignored_user_ids event_filter known_memberships full_state? full_last_batch|a
 
   @impl Source
   def run(inputs, room_id, sink_pid) do
@@ -29,12 +32,19 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
     |> PubSub.all_room_events()
     |> PubSub.subscribe()
 
+    since_ts =
+      case Map.fetch(inputs, :full_last_batch) do
+        {:ok, %NextBatch{} = token} -> NextBatch.timestamp(token)
+        _else -> :all
+      end
+
     inputs =
       put_in(inputs, [:functions], %{
         event_stream: &View.timeline_event_stream!(&1, inputs.user_id, :tip),
         get_events_for_user: &View.get_events!(&1, inputs.user_id, &2),
         get_invite_state_for_user: &RadioBeam.Room.get_invite_state_events(&1, inputs.user_id),
-        typing_user_ids: &RadioBeam.Room.EphemeralState.all_typing/1
+        typing_user_ids: &RadioBeam.Room.EphemeralState.all_typing/1,
+        read_receipts: &RadioBeam.Room.Timeline.Acknowledgements.get_all_receipts(&1, inputs.user_id, since_ts)
       })
 
     inputs
@@ -63,8 +73,22 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
           end
 
         {:room_ephemeral_state_update, ^room_id, %EphemeralState{} = state} ->
-          room_sync_result =
-            JoinedRoomResult.new_ephemeral(room_id, inputs.account_data, "join", EphemeralState.Core.all_typing(state))
+          typing_user_ids = EphemeralState.Core.all_typing(state)
+
+          room_sync_result = JoinedRoomResult.new_ephemeral(room_id, inputs.account_data, "join", typing_user_ids, %{})
+
+          {:ok, room_sync_result, maybe_next_batch(inputs, room_sync_result)}
+
+        {:room_ephemeral_state_update, ^room_id, %ReceiptBox{} = receipt_box} ->
+          since_ts =
+            case Map.fetch(inputs, :full_last_batch) do
+              {:ok, %NextBatch{} = token} -> NextBatch.timestamp(token)
+              _else -> :all
+            end
+
+          receipts = ReceiptBox.get_all(receipt_box, inputs.user_id, since_ts)
+
+          room_sync_result = JoinedRoomResult.new_ephemeral(room_id, inputs.account_data, "join", [], receipts)
 
           {:ok, room_sync_result, maybe_next_batch(inputs, room_sync_result)}
       end)
@@ -92,6 +116,7 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
       receive do
         {:room_event, "!" <> _, %Event{}} = message -> message
         {:room_ephemeral_state_update, "!" <> _, %EphemeralState{}} = message -> message
+        {:room_ephemeral_state_update, "!" <> _, %ReceiptBox{}} = message -> message
       end
     end)
   end

@@ -6,7 +6,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
-  defstruct ~w|room_id timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data typing|a
+  defstruct ~w|room_id timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data typing receipts|a
 
   @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [Event.t()], state_events: [Room.event_id()]}
 
@@ -75,12 +75,13 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         filter: filter,
         current_membership: membership,
         account_data: Map.get(account_data, room.id, %{}),
-        typing: Keyword.get(opts, :typing, [])
+        typing: Keyword.get(opts, :typing, []),
+        receipts: Keyword.get(opts, :receipts, %{})
       }
     end
   end
 
-  def new_ephemeral(room_id, account_data, membership, typing_user_ids) do
+  def new_ephemeral(room_id, account_data, membership, typing_user_ids, receipts) do
     %__MODULE__{
       room_id: room_id,
       timeline_events: [],
@@ -91,7 +92,8 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
       filter: EventFilter.new(%{}),
       current_membership: membership,
       account_data: Map.get(account_data, room_id, %{}),
-      typing: typing_user_ids
+      typing: typing_user_ids,
+      receipts: receipts
     }
   end
 
@@ -172,7 +174,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         %{
           timeline: timeline,
           state: %{events: Enum.map(room_result.state_events, to_event)},
-          ephemeral: %{events: encode_ephemeral(room_result.typing)},
+          ephemeral: %{events: encode_ephemeral(room_result.typing, room_result.receipts)},
           account_data: %{
             "events" =>
               Enum.map(room_result.account_data, fn {type, content} -> %{"type" => type, "content" => content} end)
@@ -182,8 +184,10 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
       )
     end
 
-    defp encode_ephemeral([]), do: []
-    defp encode_ephemeral(user_ids), do: [encode_typing(user_ids)]
+    defp encode_ephemeral(user_ids, receipts),
+      do: Enum.reject([encode_typing(user_ids), encode_receipts(receipts)], &(&1 == :none))
+
+    defp encode_typing([]), do: :none
 
     defp encode_typing(user_ids) do
       %{
@@ -191,6 +195,9 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         content: %{user_ids: user_ids}
       }
     end
+
+    defp encode_receipts(receipts) when map_size(receipts) == 0, do: :none
+    defp encode_receipts(receipts), do: %{type: "m.receipt", content: receipts}
   end
 
   # we need to remove events that have been bundled with an older event

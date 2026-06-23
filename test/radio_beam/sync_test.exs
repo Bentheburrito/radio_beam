@@ -2,8 +2,10 @@ defmodule RadioBeam.SyncTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
+  alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
+  alias RadioBeam.Room.Timeline.Acknowledgements
   alias RadioBeam.Sync
   alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User
@@ -272,6 +274,34 @@ defmodule RadioBeam.SyncTest do
 
       assert %{"rooms" => %{"invite" => %{^room_id => %InvitedRoomResult{}}}} =
                Sync.perform_v2(account.user_id, device.id, [])
+    end
+
+    test "includes typing and read receipt ephemeral events", %{account: %{user_id: creator_id}, device: device} do
+      %{user_id: user_id} = Fixtures.create_account()
+
+      {:ok, room_id1} = Room.create(creator_id)
+      {:ok, _event_id} = Room.invite(room_id1, creator_id, user_id)
+      {:ok, event_id} = Room.join(room_id1, user_id)
+
+      EphemeralState.put_typing(room_id1, user_id, :timer.seconds(4))
+
+      assert %{"rooms" => %{"join" => %{^room_id1 => %JoinedRoomResult{typing: [^user_id], receipts: receipts}}}} =
+               Sync.perform_v2(creator_id, device.id, [])
+
+      assert 0 = map_size(receipts)
+
+      :ok = Acknowledgements.put_read_receipt(room_id1, user_id, event_id, "m.read", :unthreaded)
+
+      assert %{
+               "rooms" => %{
+                 "join" => %{
+                   ^room_id1 => %JoinedRoomResult{
+                     typing: [^user_id],
+                     receipts: %{^event_id => %{"m.read" => %{^user_id => %{ts: _}}}}
+                   }
+                 }
+               }
+             } = Sync.perform_v2(creator_id, device.id, [])
     end
   end
 

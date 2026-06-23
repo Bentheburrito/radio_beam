@@ -28,6 +28,7 @@ defmodule RadioBeam.Room.Sync.Core do
       membership when membership in ~w|ban join leave| ->
         event_stream = inputs.functions.event_stream.(room.id)
         typing_user_ids = inputs.functions.typing_user_ids.(room.id)
+        receipts = inputs.functions.read_receipts.(room.id)
 
         if Enum.empty?(event_stream) do
           :no_update
@@ -38,7 +39,8 @@ defmodule RadioBeam.Room.Sync.Core do
             membership,
             event_stream,
             maybe_last_sync_room_state_events,
-            typing_user_ids
+            typing_user_ids,
+            receipts
           )
         end
 
@@ -64,7 +66,8 @@ defmodule RadioBeam.Room.Sync.Core do
          membership,
          event_stream,
          maybe_last_sync_room_state_events,
-         typing_user_ids
+         typing_user_ids,
+         receipts
        ) do
     maybe_to_event =
       with "$" <> _ = to_event_id <- inputs.last_batch,
@@ -103,7 +106,8 @@ defmodule RadioBeam.Room.Sync.Core do
       full_state?: inputs.full_state?,
       known_memberships: inputs.known_memberships,
       filter: inputs.event_filter,
-      typing: typing_user_ids
+      typing: typing_user_ids,
+      receipts: receipts
     ]
 
     JoinedRoomResult.new(

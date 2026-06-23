@@ -81,7 +81,16 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
 
       get_events_for_user = get_events_for_user_fxn(room, timeline, account.user_id)
 
-      for opts <- [[], [typing: ["@abcde:localhost"]]] do
+      receipts = %{
+        List.first(timeline_events).id => %{"m.read" => %{account.user_id => %{"ts" => RadioBeam.Time.now()}}}
+      }
+
+      for opts <- [
+            [],
+            [typing: ["@abcde:localhost"]],
+            [typing: ["@abcde:localhost"], receipts: receipts],
+            [receipts: receipts]
+          ] do
         %JoinedRoomResult{} =
           joined_room_result =
           JoinedRoomResult.new(room, account.user_id, %{}, timeline_events, get_events_for_user, "join", opts)
@@ -97,6 +106,12 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResultTest do
         if Keyword.has_key?(opts, :typing) do
           assert json =~ ~s|m.typing|
           assert json =~ ~s|@abcde:localhost|
+        end
+
+        if Keyword.has_key?(opts, :receipts) do
+          assert json =~ ~s|m.receipt|
+          assert json =~ ~s|m.read|
+          assert json =~ account.user_id
         end
       end
     end
