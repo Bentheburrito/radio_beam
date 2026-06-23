@@ -981,4 +981,22 @@ defmodule RadioBeamWeb.RoomControllerTest do
       end
     end
   end
+
+  describe "put_markers/2" do
+    test "returns an empty object (200)", %{conn: conn, account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      for reads <- [%{"m.read" => event_id}, %{}],
+          priv_reads <- [%{"m.read.private" => event_id}, %{}],
+          fully_reads <- [%{"m.fully_read" => event_id}, %{}] do
+        request_body = reads |> Map.merge(priv_reads) |> Map.merge(fully_reads)
+
+        conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/read_markers", request_body)
+
+        assert %{} = response = json_response(conn, 200)
+        assert 0 = map_size(response)
+      end
+    end
+  end
 end

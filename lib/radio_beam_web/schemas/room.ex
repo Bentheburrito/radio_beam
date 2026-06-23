@@ -67,6 +67,10 @@ defmodule RadioBeamWeb.Schemas.Room do
     %{"thread_id" => [Schema.any_of([Schema.enum(%{"main" => :main}), :string]), default: :unthreaded]}
   end
 
+  def put_markers do
+    %{"m.fully_read" => optional(:string), "m.read" => optional(:string), "m.read.private" => optional(:string)}
+  end
+
   defp stringed_int(integer) when is_integer(integer), do: {:ok, integer}
 
   defp stringed_int(str_int) when is_binary(str_int) do

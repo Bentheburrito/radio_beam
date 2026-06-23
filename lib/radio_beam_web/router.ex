@@ -224,6 +224,7 @@ defmodule RadioBeamWeb.Router do
           post "/:room_id/upgrade", RoomController, :upgrade, rl(:infrequent_bursts)
 
           post "/:room_id/receipt/:type/:event_id", RoomController, :put_receipt, rl(:frequent_cheap)
+          post "/:room_id/read_markers", RoomController, :put_markers, rl(:frequent_cheap)
         end
 
         scope "/users" do

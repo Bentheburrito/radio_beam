@@ -10,7 +10,7 @@ defmodule RadioBeamWeb.RoomController do
   alias RadioBeam.{Errors, Room, Transaction}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
-  @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing upgrade put_receipt|a
+  @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing upgrade put_receipt put_markers|a
 
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema] when action in @schema_actions
   plug RadioBeamWeb.Plugs.EnforceSchema, [mod: RoomSchema, with_params?: true] when action == :send
@@ -379,5 +379,21 @@ defmodule RadioBeamWeb.RoomController do
       :ok -> json(conn, %{})
       {:error, e} when e in @thread_errors -> json_error(conn, 400, :bad_json, @thread_err_msg)
     end
+  end
+
+  @valid_receipt_or_marker_types Map.keys(RoomSchema.put_markers())
+  def put_markers(conn, %{"room_id" => room_id}) do
+    user_id = conn.assigns.user_id
+
+    for {type, event_id} <- conn.assigns.request, type in @valid_receipt_or_marker_types do
+      case Acknowledgements.put_read_receipt(room_id, user_id, event_id, type, :unthreaded) do
+        :ok -> :noop
+        {:error, error} -> Logger.error("Failed to put #{type} receipt/marker for #{user_id}: #{inspect(error)}")
+      end
+    end
+
+    # the spec doesn't even specify failure cases for this, we'll just silently
+    # fail if there are non-ratelimiting issues
+    json(conn, %{})
   end
 end
