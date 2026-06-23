@@ -369,14 +369,15 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
-  @thread_err_msg "The given thread_id is not a valid thread"
+  @thread_errors ~w|not_a_thread invalid_thread_id fully_read_invalid_with_thread_id|a
+  @thread_err_msg "The given thread_id is invalid, or it was provided with receipt_type of m.fully_read"
   def put_receipt(conn, %{"room_id" => room_id, "type" => receipt_type, "event_id" => event_id}) do
     thread_id = Map.fetch!(conn.assigns.request, "thread_id")
     user_id = conn.assigns.user_id
 
     case Acknowledgements.put_read_receipt(room_id, user_id, event_id, receipt_type, thread_id) do
       :ok -> json(conn, %{})
-      {:error, e} when e in ~w|not_a_thread invalid_thread_id|a -> json_error(conn, 400, :bad_json, @thread_err_msg)
+      {:error, e} when e in @thread_errors -> json_error(conn, 400, :bad_json, @thread_err_msg)
     end
   end
 end

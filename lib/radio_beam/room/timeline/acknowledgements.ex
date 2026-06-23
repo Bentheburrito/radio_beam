@@ -5,9 +5,14 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements do
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline.Acknowledgements.Server
   alias RadioBeam.Room.View
+  alias RadioBeam.User
 
-  # TOIMPL: fully read markers
-  def put_read_receipt(_room_id, _user_id, _event_id, "m.fully_read", _thread_id), do: :ok
+  def put_read_receipt(room_id, user_id, event_id, "m.fully_read", :unthreaded) do
+    User.put_fully_read(user_id, room_id, %{"event_id" => event_id})
+  end
+
+  def put_read_receipt(_room_id, _user_id, _event_id, "m.fully_read", _thread_id),
+    do: {:error, :fully_read_invalid_with_thread_id}
 
   def put_read_receipt(room_id, user_id, event_id, receipt_type, thread_id) do
     with {:ok, event} <- validate_readable_event(room_id, user_id, event_id),

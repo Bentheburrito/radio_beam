@@ -927,6 +927,27 @@ defmodule RadioBeamWeb.RoomControllerTest do
       end
     end
 
+    test "returns an empty object (200) for receipt_type == m.fully_read", %{conn: conn, account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/m.fully_read/#{event_id}", %{})
+      assert response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns M_BAD_JSON (400) for receipt_type == m.fully_read + a thread_id", %{conn: conn, account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/m.fully_read/#{event_id}", %{thread_id: "main"})
+      assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+      assert error =~ "thread_id"
+      assert error =~ "m.fully_read"
+    end
+
     test "returns M_BAD_JSON (400) when the thread_id is invalid", %{conn: conn, account: account} do
       {:ok, room_id} = Room.create(account.user_id)
 
