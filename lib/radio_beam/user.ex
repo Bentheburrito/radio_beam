@@ -95,16 +95,18 @@ defmodule RadioBeam.User do
 
   def delete_device(user_id, device_id), do: Database.soft_delete_user_device(user_id, device_id)
 
+  def put_fully_read(user_id, scope, content) do
+    config_updater = fn config, scope, _type, content -> ClientConfig.put_fully_read(config, scope, content) end
+    put_account_data(user_id, scope, "m.fully_read", content, config_updater)
+  end
+
   @spec put_account_data(id(), Room.id() | :global, String.t(), any()) ::
           {:ok, User.t()} | {:error, :invalid_room_id | :invalid_type | :not_found}
-  def put_account_data(user_id, scope, type, content_or_updater) do
+  def put_account_data(user_id, scope, type, content_or_updater, config_updater \\ &ClientConfig.put_account_data/4) do
     if exists?(user_id) do
       with {:ok, scope} <- verify_scope(scope),
            {:ok, _config} <-
-             Database.upsert_user_client_config_with(
-               user_id,
-               &ClientConfig.put_account_data(&1, scope, type, content_or_updater)
-             ) do
+             Database.upsert_user_client_config_with(user_id, &config_updater.(&1, scope, type, content_or_updater)) do
         user_id |> PubSub.account_data_updated() |> PubSub.broadcast({:account_data_updated, user_id})
         :ok
       end

@@ -156,6 +156,20 @@ defmodule RadioBeam.UserTest do
     end
   end
 
+  describe "put_fully_read/3" do
+    setup do
+      %{account: Fixtures.create_account()}
+    end
+
+    test "successfully puts m.fully_read for a room", %{account: account} do
+      {:ok, room_id} = Room.create(account.user_id)
+      content = %{"event_id" => "$hello:world.net"}
+      assert :ok = User.put_fully_read(account.user_id, room_id, content)
+
+      assert {:ok, %{^room_id => %{"m.fully_read" => ^content}}} = User.get_account_data(account.user_id)
+    end
+  end
+
   describe "put_room_tag/4" do
     setup do
       %{account: Fixtures.create_account()}
