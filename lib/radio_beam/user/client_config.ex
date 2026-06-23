@@ -35,6 +35,30 @@ defmodule RadioBeam.User.ClientConfig do
     {:ok, struct!(config, account_data: account_data)}
   end
 
+  @doc """
+  `m.fully_read`, while it is a room account data key, is disallowed from being
+  set explicitly via the usual account data API. Although the spec does not say
+  why. After [asking](https://matrix.to/#/!4YgPCZyvXlfgjRhD-4N3CfvTgVwMQ5hKq-qmouH_R-8/$RTDaepPdqsxzdCaPP3za4S7mtrovPi-N62I3pmg7nsA?via=matrix.org&via=mozilla.org&via=mechsploitation.org)
+  in the homeserver devs room, it seems like some homeservers (Synapse)
+  implicitly restrict the marker from moving "backwards". Again, the spec does
+  not highlight this as the reason for setting `m.fully_read` via a different
+  API. [MSC4446](https://github.com/matrix-org/matrix-spec-proposals/pull/4446)
+  tries to clear some of this confusion up.
+
+  Since, at the time of writing, the spec does not require homeservers to
+  prevent fully read markers from going backwards, we won't do that. We'll just
+  oblige the odd extra two APIs to set this account data.
+
+  ## Relevant Links:
+
+  - [Matrix spec](https://spec.matrix.org/latest/client-server-api/#client-behaviour-6)
+  - [MSC4446](https://github.com/matrix-org/matrix-spec-proposals/pull/4446)
+  """
+  def put_fully_read(%__MODULE__{} = config, "!" <> _ = room_id, content) do
+    account_data = RadioBeam.AccessExtras.put_nested(config.account_data, [room_id, "m.fully_read"], content)
+    {:ok, struct!(config, account_data: account_data)}
+  end
+
   @doc "Saves an event filter for the given User, overriding any existing entry."
   @spec put_event_filter(t(), EventFilter.t()) :: t()
   def put_event_filter(%__MODULE__{} = config, %EventFilter{} = filter) do

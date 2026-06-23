@@ -54,4 +54,19 @@ defmodule RadioBeam.User.ClientConfigTest do
                ClientConfig.put_account_data(config, :global, "m.some_config", &Map.put(&1, "another", "val"))
     end
   end
+
+  describe "put_fully_read/3" do
+    setup do
+      %{account: Fixtures.create_account()}
+    end
+
+    test "writes the given m.fully_read content to a room's account data", %{account: account} do
+      config = ClientConfig.new!(account.user_id)
+      room_id = Fixtures.room_id()
+      content = %{"event_id" => "$someplace:example.org"}
+
+      assert {:ok, %ClientConfig{account_data: %{^room_id => %{"m.fully_read" => ^content}}}} =
+               ClientConfig.put_fully_read(config, room_id, content)
+    end
+  end
 end
