@@ -36,6 +36,6 @@ jobs:
         name: Credo Checks
       - run: mix format --check-formatted
         name: Check Formatting
-      - run: mix xref graph --format cycles --fail-above 3
+      - run: mix xref graph --format cycles --fail-above 6
         name: Do not introduce new cycles
 

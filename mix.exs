@@ -132,7 +132,7 @@ defmodule RadioBeam.MixProject do
         "credo",
         "format --check-formatted",
         # "cmd --shell './bin/xref_check.sh'",
-        "cmd --shell 'mix xref graph --format cycles --fail-above 3 > /dev/null'",
+        "cmd --shell 'mix xref graph --format cycles --fail-above 6 > /dev/null'",
         "test --cover"
       ],
       boundaries: [

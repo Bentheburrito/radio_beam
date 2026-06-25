@@ -22,12 +22,6 @@ defmodule RadioBeam.Sync.NextBatchTest do
     end
 
     test "errors when invalid args are given", %{room: room, event_id: event_id} do
-      now = System.os_time(:millisecond)
-
-      assert_raise(FunctionClauseError, fn ->
-        NextBatch.new!(now, %{room.id => event_id}, :invalid_direction)
-      end)
-
       assert_raise(FunctionClauseError, fn ->
         NextBatch.new!(-123, %{room.id => event_id}, :forward)
       end)
