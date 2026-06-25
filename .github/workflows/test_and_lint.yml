@@ -10,8 +10,8 @@ jobs:
       GUARDIAN_TOKEN_SECRET_KEY: ${{ secrets.GUARDIAN_TOKEN_SECRET_KEY }}
     strategy:
       matrix:
-        elixir-version: ['1.19.4']
-        otp-version: ['28']
+        elixir-version: ['1.20.1']
+        otp-version: ['29']
     steps:
       - uses: actions/checkout@v2
       - uses: erlef/setup-beam@v1

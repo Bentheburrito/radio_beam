@@ -14,8 +14,6 @@ defmodule RadioBeam.User.KeyStore do
   alias RadioBeam.User.KeyStore.Core
   alias RadioBeam.User.RoomKeys
 
-  require Logger
-
   @type put_signatures_error() ::
           :unknown_key | :disallowed_key_type | :no_master_csk | :user_not_found | CrossSigningKey.put_signature_error()
 

@@ -6,8 +6,6 @@ defmodule RadioBeam.Room do
   this API.
   """
 
-  require Logger
-
   alias RadioBeam.Room
   alias RadioBeam.Room.Alias
   alias RadioBeam.Room.Database

@@ -65,33 +65,9 @@ defmodule RadioBeamWeb.ClientController do
 
     case Transaction.begin(txn_id, device_id, conn.request_path) do
       {:ok, handle} ->
-        case User.send_to_devices(request["messages"], user_id, type) do
-          :ok ->
-            Transaction.done(handle, %{})
-            json(conn, %{})
-
-          {:error, :no_message} ->
-            Transaction.abort(handle)
-
-            conn
-            |> put_status(400)
-            |> json(Errors.bad_json("Please provide send-to-device messages under the 'messages' key."))
-
-          {:error, :not_found} ->
-            Transaction.abort(handle)
-
-            conn
-            |> put_status(400)
-            |> json(Errors.bad_json("Request includes unknown users or device IDs"))
-
-          {:error, error} ->
-            Transaction.abort(handle)
-            Logger.error("Error putting batch of to-device messages for: #{inspect(error)}")
-
-            conn
-            |> put_status(500)
-            |> json(Errors.unknown())
-        end
+        :ok = User.send_to_devices(request["messages"], user_id, type)
+        Transaction.done(handle, %{})
+        json(conn, %{})
 
       {:already_done, response} ->
         json(conn, response)

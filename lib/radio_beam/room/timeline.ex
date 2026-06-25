@@ -4,8 +4,6 @@ defmodule RadioBeam.Room.Timeline do
   syncing with clients.
   """
 
-  require Logger
-
   alias RadioBeam.Room
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache

@@ -10,7 +10,7 @@ mkShellNoCC {
     gcc # for argon2
     inotify-tools # for phoenix live-reload
     graphviz # for visualizing module boundary dependencies with :boundary
-    beam28Packages.elixir_1_19
+    beam29Packages.elixir_1_20
   ];
   # Set env vars
   # GREETING = "Hello, Nix!";

@@ -17,8 +17,6 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
   alias RadioBeam.Sync.NextBatch
   alias RadioBeam.Sync.Source
 
-  require Logger
-
   @impl Source
   def top_level_path(_room_id, timeline), do: ["rooms", "join", timeline.room_id]
 

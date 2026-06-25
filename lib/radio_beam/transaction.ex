@@ -8,8 +8,6 @@ defmodule RadioBeam.Transaction do
 
   use GenServer
 
-  require Logger
-
   ### API ###
 
   def start_link(_) do

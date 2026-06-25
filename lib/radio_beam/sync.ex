@@ -7,8 +7,6 @@ defmodule RadioBeam.Sync do
   alias RadioBeam.User
   alias RadioBeam.User.KeyStore
 
-  require Logger
-
   def perform_v2(user_id, device_id, opts) do
     with %{} = tl_preferences <- User.get_timeline_preferences(user_id, Keyword.get(opts, :filter, :none)) do
       opts = Enum.reduce(tl_preferences, opts, fn {k, v}, opts -> Keyword.put(opts, k, v) end)

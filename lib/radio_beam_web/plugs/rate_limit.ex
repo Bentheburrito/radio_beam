@@ -8,8 +8,6 @@ defmodule RadioBeamWeb.Plugs.RateLimit do
 
   alias RadioBeam.RateLimit
 
-  require Logger
-
   def init(default), do: default
 
   def call(%{assigns: %{rate_limit: %RateLimit{} = rate_limit}} = conn, _opts) do

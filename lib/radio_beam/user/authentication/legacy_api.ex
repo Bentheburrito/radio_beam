@@ -12,8 +12,6 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
   alias RadioBeam.User.Device
   alias RadioBeam.User.LocalAccount
 
-  require Logger
-
   def generate_device_id, do: Ecto.UUID.generate()
 
   @spec register(user_localpart :: String.t(), server_name :: String.t(), password :: String.t()) ::

@@ -4,8 +4,6 @@ defmodule RadioBeam.Room.EventRelationships do
   them.
   """
 
-  require RadioBeam
-
   @aggregable_rel_types ~w|m.thread m.replace m.reference|
   def aggregable?(%{content: %{"m.relates_to" => %{"rel_type" => type}}}),
     do: type in @aggregable_rel_types

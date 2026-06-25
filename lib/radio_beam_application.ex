@@ -4,8 +4,6 @@ defmodule RadioBeamApplication do
   use Application
   use Boundary, deps: [RadioBeam, RadioBeamWeb]
 
-  require Logger
-
   @impl Application
   def start(_type, _args) do
     children = RadioBeam.application_children() ++ RadioBeamWeb.application_children()
