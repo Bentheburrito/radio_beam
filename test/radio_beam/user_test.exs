@@ -271,4 +271,44 @@ defmodule RadioBeam.UserTest do
       assert 0 = map_size(tags)
     end
   end
+
+  describe "put_notification_pusher/7,8" do
+    setup do
+      %{account: Fixtures.create_account()}
+    end
+
+    test "puts a new pusher under the user's account", %{account: %{user_id: user_id}} do
+      app_id = "com.a-company.client.matrix.ios"
+      app_name = "A Company's Client"
+      data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+
+      assert {:ok, []} = User.get_all_notification_pushers(user_id)
+
+      assert :ok = User.put_notification_pusher(user_id, "http", app_id, "abcdeff", app_name, data_params, "My iPhone")
+
+      assert {:ok, [%{data: data, app_id: ^app_id}]} = User.get_all_notification_pushers(user_id)
+      assert :http = User.Notifications.Core.Pusher.Data.kind(data)
+    end
+  end
+
+  describe "delete_notification_pusher/4" do
+    setup do
+      account = Fixtures.create_account()
+      app_id = "com.a-company.client.matrix.ios"
+      app_name = "A Company's Client"
+      pushkey = "abcdeff"
+      data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+      :ok = User.put_notification_pusher(account.user_id, "http", app_id, pushkey, app_name, data_params, "My iPhone")
+
+      %{account: account, app_id: app_id, pushkey: pushkey}
+    end
+
+    test "deletes a pusher from the user's account", %{account: %{user_id: user_id}, app_id: app_id, pushkey: pushkey} do
+      assert {:ok, [%{data: _data, app_id: ^app_id}]} = User.get_all_notification_pushers(user_id)
+
+      :ok = User.delete_notification_pusher(user_id, :http, app_id, pushkey)
+
+      assert {:ok, []} = User.get_all_notification_pushers(user_id)
+    end
+  end
 end

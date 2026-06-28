@@ -10,6 +10,8 @@ defmodule RadioBeam.User do
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.LocalAccount
+  alias RadioBeam.User.Notifications.Core.Pusher
 
   @type id() :: String.t()
 
@@ -144,6 +146,25 @@ defmodule RadioBeam.User do
     with {:ok, %ClientConfig{} = config} <- Database.fetch_user_client_config(user_id) do
       {:ok, config.account_data}
     end
+  end
+
+  def put_notification_pusher(user_id, kind, app_id, pushkey, app_name, data, device_name, opts \\ []) do
+    with {:ok, %Pusher{} = pusher} <- Pusher.new(kind, app_id, pushkey, app_name, data, device_name, opts),
+         {:ok, %LocalAccount{}} <- update_local_account(user_id, &LocalAccount.put_notification_pusher(&1, pusher)) do
+      :ok
+    end
+  end
+
+  def delete_notification_pusher(user_id, kind, app_id, pushkey) do
+    with {:ok, %LocalAccount{}} <-
+           update_local_account(user_id, &LocalAccount.delete_notification_pusher(&1, kind, app_id, pushkey)) do
+      :ok
+    end
+  end
+
+  def get_all_notification_pushers(user_id) do
+    with {:ok, %LocalAccount{} = account} <- Database.fetch_user_account(user_id),
+         do: {:ok, LocalAccount.get_all_notification_pushers(account)}
   end
 
   def update_local_account(user_id, callback), do: Database.update_user_account(user_id, callback)
