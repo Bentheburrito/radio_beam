@@ -342,4 +342,140 @@ defmodule RadioBeamWeb.AccountControllerTest do
       assert %{"access_token" => "" <> _} = get_session(conn)
     end
   end
+
+  describe "put_pusher/2" do
+    test "returns an empty object (200) when setting a pusher", %{conn: conn} do
+      conn =
+        post(conn, ~p"/_matrix/client/v3/pushers/set", %{
+          "app_display_name" => "A Company's Client",
+          "app_id" => "com.a-company.client.matrix.ios",
+          "data" => %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"},
+          "device_display_name" => "my iphone",
+          "kind" => "http",
+          "lang" => "en-US",
+          "profile_tag" => "profile-tag",
+          "pushkey" => "abcdefghij123"
+        })
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns an M_INVALID_PARAM (400) error when setting an http pusher with an invalid or missing URL", %{
+      conn: conn
+    } do
+      for data <- [%{}, %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify/or/what/ever"}] do
+        conn =
+          post(conn, ~p"/_matrix/client/v3/pushers/set", %{
+            "app_display_name" => "A Company's Client",
+            "app_id" => "com.a-company.client.matrix.ios",
+            "data" => data,
+            "device_display_name" => "my iphone",
+            "kind" => "http",
+            "lang" => "en-US",
+            "profile_tag" => "profile-tag",
+            "pushkey" => "abcdefghij123"
+          })
+
+        assert %{"errcode" => "M_INVALID_PARAM", "error" => "invalid or missing 'url' in pusher 'data'"} =
+                 json_response(conn, 400)
+      end
+    end
+
+    test "returns an M_INVALID_PARAM (400) error when setting invalid params", %{conn: conn} do
+      for {invalid_to_merge, field_name} <- [
+            {%{"app_display_name" => String.duplicate("abc", 2 ** 12)}, ":app_display_name"},
+            {%{"app_id" => String.duplicate("abc", 64)}, ":app_id"},
+            {%{"pushkey" => String.duplicate("abc", 512)}, ":pushkey"}
+          ] do
+        request_body =
+          Map.merge(
+            %{
+              "app_display_name" => "A Company's Client",
+              "app_id" => "com.a-company.client.matrix.ios",
+              "data" => %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"},
+              "device_display_name" => "my iphone",
+              "kind" => "http",
+              "lang" => "en-US",
+              "profile_tag" => "profile-tag",
+              "pushkey" => "abcdefghij123"
+            },
+            invalid_to_merge
+          )
+
+        conn = post(conn, ~p"/_matrix/client/v3/pushers/set", request_body)
+
+        assert %{"errcode" => "M_INVALID_PARAM", "error" => error} = json_response(conn, 400)
+        assert error =~ field_name
+      end
+    end
+
+    test "returns an empty object (200) when deleting a pusher", %{conn: conn, account: %{user_id: user_id}} do
+      app_id = "com.a-company.client.matrix.ios"
+      app_name = "A Company's Client"
+      pushkey = "asdfhgahsjdf"
+      data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+
+      :ok = User.put_notification_pusher(user_id, "http", app_id, pushkey, app_name, data_params, "My iPhone")
+
+      conn = post(conn, ~p"/_matrix/client/v3/pushers/set", %{"app_id" => app_id, "kind" => nil, "pushkey" => pushkey})
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+
+      assert {:ok, []} = User.get_all_notification_pushers(user_id)
+    end
+  end
+
+  describe "get_pushers/2" do
+    test "returns all registered pushers", %{conn: conn, account: %{user_id: user_id}} do
+      conn = get(conn, ~p"/_matrix/client/v3/pushers", %{})
+
+      assert %{"pushers" => []} = json_response(conn, 200)
+
+      app_id = "com.a-company.client.matrix.ios"
+      app_name = "A Company's Client"
+      pushkey = "asdfhgahsjdf"
+      data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+
+      :ok =
+        User.put_notification_pusher(user_id, "http", app_id, pushkey, app_name, data_params, "My iPhone", lang: "es")
+
+      email_app_id = app_id <> ".email"
+      email_pushkey = "someone@somewebsite.net"
+
+      :ok =
+        User.put_notification_pusher(user_id, "email", email_app_id, email_pushkey, app_name, %{}, "My iPhone",
+          profile_tag: "hallo"
+        )
+
+      conn = get(conn, ~p"/_matrix/client/v3/pushers", %{})
+
+      assert %{
+               "pushers" => [
+                 %{
+                   "app_display_name" => ^app_name,
+                   "app_id" => ^app_id,
+                   "data" => ^data_params,
+                   "device_display_name" => "My iPhone",
+                   "kind" => "http",
+                   "lang" => "es",
+                   "pushkey" => ^pushkey
+                 } = pusher,
+                 %{
+                   "app_display_name" => ^app_name,
+                   "app_id" => ^email_app_id,
+                   "data" => %{},
+                   "device_display_name" => "My iPhone",
+                   "kind" => "email",
+                   "lang" => "en",
+                   "profile_tag" => "hallo",
+                   "pushkey" => ^email_pushkey
+                 }
+               ]
+             } = json_response(conn, 200)
+
+      refute is_map_key(pusher, "profile_key")
+    end
+  end
 end

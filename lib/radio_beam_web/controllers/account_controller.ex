@@ -11,7 +11,7 @@ defmodule RadioBeamWeb.AccountController do
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: AccountSchema] when action in ~w|put_tag|a
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: AccountSchema] when action in ~w|put_tag put_pusher|a
 
   def get_config(%{assigns: %{user_id: user_id}} = conn, %{"user_id" => user_id, "type" => type} = params) do
     scope = Map.get(params, "room_id", :global)
@@ -180,6 +180,69 @@ defmodule RadioBeamWeb.AccountController do
         conn
         |> put_flash(:error, "Could not log in, reason: invalid or missing OAuth2 callback parameters.")
         |> login(%{})
+    end
+  end
+
+  def put_pusher(%{assigns: %{request: %{"kind" => nil}}} = conn, _params) do
+    user_id = conn.assigns.user_id
+    %{"app_id" => app_id, "pushkey" => pushkey} = conn.assigns.request
+
+    case User.delete_notification_pusher(user_id, app_id, pushkey) do
+      :ok ->
+        json(conn, %{})
+
+      {:error, :not_found} ->
+        Logger.error(
+          "could not delete notification pusher for user ID #{user_id}, got :not_found for app_id #{app_id} and pushkey #{pushkey}"
+        )
+
+        json_error(conn, 500, :unknown, "Something went wrong deleting the pusher")
+    end
+  end
+
+  def put_pusher(conn, _params) do
+    %{
+      "kind" => kind,
+      "app_id" => app_id,
+      "pushkey" => pushkey,
+      "data" => data,
+      "device_display_name" => device_name,
+      "app_display_name" => app_name,
+      "lang" => lang
+    } = conn.assigns.request
+
+    user_id = conn.assigns.user_id
+
+    opts = [lang: lang, profile_tag: Map.get(conn.assigns.request, "profile_tag")]
+
+    case User.put_notification_pusher(user_id, kind, app_id, pushkey, app_name, data, device_name, opts) do
+      :ok ->
+        json(conn, %{})
+
+      {:error, :not_found} ->
+        Logger.error(
+          "could not put notification pusher for user ID #{user_id}, got :not_found. Params: #{inspect(conn.assigns.request)}"
+        )
+
+        json_error(conn, 500, :unknown, "Something went wrong adding the pusher")
+
+      {:error, error} when error in ~w|url missing_url|a ->
+        json_error(conn, 400, :endpoint_error, [:invalid_param, "invalid or missing 'url' in pusher 'data'"])
+
+      {:error, error} ->
+        json_error(conn, 400, :endpoint_error, [:invalid_param, "invalid or missing parameter: #{inspect(error)}"])
+    end
+  end
+
+  def get_pushers(conn, _params) do
+    case User.get_all_notification_pushers(conn.assigns.user_id) do
+      {:ok, pushers} ->
+        json(conn, %{pushers: pushers})
+
+      {:error, :not_found} ->
+        Logger.error("could not get notification pushers for user ID #{conn.request.user_id}, got :not_found")
+
+        json_error(conn, 500, :unknown, "Something went wrong searching for your pushers")
     end
   end
 end
