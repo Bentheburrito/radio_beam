@@ -3,6 +3,7 @@ defmodule RadioBeam.User.LocalAccountTest do
 
   alias RadioBeam.User.LocalAccount
   alias RadioBeam.User.LocalAccount.State
+  alias RadioBeam.User.Notifications.Core.Pusher
 
   describe "new/1" do
     @password "Ar3allyg00dpwd!@#$"
@@ -173,6 +174,58 @@ defmodule RadioBeam.User.LocalAccountTest do
       # effective_until defaults to :infinity
       assert LocalAccount.suspended?(account, DateTime.add(effective_until, 1, :minute))
       refute LocalAccount.suspended?(account, DateTime.from_unix!(0))
+    end
+  end
+
+  describe "put_notification_pusher/2" do
+    setup do
+      app_id = "com.a-company.client.matrix.ios"
+      pusher_data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+
+      {:ok, pusher} = Pusher.new("http", app_id, "abcdeff", "A Company's Client", pusher_data_params, "My iPhone")
+
+      {:ok, pusher2} =
+        Pusher.new("email", app_id <> ".email", "someone@somewhere.org", "A Company's Client", %{}, "My iPhone")
+
+      %{
+        http_pusher: pusher,
+        email_pusher: pusher2
+      }
+    end
+
+    test "adds a new pusher to the account", %{http_pusher: pusher, email_pusher: pusher2} do
+      account = Fixtures.create_account()
+      assert [] = LocalAccount.get_all_notification_pushers(account)
+
+      account = LocalAccount.put_notification_pusher(account, pusher)
+      assert [^pusher] = LocalAccount.get_all_notification_pushers(account)
+
+      account = LocalAccount.put_notification_pusher(account, pusher2)
+      assert Enum.sort([pusher, pusher2]) == Enum.sort(LocalAccount.get_all_notification_pushers(account))
+    end
+
+    test "updates a pusher under the same {kind, app_id, pushkey} key on the account", %{http_pusher: pusher} do
+      account = Fixtures.create_account()
+
+      account = LocalAccount.put_notification_pusher(account, pusher)
+      assert [^pusher] = LocalAccount.get_all_notification_pushers(account)
+
+      updated_pusher = put_in(pusher.app_display_name, "NEW APP NAME")
+
+      account = LocalAccount.put_notification_pusher(account, updated_pusher)
+      assert [^updated_pusher] = LocalAccount.get_all_notification_pushers(account)
+
+      another_updated_pusher = put_in(pusher.profile_tag, "different-tag")
+
+      account = LocalAccount.put_notification_pusher(account, another_updated_pusher)
+      assert [^another_updated_pusher] = LocalAccount.get_all_notification_pushers(account)
+
+      new_pusher = put_in(pusher.pushkey, "different-pushkey")
+
+      account = LocalAccount.put_notification_pusher(account, new_pusher)
+
+      assert Enum.sort([another_updated_pusher, new_pusher]) ==
+               Enum.sort(LocalAccount.get_all_notification_pushers(account))
     end
   end
 
