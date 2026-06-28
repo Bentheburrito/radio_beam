@@ -43,4 +43,17 @@ defmodule RadioBeam.User.Notifications.Core.Pusher do
   @max_user_string_limit 2 ** 10
   defp validate_user_string(str, _field) when is_binary(str) and byte_size(str) <= @max_user_string_limit, do: :ok
   defp validate_user_string(_invalid_str, field), do: {:error, field}
+
+  defimpl JSON.Encoder do
+    def encode(pusher, encoder) do
+      pusher
+      |> Map.from_struct()
+      |> Map.put(:kind, PusherData.kind(pusher.data))
+      |> maybe_prune_profile_tag()
+      |> JSON.Encoder.Map.encode(encoder)
+    end
+
+    defp maybe_prune_profile_tag(%{profile_tag: nil} = pusher_map), do: Map.delete(pusher_map, :profile_tag)
+    defp maybe_prune_profile_tag(pusher_map), do: pusher_map
+  end
 end

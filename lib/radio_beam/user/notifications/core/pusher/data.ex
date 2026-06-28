@@ -31,4 +31,8 @@ defmodule RadioBeam.User.Notifications.Core.Pusher.Data do
 
   def kind(%__MODULE__{} = pusher_data), do: pusher_data.kind
   def required_fields(%__MODULE__{} = pusher_data), do: pusher_data.required
+
+  defimpl JSON.Encoder do
+    def encode(data, encoder), do: data.required |> Map.merge(data.extra) |> JSON.Encoder.Map.encode(encoder)
+  end
 end

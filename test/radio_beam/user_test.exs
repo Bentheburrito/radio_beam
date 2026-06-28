@@ -291,7 +291,7 @@ defmodule RadioBeam.UserTest do
     end
   end
 
-  describe "delete_notification_pusher/4" do
+  describe "delete_notification_pusher/3" do
     setup do
       account = Fixtures.create_account()
       app_id = "com.a-company.client.matrix.ios"
@@ -306,7 +306,7 @@ defmodule RadioBeam.UserTest do
     test "deletes a pusher from the user's account", %{account: %{user_id: user_id}, app_id: app_id, pushkey: pushkey} do
       assert {:ok, [%{data: _data, app_id: ^app_id}]} = User.get_all_notification_pushers(user_id)
 
-      :ok = User.delete_notification_pusher(user_id, :http, app_id, pushkey)
+      :ok = User.delete_notification_pusher(user_id, app_id, pushkey)
 
       assert {:ok, []} = User.get_all_notification_pushers(user_id)
     end

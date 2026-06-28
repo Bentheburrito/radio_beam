@@ -155,9 +155,9 @@ defmodule RadioBeam.User do
     end
   end
 
-  def delete_notification_pusher(user_id, kind, app_id, pushkey) do
+  def delete_notification_pusher(user_id, app_id, pushkey) do
     with {:ok, %LocalAccount{}} <-
-           update_local_account(user_id, &LocalAccount.delete_notification_pusher(&1, kind, app_id, pushkey)) do
+           update_local_account(user_id, &LocalAccount.delete_notification_pusher(&1, app_id, pushkey)) do
       :ok
     end
   end

@@ -204,7 +204,7 @@ defmodule RadioBeam.User.LocalAccountTest do
       assert Enum.sort([pusher, pusher2]) == Enum.sort(LocalAccount.get_all_notification_pushers(account))
     end
 
-    test "updates a pusher under the same {kind, app_id, pushkey} key on the account", %{http_pusher: pusher} do
+    test "updates a pusher under the same { app_id, pushkey} key on the account", %{http_pusher: pusher} do
       account = Fixtures.create_account()
 
       account = LocalAccount.put_notification_pusher(account, pusher)
@@ -229,7 +229,7 @@ defmodule RadioBeam.User.LocalAccountTest do
     end
   end
 
-  describe "delete_notification_pusher/4" do
+  describe "delete_notification_pusher/3" do
     setup do
       app_id = "com.a-company.client.matrix.ios"
       pusher_data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
@@ -253,11 +253,11 @@ defmodule RadioBeam.User.LocalAccountTest do
     test "adds a new pusher to the account", %{http_pusher: pusher, email_pusher: pusher2, account: account} do
       assert Enum.sort([pusher, pusher2]) == Enum.sort(LocalAccount.get_all_notification_pushers(account))
 
-      account = LocalAccount.delete_notification_pusher(account, pusher.data.kind, pusher.app_id, pusher.pushkey)
+      account = LocalAccount.delete_notification_pusher(account, pusher.app_id, pusher.pushkey)
 
       assert [^pusher2] = LocalAccount.get_all_notification_pushers(account)
 
-      account = LocalAccount.delete_notification_pusher(account, pusher2.data.kind, pusher2.app_id, pusher2.pushkey)
+      account = LocalAccount.delete_notification_pusher(account, pusher2.app_id, pusher2.pushkey)
 
       assert [] = LocalAccount.get_all_notification_pushers(account)
     end
