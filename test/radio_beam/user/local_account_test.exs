@@ -229,6 +229,40 @@ defmodule RadioBeam.User.LocalAccountTest do
     end
   end
 
+  describe "delete_notification_pusher/4" do
+    setup do
+      app_id = "com.a-company.client.matrix.ios"
+      pusher_data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+
+      account = Fixtures.create_account()
+
+      {:ok, pusher} = Pusher.new("http", app_id, "abcdeff", "A Company's Client", pusher_data_params, "My iPhone")
+
+      {:ok, pusher2} =
+        Pusher.new("email", app_id <> ".email", "someone@somewhere.org", "A Company's Client", %{}, "My iPhone")
+
+      account = account |> LocalAccount.put_notification_pusher(pusher) |> LocalAccount.put_notification_pusher(pusher2)
+
+      %{
+        http_pusher: pusher,
+        email_pusher: pusher2,
+        account: account
+      }
+    end
+
+    test "adds a new pusher to the account", %{http_pusher: pusher, email_pusher: pusher2, account: account} do
+      assert Enum.sort([pusher, pusher2]) == Enum.sort(LocalAccount.get_all_notification_pushers(account))
+
+      account = LocalAccount.delete_notification_pusher(account, pusher.data.kind, pusher.app_id, pusher.pushkey)
+
+      assert [^pusher2] = LocalAccount.get_all_notification_pushers(account)
+
+      account = LocalAccount.delete_notification_pusher(account, pusher2.data.kind, pusher2.app_id, pusher2.pushkey)
+
+      assert [] = LocalAccount.get_all_notification_pushers(account)
+    end
+  end
+
   defp super_long_user_id do
     "@behold_a_bunch_of_underscores_to_get_over_255_chars#{String.duplicate("_", 193)}:servername"
   end

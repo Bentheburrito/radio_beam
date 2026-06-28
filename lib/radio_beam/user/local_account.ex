@@ -35,6 +35,10 @@ defmodule RadioBeam.User.LocalAccount do
 
   def get_all_notification_pushers(%__MODULE__{} = account), do: Map.values(account.notification_pushers)
 
+  def delete_notification_pusher(%__MODULE__{} = account, kind, app_id, pushkey) do
+    update_in(account.notification_pushers, &Map.delete(&1, {kind, app_id, pushkey}))
+  end
+
   def lock(%__MODULE__{} = account, admin_id, state_opts \\ []), do: put_state(account, :locked, admin_id, state_opts)
 
   def suspend(%__MODULE__{} = account, admin_id, state_opts \\ []),
