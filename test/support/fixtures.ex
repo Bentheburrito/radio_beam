@@ -110,6 +110,8 @@ defmodule Fixtures do
     FileInfo.new(type, byte_size(content), :sha256 |> :crypto.hash(content) |> Base.encode16(case: :lower), filename)
   end
 
+  def random_string(0), do: ""
+
   def random_string(num_bytes) do
     for _i <- 1..num_bytes, into: "", do: <<:rand.uniform(26) + ?A - 1>>
   end
