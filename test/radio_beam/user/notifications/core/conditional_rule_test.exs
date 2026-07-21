@@ -1,6 +1,8 @@
 defmodule RadioBeam.User.Notifications.Core.ConditionalRuleTest do
   use ExUnit.Case, async: true
 
+  alias RadioBeam.Room
+  alias RadioBeam.Room.View.Core.Timeline
   alias RadioBeam.User.Notifications.Core.ConditionalRule
 
   describe "new/3,4" do
@@ -87,6 +89,51 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRuleTest do
           enabled? <- ~w|true false|a do
         assert {:error, :rule_id} = ConditionalRule.new(rule_id, actions, conditions, enabled?)
       end
+    end
+  end
+
+  describe "event_passes_conditions?/2" do
+    setup do
+      %{user_id: user_id} = Fixtures.create_account()
+
+      {:sent, room, message_id, _} = "12" |> Fixtures.room(user_id) |> Fixtures.send_room_msg(user_id, "yooo")
+
+      timeline = Fixtures.make_room_view(Timeline, room)
+
+      [event] =
+        Timeline.get_visible_events(timeline, [message_id], user_id, &Room.Chronicle.fetch_pdu!(room.chronicle, &1))
+        |> Enum.to_list()
+
+      actions = [%{"set_tweak" => "sound", "value" => "default"}, "notify"]
+
+      conditions = [
+        %{"kind" => "event_match", "key" => "content.body", "pattern" => "?ooo"},
+        %{"kind" => "event_match", "key" => "content.body", "pattern" => "yo*"},
+        %{"kind" => "event_match", "key" => "type", "pattern" => "m.room.*"}
+      ]
+
+      %{event: event, actions: actions, conditions: Enum.shuffle(conditions)}
+    end
+
+    test "returns `true` only when all conditions are `true`", %{event: event, actions: actions, conditions: conditions} do
+      Enum.reduce(conditions, [], fn condition, conditions ->
+        conditions = [condition | conditions]
+        {:ok, rule} = ConditionalRule.new("rule", actions, conditions, true)
+        assert ConditionalRule.event_passes_conditions?(rule, event)
+        conditions
+      end)
+    end
+
+    test "returns `false` when any condition is `false`", %{event: event, actions: actions, conditions: conditions} do
+      Enum.reduce(conditions, [], fn condition, conditions ->
+        conditions = [condition | conditions]
+        bad_conditions = Enum.shuffle([put_in(condition["pattern"], "?ello!") | conditions])
+
+        {:ok, rule} = ConditionalRule.new("rule", actions, bad_conditions, true)
+
+        refute ConditionalRule.event_passes_conditions?(rule, event)
+        conditions
+      end)
     end
   end
 

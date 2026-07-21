@@ -3,13 +3,14 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
   A parsed override or underride PushRule defined by [the spec](https://spec.matrix.org/v1.18/client-server-api/#get_matrixclientv3pushrulesglobalkindruleid)
   """
 
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User.Notifications.Core.ConditionalRule.Conditions
 
   defstruct ~w|id actions conditions enabled?|a
 
   @typep rule_id() :: String.t()
   @typep action() :: :notify | %{set_tweak: String.t()} | %{set_tweak: String.t(), value: any()}
-  @typep condition() :: Conditions.EventMatch.t()
+  @typep condition() :: (Event.t() -> boolean())
 
   @opaque t() :: %__MODULE__{id: rule_id(), actions: [action()], conditions: [condition()], enabled?: boolean()}
 
@@ -83,5 +84,11 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
 
   defdelegate parse_condition(params), to: Conditions, as: :parse
 
+  def id(%__MODULE__{id: id}), do: id
+  def enabled?(%__MODULE__{enabled?: enabled?}), do: enabled?
   def actions(%__MODULE__{actions: actions}), do: actions
+
+  def event_passes_conditions?(%__MODULE__{} = rule, event) do
+    Enum.all?(rule.conditions, & &1.(event))
+  end
 end
