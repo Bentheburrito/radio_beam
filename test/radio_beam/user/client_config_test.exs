@@ -2,6 +2,7 @@ defmodule RadioBeam.User.ClientConfigTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.User.ClientConfig
+  alias RadioBeam.User.Notifications.Core.ConditionalRule
   alias RadioBeam.User.Notifications.Core.Pusher
 
   describe "put_account_data" do
@@ -158,6 +159,35 @@ defmodule RadioBeam.User.ClientConfigTest do
       config = ClientConfig.delete_notification_pusher(config, pusher2.app_id, pusher2.pushkey)
 
       assert [] = ClientConfig.get_all_notification_pushers(config)
+    end
+  end
+
+  describe "put_global_notification_push_rule/5" do
+    setup do
+      account = Fixtures.create_account()
+      %{config: ClientConfig.new!(account.user_id)}
+    end
+
+    test "successfully puts a valid push rule", %{config: config} do
+      for kind <- ~w|override underride|a do
+        rule_id = Fixtures.random_string(9)
+
+        assert {:ok, %ClientConfig{} = config} =
+                 ClientConfig.put_global_notification_push_rule(config, kind, rule_id, ["notify"], [])
+
+        assert {:ok, %ConditionalRule{} = rule} =
+                 ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+
+        assert ^rule_id = ConditionalRule.id(rule)
+      end
+    end
+
+    test "rejects invalid push rules", %{config: config} do
+      assert {:error, :kind} = ClientConfig.put_global_notification_push_rule(config, :ew, "abcdef", ["notify"], [])
+      assert {:error, :rule_id} = ClientConfig.put_global_notification_push_rule(config, :override, 123, ["notify"], [])
+
+      assert {:error, :invalid_actions} =
+               ClientConfig.put_global_notification_push_rule(config, :override, "bcde", "notify", [])
     end
   end
 end

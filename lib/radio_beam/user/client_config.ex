@@ -6,12 +6,22 @@ defmodule RadioBeam.User.ClientConfig do
   Also contains stored EventFilters.
   """
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.Notifications.Core.ConditionalRule
   alias RadioBeam.User.Notifications.Core.Pusher
+  alias RadioBeam.User.Notifications.Core.RuleSet
 
-  defstruct ~w|user_id account_data filters notification_pushers|a
+  defstruct ~w|user_id account_data filters notification_pushers notification_rule_sets|a
   @type t() :: %__MODULE__{}
 
-  def new!(user_id), do: %__MODULE__{user_id: user_id, account_data: %{}, filters: %{}, notification_pushers: %{}}
+  def new!(user_id) do
+    %__MODULE__{
+      user_id: user_id,
+      account_data: %{},
+      filters: %{},
+      notification_pushers: %{},
+      notification_rule_sets: %{global: RuleSet.new!()}
+    }
+  end
 
   @doc """
   Puts global or room account data for a user. Any existing content for a scope
@@ -80,6 +90,29 @@ defmodule RadioBeam.User.ClientConfig do
 
   def delete_notification_pusher(%__MODULE__{} = config, app_id, pushkey) do
     update_in(config.notification_pushers, &Map.delete(&1, {app_id, pushkey}))
+  end
+
+  def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions, conditions)
+      when kind in ~w|override underride|a do
+    rule_type =
+      case kind do
+        kind when kind in ~w|override underride|a -> ConditionalRule
+      end
+
+    with {:ok, %^rule_type{} = rule} <- rule_type.new(rule_id, actions, conditions, true) do
+      {:ok, update_in(config.notification_rule_sets.global, &RuleSet.put_rule(&1, kind, rule))}
+    end
+  end
+
+  def put_global_notification_push_rule(%__MODULE__{}, _kind, _rule_id, _actions, _conditions) do
+    {:error, :kind}
+  end
+
+  def fetch_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id) do
+    case RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
+      :not_found -> {:error, :not_found}
+      %rule_type{} = rule when rule_type in [ConditionalRule] -> {:ok, rule}
+    end
   end
 
   def get_timeline_preferences(config, filter_or_filter_id \\ :none) do

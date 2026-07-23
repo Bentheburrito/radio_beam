@@ -166,6 +166,22 @@ defmodule RadioBeam.User do
          do: {:ok, ClientConfig.get_all_notification_pushers(config)}
   end
 
+  def put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions) do
+    put_rule_callback = &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions, conditions)
+
+    with {:ok, %ClientConfig{}} <- upsert_client_config(user_id, put_rule_callback), do: :ok
+  end
+
+  def fetch_global_notification_push_rule(user_id, kind, rule_id) do
+    with {:ok, %ClientConfig{} = config} <- Database.fetch_user_client_config(user_id),
+         do: ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+  end
+
+  def get_global_rule_set(user_id) do
+    with {:ok, %ClientConfig{} = config} <- Database.fetch_user_client_config(user_id),
+         do: config.notification_rule_sets.global
+  end
+
   defp upsert_client_config(user_id, callback), do: Database.upsert_user_client_config_with(user_id, callback)
 
   def update_local_account(user_id, callback), do: Database.update_user_account(user_id, callback)

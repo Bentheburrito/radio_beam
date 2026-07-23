@@ -6,6 +6,8 @@ defmodule RadioBeam.UserTest do
   alias RadioBeam.User
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
+  alias RadioBeam.User.Notifications.Core.ConditionalRule
+  alias RadioBeam.User.Notifications.Core.RuleSet
 
   @otk_keys %{
     "signed_curve25519:AAAAHQ" => %{
@@ -309,6 +311,43 @@ defmodule RadioBeam.UserTest do
       :ok = User.delete_notification_pusher(user_id, app_id, pushkey)
 
       assert {:ok, []} = User.get_all_notification_pushers(user_id)
+    end
+  end
+
+  describe "put_global_notification_push_rule/5" do
+    setup do
+      %{account: Fixtures.create_account()}
+    end
+
+    test "successfully puts a valid push rule", %{account: account} do
+      for kind <- ~w|override underride|a do
+        rule_id = Fixtures.random_string(9)
+
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], [])
+      end
+    end
+
+    test "rejects invalid push rules", %{account: account} do
+      assert {:error, :kind} = User.put_global_notification_push_rule(account.user_id, :ew, "abcdef", ["notify"], [])
+
+      assert {:error, :rule_id} =
+               User.put_global_notification_push_rule(account.user_id, :override, 123, ["notify"], [])
+
+      assert {:error, :invalid_actions} =
+               User.put_global_notification_push_rule(account.user_id, :override, "bcde", "notify", [])
+    end
+  end
+
+  describe "get_global_rule_set/1" do
+    setup do
+      account = Fixtures.create_account()
+      assert :ok = User.put_global_notification_push_rule(account.user_id, :override, "cooolrule", ["notify"], [])
+      %{account: account}
+    end
+
+    test "gets the user's global RuleSet", %{account: account} do
+      assert %RuleSet{} = rule_set = User.get_global_rule_set(account.user_id)
+      assert %ConditionalRule{} = RuleSet.get_rule(rule_set, :override, "cooolrule")
     end
   end
 end

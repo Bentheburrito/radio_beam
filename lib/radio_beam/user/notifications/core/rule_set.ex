@@ -32,6 +32,8 @@ defmodule RadioBeam.User.Notifications.Core.RuleSet do
   older rules of the same `kind`.
   """
   def put_rule(%__MODULE__{} = rule_set, kind, %ConditionalRule{} = rule) when kind in ~w|override underride|a do
+    #### TOFIX: make it so that updated rules (i.e. if rule.id is already
+    #    present in rule_set) do not change priority automatically
     value = {rule, _rule_priority = rule_set.put_count}
     rule_set = update_in(rule_set.put_count, &(&1 + 1))
 
