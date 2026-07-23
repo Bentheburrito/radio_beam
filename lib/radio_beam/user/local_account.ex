@@ -3,9 +3,8 @@ defmodule RadioBeam.User.LocalAccount do
   Domain struct for a user's account on a local homeserver.
   """
   alias RadioBeam.User.LocalAccount.State
-  alias RadioBeam.User.Notifications.Core.Pusher
 
-  @attrs ~w|user_id pwd_hash registered_at state_changes notification_pushers|a
+  @attrs ~w|user_id pwd_hash registered_at state_changes|a
   @enforce_keys @attrs
   defstruct @attrs
   @type t() :: %__MODULE__{}
@@ -20,23 +19,12 @@ defmodule RadioBeam.User.LocalAccount do
            user_id: user_id,
            pwd_hash: hash(password),
            registered_at: DateTime.utc_now(),
-           state_changes: [],
-           notification_pushers: %{}
+           state_changes: []
          }}
 
       [_ | _] = errors ->
         {:error, errors}
     end
-  end
-
-  def put_notification_pusher(%__MODULE__{} = account, %Pusher{} = pusher) do
-    put_in(account.notification_pushers[{pusher.app_id, pusher.pushkey}], pusher)
-  end
-
-  def get_all_notification_pushers(%__MODULE__{} = account), do: Map.values(account.notification_pushers)
-
-  def delete_notification_pusher(%__MODULE__{} = account, app_id, pushkey) do
-    update_in(account.notification_pushers, &Map.delete(&1, {app_id, pushkey}))
   end
 
   def lock(%__MODULE__{} = account, admin_id, state_opts \\ []), do: put_state(account, :locked, admin_id, state_opts)

@@ -2,6 +2,7 @@ defmodule RadioBeam.User.ClientConfigTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.User.ClientConfig
+  alias RadioBeam.User.Notifications.Core.Pusher
 
   describe "put_account_data" do
     setup do
@@ -67,6 +68,96 @@ defmodule RadioBeam.User.ClientConfigTest do
 
       assert {:ok, %ClientConfig{account_data: %{^room_id => %{"m.fully_read" => ^content}}}} =
                ClientConfig.put_fully_read(config, room_id, content)
+    end
+  end
+
+  describe "put_notification_pusher/2" do
+    setup do
+      app_id = "com.a-company.client.matrix.ios"
+      pusher_data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+
+      {:ok, pusher} = Pusher.new("http", app_id, "abcdeff", "A Company's Client", pusher_data_params, "My iPhone")
+
+      {:ok, pusher2} =
+        Pusher.new("email", app_id <> ".email", "someone@somewhere.org", "A Company's Client", %{}, "My iPhone")
+
+      %{
+        http_pusher: pusher,
+        email_pusher: pusher2
+      }
+    end
+
+    test "adds a new pusher to the config", %{http_pusher: pusher, email_pusher: pusher2} do
+      account = Fixtures.create_account()
+      config = ClientConfig.new!(account.user_id)
+
+      assert [] = ClientConfig.get_all_notification_pushers(config)
+
+      config = ClientConfig.put_notification_pusher(config, pusher)
+      assert [^pusher] = ClientConfig.get_all_notification_pushers(config)
+
+      config = ClientConfig.put_notification_pusher(config, pusher2)
+      assert Enum.sort([pusher, pusher2]) == Enum.sort(ClientConfig.get_all_notification_pushers(config))
+    end
+
+    test "updates a pusher under the same { app_id, pushkey} key on the config", %{http_pusher: pusher} do
+      account = Fixtures.create_account()
+      config = ClientConfig.new!(account.user_id)
+
+      config = ClientConfig.put_notification_pusher(config, pusher)
+      assert [^pusher] = ClientConfig.get_all_notification_pushers(config)
+
+      updated_pusher = put_in(pusher.app_display_name, "NEW APP NAME")
+
+      config = ClientConfig.put_notification_pusher(config, updated_pusher)
+      assert [^updated_pusher] = ClientConfig.get_all_notification_pushers(config)
+
+      another_updated_pusher = put_in(pusher.profile_tag, "different-tag")
+
+      config = ClientConfig.put_notification_pusher(config, another_updated_pusher)
+      assert [^another_updated_pusher] = ClientConfig.get_all_notification_pushers(config)
+
+      new_pusher = put_in(pusher.pushkey, "different-pushkey")
+
+      config = ClientConfig.put_notification_pusher(config, new_pusher)
+
+      assert Enum.sort([another_updated_pusher, new_pusher]) ==
+               Enum.sort(ClientConfig.get_all_notification_pushers(config))
+    end
+  end
+
+  describe "delete_notification_pusher/3" do
+    setup do
+      app_id = "com.a-company.client.matrix.ios"
+      pusher_data_params = %{"url" => "https://notifs-gateway.a-company.com/_matrix/push/v1/notify"}
+
+      account = Fixtures.create_account()
+      config = ClientConfig.new!(account.user_id)
+
+      {:ok, pusher} = Pusher.new("http", app_id, "abcdeff", "A Company's Client", pusher_data_params, "My iPhone")
+
+      {:ok, pusher2} =
+        Pusher.new("email", app_id <> ".email", "someone@somewhere.org", "A Company's Client", %{}, "My iPhone")
+
+      config = config |> ClientConfig.put_notification_pusher(pusher) |> ClientConfig.put_notification_pusher(pusher2)
+
+      %{
+        http_pusher: pusher,
+        email_pusher: pusher2,
+        config: config
+      }
+    end
+
+    test "adds a new pusher to the client config", %{http_pusher: pusher, email_pusher: pusher2, config: config} do
+      assert Enum.sort([pusher, pusher2]) == Enum.sort(ClientConfig.get_all_notification_pushers(config))
+
+      config = ClientConfig.delete_notification_pusher(config, pusher.app_id, pusher.pushkey)
+
+      assert [^pusher2] = ClientConfig.get_all_notification_pushers(config)
+
+      config = ClientConfig.delete_notification_pusher(config, pusher2.app_id, pusher2.pushkey)
+
+      assert [] = ClientConfig.get_all_notification_pushers(config)
     end
   end
 end

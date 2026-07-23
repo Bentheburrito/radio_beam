@@ -6,11 +6,12 @@ defmodule RadioBeam.User.ClientConfig do
   Also contains stored EventFilters.
   """
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.Notifications.Core.Pusher
 
-  defstruct ~w|user_id account_data filters|a
+  defstruct ~w|user_id account_data filters notification_pushers|a
   @type t() :: %__MODULE__{}
 
-  def new!(user_id), do: %__MODULE__{user_id: user_id, account_data: %{}, filters: %{}}
+  def new!(user_id), do: %__MODULE__{user_id: user_id, account_data: %{}, filters: %{}, notification_pushers: %{}}
 
   @doc """
   Puts global or room account data for a user. Any existing content for a scope
@@ -69,6 +70,16 @@ defmodule RadioBeam.User.ClientConfig do
   @spec get_event_filter(t(), EventFilter.id()) :: {:ok, EventFilter.t()} | {:error, :not_found}
   def get_event_filter(%__MODULE__{} = config, filter_id) do
     with :error <- Map.fetch(config.filters, filter_id), do: {:error, :not_found}
+  end
+
+  def put_notification_pusher(%__MODULE__{} = config, %Pusher{} = pusher) do
+    put_in(config.notification_pushers[{pusher.app_id, pusher.pushkey}], pusher)
+  end
+
+  def get_all_notification_pushers(%__MODULE__{} = config), do: Map.values(config.notification_pushers)
+
+  def delete_notification_pusher(%__MODULE__{} = config, app_id, pushkey) do
+    update_in(config.notification_pushers, &Map.delete(&1, {app_id, pushkey}))
   end
 
   def get_timeline_preferences(config, filter_or_filter_id \\ :none) do
