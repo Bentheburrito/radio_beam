@@ -31,6 +31,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRuleTest do
       for actions <- actions_power_set, conditions <- conditions_power_set, enabled? <- ~w|true false|a do
         assert {:ok, %ConditionalRule{} = rule} = ConditionalRule.new(rule_id, actions, conditions, enabled?)
         assert length(actions) == rule |> ConditionalRule.actions() |> length()
+        assert ^rule_id = ConditionalRule.id(rule)
       end
     end
 
