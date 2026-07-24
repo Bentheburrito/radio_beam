@@ -478,4 +478,63 @@ defmodule RadioBeamWeb.AccountControllerTest do
       refute is_map_key(pusher, "profile_key")
     end
   end
+
+  describe "put_push_rule/2" do
+    test "returns an empty object (200) when putting a new push rule", %{conn: conn} do
+      conn =
+        put(conn, ~p"/_matrix/client/v3/pushrules/global/override/mynewrule", %{
+          "conditions" => [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}],
+          "actions" => ["notify", %{"set_tweak" => "sound", "value" => "harp"}]
+        })
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns an M_BAD_JSON (400) error when putting new a push rule with invalid actions", %{
+      conn: conn
+    } do
+      conn =
+        put(conn, ~p"/_matrix/client/v3/pushrules/global/override/mynewrule", %{
+          "conditions" => [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}],
+          "actions" => ["unsupported"]
+        })
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => "field `actions` is invalid"} =
+               json_response(conn, 400)
+    end
+
+    test "returns an M_BAD_JSON (400) error when putting new a push rule with invalid conditions", %{conn: conn} do
+      conn =
+        put(conn, ~p"/_matrix/client/v3/pushrules/global/override/mynewrule", %{
+          "conditions" => [%{"kind" => "UNSUPPORTED", "key" => "content.body", "pattern" => "*world"}],
+          "actions" => ["notify"]
+        })
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => "field `conditions` is invalid"} = json_response(conn, 400)
+    end
+
+    test "returns an M_BAD_JSON (400) error when putting new a push rule with invalid kind", %{conn: conn} do
+      conn =
+        put(conn, ~p"/_matrix/client/v3/pushrules/global/UNSUPPORTED/mynewrule", %{
+          "conditions" => [],
+          "actions" => ["notify"]
+        })
+
+      assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+      assert error =~ "kind needs to be one of"
+    end
+
+    test "returns an M_BAD_JSON (400) error when putting new a push rule with invalid rule_id", %{conn: conn} do
+      for invalid_rule_id <- ["asdf!@#", ".m.lmao"] do
+        conn =
+          put(conn, ~p"/_matrix/client/v3/pushrules/global/override/#{invalid_rule_id}", %{
+            "conditions" => [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}],
+            "actions" => ["notify"]
+          })
+
+        assert %{"errcode" => "M_BAD_JSON", "error" => "field `rule_id` is invalid."} = json_response(conn, 400)
+      end
+    end
+  end
 end

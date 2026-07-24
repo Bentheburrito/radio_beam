@@ -255,6 +255,10 @@ defmodule RadioBeamWeb.Router do
 
         post "/pushers/set", AccountController, :put_pusher, rl(:infrequent_bursts)
         get "/pushers", AccountController, :get_pushers, rl(:infrequent_bursts)
+
+        scope "/pushrules/global" do
+          put "/:kind/:rule_id", AccountController, :put_push_rule, rl(:infrequent_bursts)
+        end
       end
     end
   end

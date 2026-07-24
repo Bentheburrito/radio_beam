@@ -11,7 +11,7 @@ defmodule RadioBeamWeb.AccountController do
 
   require Logger
 
-  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: AccountSchema] when action in ~w|put_tag put_pusher|a
+  plug RadioBeamWeb.Plugs.EnforceSchema, [mod: AccountSchema] when action in ~w|put_tag put_pusher put_push_rule|a
 
   def get_config(%{assigns: %{user_id: user_id}} = conn, %{"user_id" => user_id, "type" => type} = params) do
     scope = Map.get(params, "room_id", :global)
@@ -243,6 +243,26 @@ defmodule RadioBeamWeb.AccountController do
         Logger.error("could not get notification pushers for user ID #{conn.request.user_id}, got :not_found")
 
         json_error(conn, 500, :unknown, "Something went wrong searching for your pushers")
+    end
+  end
+
+  def put_push_rule(conn, _params) do
+    user_id = conn.assigns.user_id
+    %{"kind" => kind, "rule_id" => rule_id, "actions" => actions, "conditions" => conditions} = conn.assigns.request
+
+    case User.put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions) do
+      :ok ->
+        json(conn, %{})
+
+      {:error, field_name} when field_name in ~w|rule_id actions conditions|a ->
+        json_error(conn, 400, :bad_json, "field `#{field_name}` is invalid.")
+
+      {:error, :kind} ->
+        json_error(conn, 400, :endpoint_error, [:invalid_param, "`#{kind}` is not a supported `kind`"])
+
+      {:error, error} ->
+        Logger.error("#{inspect(error)} returned while putting new push rule")
+        json_error(conn, 500, :unknown, "unknown error")
     end
   end
 end
