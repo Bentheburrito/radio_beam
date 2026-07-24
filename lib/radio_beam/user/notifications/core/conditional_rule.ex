@@ -42,13 +42,13 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
       case parse_action(action_param) do
         {:ok, action} -> {:cont, [action | actions]}
         :ignore -> {:cont, actions}
-        :error -> {:halt, {:error, :invalid_actions}}
+        :error -> {:halt, {:error, :actions}}
       end
     end)
     |> rev_list_with_ok()
   end
 
-  defp parse_actions(_action_params), do: {:error, :invalid_actions}
+  defp parse_actions(_action_params), do: {:error, :actions}
 
   defp parse_action("notify"), do: {:ok, :notify}
 
@@ -74,13 +74,13 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
     |> Enum.reduce_while([], fn condition_param, conditions ->
       case parse_condition(condition_param) do
         {:ok, condition} -> {:cont, [condition | conditions]}
-        :error -> {:halt, {:error, :invalid_conditions}}
+        :error -> {:halt, {:error, :conditions}}
       end
     end)
     |> rev_list_with_ok()
   end
 
-  defp parse_conditions(_conditions_params), do: {:error, :invalid_conditions}
+  defp parse_conditions(_conditions_params), do: {:error, :conditions}
 
   defdelegate parse_condition(params), to: Conditions, as: :parse
 

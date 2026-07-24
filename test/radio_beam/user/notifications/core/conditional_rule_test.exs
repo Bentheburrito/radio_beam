@@ -35,14 +35,14 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRuleTest do
       end
     end
 
-    test "errors with :invalid_actions when given invalid actions", %{
+    test "errors with :actions when given invalid actions", %{
       rule_id: rule_id,
       conditions_power_set: conditions_power_set
     } do
       for actions <- ["not-a-list", [123], ["unknown-action"]],
           conditions <- conditions_power_set,
           enabled? <- ~w|true false|a do
-        assert {:error, :invalid_actions} = ConditionalRule.new(rule_id, actions, conditions, enabled?)
+        assert {:error, :actions} = ConditionalRule.new(rule_id, actions, conditions, enabled?)
       end
     end
 
@@ -55,7 +55,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRuleTest do
       end
     end
 
-    test "errors with :invalid_conditions when given invalid conditions", %{
+    test "errors with :conditions when given invalid conditions", %{
       rule_id: rule_id,
       actions_power_set: actions_power_set
     } do
@@ -66,7 +66,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRuleTest do
             [%{"kind" => "wtf_is_even_this"}]
           ],
           enabled? <- ~w|true false|a do
-        assert {:error, :invalid_conditions} = ConditionalRule.new(rule_id, actions, conditions, enabled?)
+        assert {:error, :conditions} = ConditionalRule.new(rule_id, actions, conditions, enabled?)
       end
     end
 

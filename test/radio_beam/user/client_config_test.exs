@@ -186,7 +186,7 @@ defmodule RadioBeam.User.ClientConfigTest do
       assert {:error, :kind} = ClientConfig.put_global_notification_push_rule(config, :ew, "abcdef", ["notify"], [])
       assert {:error, :rule_id} = ClientConfig.put_global_notification_push_rule(config, :override, 123, ["notify"], [])
 
-      assert {:error, :invalid_actions} =
+      assert {:error, :actions} =
                ClientConfig.put_global_notification_push_rule(config, :override, "bcde", "notify", [])
     end
   end

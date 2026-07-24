@@ -333,7 +333,7 @@ defmodule RadioBeam.UserTest do
       assert {:error, :rule_id} =
                User.put_global_notification_push_rule(account.user_id, :override, 123, ["notify"], [])
 
-      assert {:error, :invalid_actions} =
+      assert {:error, :actions} =
                User.put_global_notification_push_rule(account.user_id, :override, "bcde", "notify", [])
     end
   end
