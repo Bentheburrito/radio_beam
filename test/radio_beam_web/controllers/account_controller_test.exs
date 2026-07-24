@@ -537,4 +537,68 @@ defmodule RadioBeamWeb.AccountControllerTest do
       end
     end
   end
+
+  describe "get_push_rule/2" do
+    setup :one_push_rule
+
+    test "returns the requested push rule (200)", %{conn: conn, kind: kind, rule_id: rule_id} do
+      conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}", %{})
+
+      assert %{"rule_id" => ^rule_id, "actions" => ["notify"], "conditions" => [%{"key" => "content.body"}]} =
+               json_response(conn, 200)
+    end
+
+    test "returns M_NOT_FOUND (404) when the requested push rule does not exist", %{conn: conn, kind: kind} do
+      conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/blahblahblah", %{})
+
+      assert %{"errcode" => "M_NOT_FOUND", "error" => "push rule not found"} = json_response(conn, 404)
+    end
+  end
+
+  describe "get_push_rule_set/2" do
+    setup :one_push_rule
+
+    test "returns the requested push rule set (200), only :global is supported right now", %{
+      conn: conn,
+      rule_id: rule_id
+    } do
+      conn = get(conn, ~p"/_matrix/client/v3/pushrules/global", %{})
+
+      assert %{
+               "override" => [
+                 %{"rule_id" => ^rule_id, "actions" => ["notify"], "conditions" => [%{"key" => "content.body"}]}
+               ],
+               "underride" => []
+             } =
+               json_response(conn, 200)
+    end
+  end
+
+  describe "get_all_push_rule_sets/2" do
+    setup :one_push_rule
+
+    test "returns all rule sets", %{conn: conn, rule_id: rule_id} do
+      conn = get(conn, ~p"/_matrix/client/v3/pushrules", %{})
+
+      assert %{
+               "global" => %{
+                 "override" => [
+                   %{"rule_id" => ^rule_id, "actions" => ["notify"], "conditions" => [%{"key" => "content.body"}]}
+                 ],
+                 "underride" => []
+               }
+             } = json_response(conn, 200)
+    end
+  end
+
+  defp one_push_rule(%{account: account}) do
+    kind = :override
+    rule_id = Fixtures.random_string(12)
+
+    conditions = [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}]
+
+    assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], conditions)
+
+    %{kind: kind, rule_id: rule_id}
+  end
 end

@@ -346,7 +346,7 @@ defmodule RadioBeam.UserTest do
     end
 
     test "gets the user's global RuleSet", %{account: account} do
-      assert %RuleSet{} = rule_set = User.get_global_rule_set(account.user_id)
+      assert {:ok, %RuleSet{} = rule_set} = User.get_global_rule_set(account.user_id)
       assert %ConditionalRule{} = RuleSet.get_rule(rule_set, :override, "cooolrule")
     end
   end

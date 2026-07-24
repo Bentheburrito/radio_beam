@@ -27,10 +27,21 @@ defmodule RadioBeamWeb.Schemas.Account do
   def put_push_rule do
     %{
       "rule_id" => :string,
-      "kind" => Schema.enum(%{"override" => :override, "underride" => :underride}),
+      "kind" => push_rule_kind(),
       "actions" => [Schema.array_of(push_rule_action()), default: []],
       "conditions" => [Schema.array_of(push_rule_condition()), default: []]
     }
+  end
+
+  def get_push_rule do
+    %{
+      "rule_id" => :string,
+      "kind" => push_rule_kind()
+    }
+  end
+
+  defp push_rule_kind do
+    Schema.enum(%{"override" => :override, "underride" => :underride})
   end
 
   defp push_rule_action do

@@ -179,7 +179,7 @@ defmodule RadioBeam.User do
 
   def get_global_rule_set(user_id) do
     with {:ok, %ClientConfig{} = config} <- Database.fetch_user_client_config(user_id),
-         do: config.notification_rule_sets.global
+         do: {:ok, config.notification_rule_sets.global}
   end
 
   defp upsert_client_config(user_id, callback), do: Database.upsert_user_client_config_with(user_id, callback)

@@ -91,4 +91,22 @@ defmodule RadioBeam.User.Notifications.Core.RuleSet do
     |> Enum.sort_by(fn {_rule_id, {_rule, priority}} -> priority end, :desc)
     |> Stream.map(fn {_rule_id, {rule, _priority}} -> rule end)
   end
+
+  defimpl JSON.Encoder do
+    def encode(rule_set, encoder) do
+      JSON.Encoder.Map.encode(
+        %{
+          override:
+            rule_set.override
+            |> Stream.concat(rule_set.override_default)
+            |> Enum.map(fn {_, {rule, _priority}} -> rule end),
+          underride:
+            rule_set.underride
+            |> Stream.concat(rule_set.underride_default)
+            |> Enum.map(fn {_, {rule, _priority}} -> rule end)
+        },
+        encoder
+      )
+    end
+  end
 end

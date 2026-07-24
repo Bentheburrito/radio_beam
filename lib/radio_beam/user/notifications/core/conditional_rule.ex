@@ -6,7 +6,10 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User.Notifications.Core.ConditionalRule.Conditions
 
-  defstruct ~w|id actions conditions enabled?|a
+  # TODO: make conditions a struct with a predicate, rather than the predicate
+  # itself. Then the struct can impl JSON.Encoder, and we don't need to store
+  # raw_conditions anymore
+  defstruct ~w|id actions conditions raw_conditions enabled?|a
 
   @typep rule_id() :: String.t()
   @typep action() :: :notify | %{set_tweak: String.t()} | %{set_tweak: String.t(), value: any()}
@@ -14,11 +17,12 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
 
   @opaque t() :: %__MODULE__{id: rule_id(), actions: [action()], conditions: [condition()], enabled?: boolean()}
 
-  def new(id, actions, conditions, enabled?) when is_boolean(enabled?) do
+  def new(id, actions, raw_conditions, enabled?) when is_boolean(enabled?) do
     with :ok <- validate_rule_id(id),
          {:ok, actions} <- parse_actions(actions),
-         {:ok, conditions} <- parse_conditions(conditions) do
-      {:ok, %__MODULE__{id: id, actions: actions, conditions: conditions, enabled?: enabled?}}
+         {:ok, conditions} <- parse_conditions(raw_conditions) do
+      {:ok,
+       %__MODULE__{id: id, actions: actions, conditions: conditions, raw_conditions: raw_conditions, enabled?: enabled?}}
     end
   end
 
@@ -90,5 +94,20 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
 
   def event_passes_conditions?(%__MODULE__{} = rule, event) do
     Enum.all?(rule.conditions, & &1.(event))
+  end
+
+  defimpl JSON.Encoder do
+    def encode(rule, encoder) do
+      JSON.Encoder.Map.encode(
+        %{
+          rule_id: rule.id,
+          actions: rule.actions,
+          conditions: rule.raw_conditions,
+          enabled: rule.enabled?,
+          default: false
+        },
+        encoder
+      )
+    end
   end
 end
