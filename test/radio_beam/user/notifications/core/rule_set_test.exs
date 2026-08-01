@@ -19,6 +19,21 @@ defmodule RadioBeam.User.Notifications.Core.RuleSetTest do
     end
   end
 
+  describe "delete_rule/3" do
+    test "deletes override/underride rules, if they exist in the set" do
+      rule_set = RuleSet.new!()
+
+      for kind <- ~w|override underride|a do
+        {:ok, rule} = ConditionalRule.new("rule_#{Fixtures.random_string(12)}", ["notify"], [], true)
+        %RuleSet{} = rule_set = RuleSet.put_rule(rule_set, kind, rule)
+        assert ^rule = RuleSet.get_rule(rule_set, kind, rule.id)
+        assert %RuleSet{} = rule_set = RuleSet.delete_rule(rule_set, kind, rule.id)
+        assert :not_found = RuleSet.get_rule(rule_set, kind, rule.id)
+        assert ^rule_set = RuleSet.delete_rule(rule_set, kind, rule.id)
+      end
+    end
+  end
+
   describe "evaluate_event/2" do
     setup do
       %{user_id: user_id} = Fixtures.create_account()

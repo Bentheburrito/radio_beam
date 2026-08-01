@@ -57,6 +57,13 @@ defmodule RadioBeam.User.Notifications.Core.RuleSet do
     end
   end
 
+  def delete_rule(%__MODULE__{} = rule_set, kind, rule_id) when kind in ~w|override underride|a do
+    case kind do
+      :override -> rule_set.override[rule_id] |> pop_in() |> elem(1)
+      :underride -> rule_set.underride[rule_id] |> pop_in() |> elem(1)
+    end
+  end
+
   @doc """
   Evaluates the given event against a `t:#{__MODULE__}.t`.
 

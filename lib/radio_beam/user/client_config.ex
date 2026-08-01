@@ -115,6 +115,11 @@ defmodule RadioBeam.User.ClientConfig do
     end
   end
 
+  def delete_global_notification_push_rule!(%__MODULE__{} = config, kind, rule_id)
+      when kind in ~w|override underride|a do
+    update_in(config.notification_rule_sets.global, &RuleSet.delete_rule(&1, kind, rule_id))
+  end
+
   def get_timeline_preferences(config, filter_or_filter_id \\ :none) do
     ignored_user_ids =
       MapSet.new(config.account_data[:global]["m.ignored_user_list"]["ignored_users"] || %{}, &elem(&1, 0))

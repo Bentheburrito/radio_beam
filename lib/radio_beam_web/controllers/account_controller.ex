@@ -12,7 +12,7 @@ defmodule RadioBeamWeb.AccountController do
   require Logger
 
   plug RadioBeamWeb.Plugs.EnforceSchema,
-       [mod: AccountSchema] when action in ~w|put_tag put_pusher put_push_rule get_push_rule|a
+       [mod: AccountSchema] when action in ~w|put_tag put_pusher put_push_rule get_push_rule delete_push_rule|a
 
   def get_config(%{assigns: %{user_id: user_id}} = conn, %{"user_id" => user_id, "type" => type} = params) do
     scope = Map.get(params, "room_id", :global)
@@ -291,7 +291,17 @@ defmodule RadioBeamWeb.AccountController do
 
     case User.fetch_global_notification_push_rule(user_id, kind, rule_id) do
       {:ok, rule} -> json(conn, rule)
-      {:error, :not_found} -> json_error(conn, 404, :not_found, "push rule not found")
+      {:error, :not_found} -> json_error(conn, 404, :not_found, "push rule or set not found")
+    end
+  end
+
+  def delete_push_rule(conn, _params) do
+    user_id = conn.assigns.user_id
+    %{"kind" => kind, "rule_id" => rule_id} = conn.assigns.request
+
+    case User.delete_global_notification_push_rule(user_id, kind, rule_id) do
+      :ok -> json(conn, %{})
+      {:error, :not_found} -> json_error(conn, 404, :not_found, "rule set not found")
     end
   end
 end

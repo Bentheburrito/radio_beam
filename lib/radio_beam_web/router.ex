@@ -263,6 +263,7 @@ defmodule RadioBeamWeb.Router do
 
           get "/", AccountController, :get_push_rule_set, rl(:infrequent_bursts)
           get "/:kind/:rule_id", AccountController, :get_push_rule, rl(:infrequent_bursts)
+          delete "/:kind/:rule_id", AccountController, :delete_push_rule, rl(:infrequent_bursts)
         end
       end
     end

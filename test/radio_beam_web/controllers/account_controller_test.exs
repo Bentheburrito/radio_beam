@@ -551,7 +551,23 @@ defmodule RadioBeamWeb.AccountControllerTest do
     test "returns M_NOT_FOUND (404) when the requested push rule does not exist", %{conn: conn, kind: kind} do
       conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/blahblahblah", %{})
 
-      assert %{"errcode" => "M_NOT_FOUND", "error" => "push rule not found"} = json_response(conn, 404)
+      assert %{"errcode" => "M_NOT_FOUND", "error" => "push rule or set not found"} = json_response(conn, 404)
+    end
+  end
+
+  describe "delete_push_rule/2" do
+    setup :one_push_rule
+
+    test "returns an empty object (200)", %{conn: conn, kind: kind, rule_id: rule_id} do
+      conn = delete(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}", %{})
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+
+      conn = delete(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/idontexist", %{})
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
     end
   end
 

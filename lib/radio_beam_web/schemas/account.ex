@@ -40,6 +40,13 @@ defmodule RadioBeamWeb.Schemas.Account do
     }
   end
 
+  def delete_push_rule do
+    %{
+      "rule_id" => :string,
+      "kind" => push_rule_kind()
+    }
+  end
+
   defp push_rule_kind do
     Schema.enum(%{"override" => :override, "underride" => :underride})
   end
