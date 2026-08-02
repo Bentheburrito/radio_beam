@@ -24,6 +24,7 @@ defmodule RadioBeam.User do
   ### DEVICE ###
 
   defdelegate default_device_name, to: Device, as: :default_name
+  defdelegate push_rule_actions(conditional_rule), to: RadioBeam.User.Notifications.Core.ConditionalRule, as: :actions
 
   @doc "Gets metadata about a user's device"
   @spec get_device_info(id(), Device.id()) :: {:ok, map()} | {:error, :not_found}

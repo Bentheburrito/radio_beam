@@ -566,6 +566,13 @@ defmodule RadioBeamWeb.AccountControllerTest do
                json_response(conn, 200)
     end
 
+    test "returns the only actions when that's all that's requested (200)", %{conn: conn, kind: kind, rule_id: rule_id} do
+      conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}/actions", %{})
+
+      assert %{"actions" => ["notify"]} = response = json_response(conn, 200)
+      assert 1 = map_size(response)
+    end
+
     test "returns M_NOT_FOUND (404) when the requested push rule does not exist", %{conn: conn, kind: kind} do
       conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/blahblahblah", %{})
 
