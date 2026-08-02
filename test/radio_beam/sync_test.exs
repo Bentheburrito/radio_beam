@@ -10,6 +10,8 @@ defmodule RadioBeam.SyncTest do
   alias RadioBeam.Sync.NextBatch
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.Notifications.Core.ConditionalRule
+  alias RadioBeam.User.Notifications.Core.RuleSet
 
   setup do
     creator = Fixtures.create_account()
@@ -302,6 +304,49 @@ defmodule RadioBeam.SyncTest do
                  }
                }
              } = Sync.perform_v2(creator_id, device.id, [])
+    end
+
+    test "pushes m.push_rules under account data when a push rule is created, updated, or deleted", %{
+      account: %{user_id: user_id},
+      device: device
+    } do
+      # --- create
+
+      sync_task = Task.async(fn -> Sync.perform_v2(user_id, device.id, timeout: :timer.seconds(2)) end)
+      Process.sleep(100)
+
+      :ok = User.put_global_notification_push_rule(user_id, :override, "arule", ["notify"], [])
+
+      assert %{"account_data" => %{"events" => [%{"type" => "m.push_rules", "content" => %RuleSet{} = rule_set}]}} =
+               Task.await(sync_task)
+
+      assert %ConditionalRule{} = rule = RuleSet.get_rule(rule_set, :override, "arule")
+      assert [:notify] = ConditionalRule.actions(rule)
+
+      # --- update
+
+      sync_task = Task.async(fn -> Sync.perform_v2(user_id, device.id, timeout: :timer.seconds(2)) end)
+      Process.sleep(100)
+
+      :ok = User.put_global_notification_push_rule(user_id, :override, "arule", [], [])
+
+      assert %{"account_data" => %{"events" => [%{"type" => "m.push_rules", "content" => %RuleSet{} = rule_set}]}} =
+               Task.await(sync_task)
+
+      assert %ConditionalRule{} = rule = RuleSet.get_rule(rule_set, :override, "arule")
+      assert [] = ConditionalRule.actions(rule)
+
+      # --- update
+
+      sync_task = Task.async(fn -> Sync.perform_v2(user_id, device.id, timeout: :timer.seconds(2)) end)
+      Process.sleep(100)
+
+      :ok = User.delete_global_notification_push_rule(user_id, :override, "arule")
+
+      assert %{"account_data" => %{"events" => [%{"type" => "m.push_rules", "content" => %RuleSet{} = rule_set}]}} =
+               Task.await(sync_task)
+
+      assert :not_found = RuleSet.get_rule(rule_set, :override, "arule")
     end
   end
 

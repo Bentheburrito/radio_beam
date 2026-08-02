@@ -9,6 +9,7 @@ defmodule RadioBeam.Sync.Source.AccountDataUpdates do
   alias RadioBeam.PubSub
   alias RadioBeam.Sync.Source
   alias RadioBeam.User
+  alias RadioBeam.User.Notifications.Core.RuleSet
 
   @impl Source
   def top_level_path(_key, _result), do: ["account_data", "events"]
@@ -24,12 +25,19 @@ defmodule RadioBeam.Sync.Source.AccountDataUpdates do
     |> PubSub.account_data_updated()
     |> PubSub.subscribe()
 
+    user_id
+    |> PubSub.push_rules_updated()
+    |> PubSub.subscribe()
+
     Source.notify_waiting(sink_pid, key)
 
     receive do
       {:account_data_updated, ^user_id} ->
         {:ok, account_data} = User.get_account_data(user_id)
         {:ok, global_events(account_data), nil}
+
+      {:push_rules_updated, ^user_id, %RuleSet{} = rule_set} ->
+        {:ok, [%{"type" => "m.push_rules", "content" => rule_set}], nil}
     end
   end
 

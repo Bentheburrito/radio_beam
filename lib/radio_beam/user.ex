@@ -169,15 +169,17 @@ defmodule RadioBeam.User do
   end
 
   def put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions) do
-    put_rule_callback = &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions, conditions)
-
-    with {:ok, %ClientConfig{}} <- upsert_client_config(user_id, put_rule_callback), do: :ok
+    upsert_push_rule_change(
+      user_id,
+      &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions, conditions)
+    )
   end
 
   def put_global_notification_push_rule(user_id, kind, rule_id, actions_or_enabled) do
-    put_rule_callback = &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions_or_enabled)
-
-    with {:ok, %ClientConfig{}} <- upsert_client_config(user_id, put_rule_callback), do: :ok
+    upsert_push_rule_change(
+      user_id,
+      &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions_or_enabled)
+    )
   end
 
   def fetch_global_notification_push_rule(user_id, kind, rule_id) do
@@ -186,9 +188,15 @@ defmodule RadioBeam.User do
   end
 
   def delete_global_notification_push_rule(user_id, kind, rule_id) do
-    delete_rule_callback = &ClientConfig.delete_global_notification_push_rule!(&1, kind, rule_id)
+    upsert_push_rule_change(user_id, &ClientConfig.delete_global_notification_push_rule!(&1, kind, rule_id))
+  end
 
-    with {:ok, %ClientConfig{}} <- upsert_client_config(user_id, delete_rule_callback), do: :ok
+  defp upsert_push_rule_change(user_id, callback) do
+    with {:ok, %ClientConfig{} = config} <- upsert_client_config(user_id, callback) do
+      global_rule_set = config.notification_rule_sets.global
+      user_id |> PubSub.push_rules_updated() |> PubSub.broadcast({:push_rules_updated, user_id, global_rule_set})
+      :ok
+    end
   end
 
   def get_global_rule_set(user_id) do

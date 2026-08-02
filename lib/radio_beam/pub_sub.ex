@@ -11,6 +11,7 @@ defmodule RadioBeam.PubSub do
   ## TOPICS ##
 
   def account_data_updated(user_id), do: "account_data_updated:#{user_id}"
+  def push_rules_updated(user_id), do: "push_rules_updated:#{user_id}"
   def all_room_events(room_id), do: "events:#{room_id}"
   def file_uploaded(%MatrixContentURI{} = mxc), do: "file_uploaded:#{mxc}"
   def invite_events(user_id), do: "invite:#{user_id}"
