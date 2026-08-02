@@ -108,6 +108,13 @@ defmodule RadioBeam.User.ClientConfig do
     {:error, :kind}
   end
 
+  def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions)
+      when kind in ~w|override underride|a do
+    with %ConditionalRule{} = rule <- RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
+      put_global_notification_push_rule(config, kind, rule_id, actions, ConditionalRule.conditions(rule))
+    end
+  end
+
   def fetch_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id) do
     case RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
       :not_found -> {:error, :not_found}

@@ -91,6 +91,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
   def id(%__MODULE__{id: id}), do: id
   def enabled?(%__MODULE__{enabled?: enabled?}), do: enabled?
   def actions(%__MODULE__{actions: actions}), do: actions
+  def conditions(%__MODULE__{conditions: conditions}), do: conditions
 
   def event_passes_conditions?(%__MODULE__{} = rule, event) do
     Enum.all?(rule.conditions, & &1.(event))

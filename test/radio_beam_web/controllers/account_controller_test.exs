@@ -538,6 +538,24 @@ defmodule RadioBeamWeb.AccountControllerTest do
     end
   end
 
+  describe "put_push_rule/2 (/actions)" do
+    setup :one_push_rule
+
+    test "returns an empty object (200) when updating the actions of an existing push rule", %{
+      conn: conn,
+      kind: kind,
+      rule_id: rule_id
+    } do
+      conn =
+        put(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}/actions", %{
+          "actions" => ["notify", %{"set_tweak" => "sound", "value" => "harp"}]
+        })
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+  end
+
   describe "get_push_rule/2" do
     setup :one_push_rule
 

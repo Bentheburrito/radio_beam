@@ -327,6 +327,15 @@ defmodule RadioBeam.UserTest do
       end
     end
 
+    test "successfully updates an existing push rule", %{account: account} do
+      for kind <- ~w|override underride|a do
+        rule_id = Fixtures.random_string(9)
+
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], [])
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, [%{"set_tweak" => "sound"}])
+      end
+    end
+
     test "rejects invalid push rules", %{account: account} do
       assert {:error, :kind} = User.put_global_notification_push_rule(account.user_id, :ew, "abcdef", ["notify"], [])
 

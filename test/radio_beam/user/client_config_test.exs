@@ -162,7 +162,7 @@ defmodule RadioBeam.User.ClientConfigTest do
     end
   end
 
-  describe "put_global_notification_push_rule/5" do
+  describe "put_global_notification_push_rule/4,5" do
     setup do
       account = Fixtures.create_account()
       %{config: ClientConfig.new!(account.user_id)}
@@ -179,6 +179,25 @@ defmodule RadioBeam.User.ClientConfigTest do
                  ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
 
         assert ^rule_id = ConditionalRule.id(rule)
+      end
+    end
+
+    @sound_tweak %{"set_tweak" => "sound", "value" => "default"}
+    test "successfully updates an existing push rule when only actions are provided", %{config: config} do
+      for kind <- ~w|override underride|a do
+        rule_id = Fixtures.random_string(9)
+
+        {:ok, %ClientConfig{} = config} =
+          ClientConfig.put_global_notification_push_rule(config, kind, rule_id, ["notify"], [])
+
+        {:ok, %ConditionalRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        assert [:notify] = ConditionalRule.actions(rule)
+
+        {:ok, %ClientConfig{} = config} =
+          ClientConfig.put_global_notification_push_rule(config, kind, rule_id, [@sound_tweak])
+
+        {:ok, %ConditionalRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        assert [%{set_tweak: "sound", value: "default"}] = ConditionalRule.actions(rule)
       end
     end
 

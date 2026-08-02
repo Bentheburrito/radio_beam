@@ -249,9 +249,17 @@ defmodule RadioBeamWeb.AccountController do
 
   def put_push_rule(conn, _params) do
     user_id = conn.assigns.user_id
-    %{"kind" => kind, "rule_id" => rule_id, "actions" => actions, "conditions" => conditions} = conn.assigns.request
 
-    case User.put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions) do
+    put_result =
+      case conn.assigns.request do
+        %{"kind" => kind, "rule_id" => rule_id, "actions" => actions, "conditions" => conditions} ->
+          User.put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions)
+
+        %{"kind" => kind, "rule_id" => rule_id, "actions" => actions} ->
+          User.put_global_notification_push_rule(user_id, kind, rule_id, actions)
+      end
+
+    case put_result do
       :ok ->
         json(conn, %{})
 
@@ -259,7 +267,10 @@ defmodule RadioBeamWeb.AccountController do
         json_error(conn, 400, :bad_json, "field `#{field_name}` is invalid.")
 
       {:error, :kind} ->
-        json_error(conn, 400, :endpoint_error, [:invalid_param, "`#{kind}` is not a supported `kind`"])
+        json_error(conn, 400, :endpoint_error, [
+          :invalid_param,
+          "`#{conn.assigns.request["kind"]}` is not a supported `kind`"
+        ])
 
       {:error, error} ->
         Logger.error("#{inspect(error)} returned while putting new push rule")
