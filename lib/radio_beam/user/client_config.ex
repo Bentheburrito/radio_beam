@@ -92,26 +92,54 @@ defmodule RadioBeam.User.ClientConfig do
     update_in(config.notification_pushers, &Map.delete(&1, {app_id, pushkey}))
   end
 
-  def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions, conditions)
+  @doc """
+  Creates a new global push rule.
+  """
+  def put_global_notification_push_rule(config, kind, rule_id, actions, conditions, enabled? \\ true)
+
+  def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions, conditions, enabled?)
       when kind in ~w|override underride|a do
     rule_type =
       case kind do
         kind when kind in ~w|override underride|a -> ConditionalRule
       end
 
-    with {:ok, %^rule_type{} = rule} <- rule_type.new(rule_id, actions, conditions, true) do
+    with {:ok, %^rule_type{} = rule} <- rule_type.new(rule_id, actions, conditions, enabled?) do
       {:ok, update_in(config.notification_rule_sets.global, &RuleSet.put_rule(&1, kind, rule))}
     end
   end
 
-  def put_global_notification_push_rule(%__MODULE__{}, _kind, _rule_id, _actions, _conditions) do
+  def put_global_notification_push_rule(%__MODULE__{}, _kind, _rule_id, _actions, _conditions, _enabled?) do
     {:error, :kind}
+  end
+
+  @doc """
+  Updates the given push rule. When the fourth argument is a boolean, it
+  controls whether the rule is enabled or not. When a list is given, the actions
+  of the rule are updated.
+  """
+  def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, enabled?)
+      when is_boolean(enabled?) and kind in ~w|override underride|a do
+    with %ConditionalRule{} = rule <- RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
+      actions =
+        rule
+        |> ConditionalRule.actions()
+        |> Enum.map(fn
+          action when is_map(action) -> Map.new(action, fn {k, v} -> {to_string(k), v} end)
+          action when is_atom(action) -> to_string(action)
+        end)
+
+      conditions = ConditionalRule.raw_conditions(rule)
+      put_global_notification_push_rule(config, kind, rule_id, actions, conditions, enabled?)
+    end
   end
 
   def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions)
       when kind in ~w|override underride|a do
     with %ConditionalRule{} = rule <- RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
-      put_global_notification_push_rule(config, kind, rule_id, actions, ConditionalRule.conditions(rule))
+      conditions = ConditionalRule.raw_conditions(rule)
+      enabled? = ConditionalRule.enabled?(rule)
+      put_global_notification_push_rule(config, kind, rule_id, actions, conditions, enabled?)
     end
   end
 

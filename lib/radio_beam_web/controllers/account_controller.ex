@@ -257,6 +257,9 @@ defmodule RadioBeamWeb.AccountController do
 
         %{"kind" => kind, "rule_id" => rule_id, "actions" => actions} ->
           User.put_global_notification_push_rule(user_id, kind, rule_id, actions)
+
+        %{"kind" => kind, "rule_id" => rule_id, "enabled" => enabled?} ->
+          User.put_global_notification_push_rule(user_id, kind, rule_id, enabled?)
       end
 
     case put_result do
@@ -301,9 +304,11 @@ defmodule RadioBeamWeb.AccountController do
     %{"kind" => kind, "rule_id" => rule_id} = conn.assigns.request
 
     only_rule_actions? = String.ends_with?(conn.request_path, "/actions")
+    only_rule_enabled? = String.ends_with?(conn.request_path, "/enabled")
 
     case User.fetch_global_notification_push_rule(user_id, kind, rule_id) do
       {:ok, rule} when only_rule_actions? -> json(conn, %{actions: User.push_rule_actions(rule)})
+      {:ok, rule} when only_rule_enabled? -> json(conn, %{enabled: User.push_rule_enabled?(rule)})
       {:ok, rule} -> json(conn, rule)
       {:error, :not_found} -> json_error(conn, 404, :not_found, "push rule or set not found")
     end

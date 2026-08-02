@@ -333,6 +333,7 @@ defmodule RadioBeam.UserTest do
 
         assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], [])
         assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, [%{"set_tweak" => "sound"}])
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, false)
       end
     end
 

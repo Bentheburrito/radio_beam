@@ -201,6 +201,23 @@ defmodule RadioBeam.User.ClientConfigTest do
       end
     end
 
+    test "successfully enable/disables an existing push rule", %{config: config} do
+      for kind <- ~w|override underride|a do
+        rule_id = Fixtures.random_string(9)
+
+        {:ok, %ClientConfig{} = config} =
+          ClientConfig.put_global_notification_push_rule(config, kind, rule_id, ["notify"], [])
+
+        {:ok, %ConditionalRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        assert ConditionalRule.enabled?(rule)
+
+        {:ok, %ClientConfig{} = config} = ClientConfig.put_global_notification_push_rule(config, kind, rule_id, false)
+
+        {:ok, %ConditionalRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        refute ConditionalRule.enabled?(rule)
+      end
+    end
+
     test "rejects invalid push rules", %{config: config} do
       assert {:error, :kind} = ClientConfig.put_global_notification_push_rule(config, :ew, "abcdef", ["notify"], [])
       assert {:error, :rule_id} = ClientConfig.put_global_notification_push_rule(config, :override, 123, ["notify"], [])

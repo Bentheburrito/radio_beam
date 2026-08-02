@@ -538,7 +538,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
     end
   end
 
-  describe "put_push_rule/2 (/actions)" do
+  describe "put_push_rule/2 (/actions and /enabled)" do
     setup :one_push_rule
 
     test "returns an empty object (200) when updating the actions of an existing push rule", %{
@@ -550,6 +550,18 @@ defmodule RadioBeamWeb.AccountControllerTest do
         put(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}/actions", %{
           "actions" => ["notify", %{"set_tweak" => "sound", "value" => "harp"}]
         })
+
+      assert %{} = response = json_response(conn, 200)
+      assert 0 = map_size(response)
+    end
+
+    test "returns an empty object (200) when updating the enabled status of an existing push rule", %{
+      conn: conn,
+      kind: kind,
+      rule_id: rule_id
+    } do
+      conn =
+        put(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}/enabled", %{"enabled" => false})
 
       assert %{} = response = json_response(conn, 200)
       assert 0 = map_size(response)
@@ -570,6 +582,13 @@ defmodule RadioBeamWeb.AccountControllerTest do
       conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}/actions", %{})
 
       assert %{"actions" => ["notify"]} = response = json_response(conn, 200)
+      assert 1 = map_size(response)
+    end
+
+    test "returns the only enabled when that's all that's requested (200)", %{conn: conn, kind: kind, rule_id: rule_id} do
+      conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}/enabled", %{})
+
+      assert %{"enabled" => true} = response = json_response(conn, 200)
       assert 1 = map_size(response)
     end
 

@@ -261,10 +261,12 @@ defmodule RadioBeamWeb.Router do
         scope "/pushrules/global" do
           put "/:kind/:rule_id", AccountController, :put_push_rule, rl(:infrequent_bursts)
           put "/:kind/:rule_id/actions", AccountController, :put_push_rule, rl(:infrequent_bursts)
+          put "/:kind/:rule_id/enabled", AccountController, :put_push_rule, rl(:infrequent_bursts)
 
           get "/", AccountController, :get_push_rule_set, rl(:infrequent_bursts)
           get "/:kind/:rule_id", AccountController, :get_push_rule, rl(:infrequent_bursts)
           get "/:kind/:rule_id/actions", AccountController, :get_push_rule, rl(:infrequent_bursts)
+          get "/:kind/:rule_id/enabled", AccountController, :get_push_rule, rl(:infrequent_bursts)
 
           delete "/:kind/:rule_id", AccountController, :delete_push_rule, rl(:infrequent_bursts)
         end

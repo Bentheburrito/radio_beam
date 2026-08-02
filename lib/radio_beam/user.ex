@@ -25,6 +25,7 @@ defmodule RadioBeam.User do
 
   defdelegate default_device_name, to: Device, as: :default_name
   defdelegate push_rule_actions(conditional_rule), to: RadioBeam.User.Notifications.Core.ConditionalRule, as: :actions
+  defdelegate push_rule_enabled?(conditional_rule), to: RadioBeam.User.Notifications.Core.ConditionalRule, as: :enabled?
 
   @doc "Gets metadata about a user's device"
   @spec get_device_info(id(), Device.id()) :: {:ok, map()} | {:error, :not_found}
@@ -173,8 +174,8 @@ defmodule RadioBeam.User do
     with {:ok, %ClientConfig{}} <- upsert_client_config(user_id, put_rule_callback), do: :ok
   end
 
-  def put_global_notification_push_rule(user_id, kind, rule_id, actions) do
-    put_rule_callback = &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions)
+  def put_global_notification_push_rule(user_id, kind, rule_id, actions_or_enabled) do
+    put_rule_callback = &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions_or_enabled)
 
     with {:ok, %ClientConfig{}} <- upsert_client_config(user_id, put_rule_callback), do: :ok
   end
