@@ -9,6 +9,7 @@ defmodule RadioBeam.User.Database do
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Device
   alias RadioBeam.User.KeyStore
+  alias RadioBeam.User.Notification
 
   @type return_value() :: term()
 
@@ -39,6 +40,8 @@ defmodule RadioBeam.User.Database do
   @callback insert_new_key_store(User.id(), KeyStore.t()) :: :ok | {:error, :already_exists}
   @callback update_key_store(User.id(), (KeyStore.t() -> {:ok, KeyStore.t()} | {:error, term()})) ::
               {:ok, KeyStore.t()} | {:error, :not_found | term()}
+  @callback insert_new_notification(Notification.t()) :: :ok | {:error, term()}
+  @callback all_notifications(User.id()) :: [Notification.t()]
 
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.User.Database, :backend])
   defdelegate insert_new_user_account(user_account), to: @database_backend
@@ -56,4 +59,6 @@ defmodule RadioBeam.User.Database do
   defdelegate fetch_key_store(user_id), to: @database_backend
   defdelegate insert_new_key_store(user_id, key_store), to: @database_backend
   defdelegate update_key_store(user_id, callback), to: @database_backend
+  defdelegate insert_new_notification(notification), to: @database_backend
+  defdelegate all_notifications(user_id), to: @database_backend
 end

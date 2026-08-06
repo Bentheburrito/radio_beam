@@ -13,6 +13,7 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.DynamicOAuth2Client
   import RadioBeam.Database.Mnesia.Tables.KeyStore
   import RadioBeam.Database.Mnesia.Tables.LocalAccount
+  import RadioBeam.Database.Mnesia.Tables.Notification
   import RadioBeam.Database.Mnesia.Tables.Room
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
   import RadioBeam.Database.Mnesia.Tables.RoomView
@@ -29,6 +30,7 @@ defmodule RadioBeam.Database.Mnesia do
   alias RadioBeam.User.Device
   alias RadioBeam.User.KeyStore
   alias RadioBeam.User.LocalAccount
+  alias RadioBeam.User.Notification
 
   require Logger
 
@@ -37,6 +39,7 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.DynamicOAuth2Client,
     Tables.KeyStore,
     Tables.LocalAccount,
+    Tables.Notification,
     Tables.Room,
     Tables.RoomAlias,
     Tables.RoomView,
@@ -452,6 +455,23 @@ defmodule RadioBeam.Database.Mnesia do
     end)
   end
 
+  @impl RadioBeam.User.Database
+  def insert_new_notification(%Notification{} = notification) do
+    record = notification(key: {notification.user_id, notification.ts}, notification: notification)
+
+    transaction(fn -> :mnesia.write(Tables.Notification, record, :write) end)
+  end
+
+  @impl RadioBeam.User.Database
+  def all_notifications(user_id) do
+    match_head = notification(key: {user_id, :_}, notification: :_)
+    match_spec = [{match_head, [], [:"$_"]}]
+
+    transaction(fn ->
+      Tables.Notification |> :mnesia.select(match_spec) |> Enum.map(&record_to_domain_struct/1)
+    end)
+  end
+
   @impl RadioBeam.Admin.Database
   def insert_new_report(%UserGeneratedReport{} = report) do
     key = {report.target, report.submitted_by}
@@ -481,6 +501,7 @@ defmodule RadioBeam.Database.Mnesia do
   defp record_to_domain_struct(user_client_config(client_config: %ClientConfig{} = config)), do: config
   defp record_to_domain_struct(device(device: %Device{} = device)), do: device
   defp record_to_domain_struct(local_account(local_account: %LocalAccount{} = account)), do: account
+  defp record_to_domain_struct(notification(notification: %Notification{} = notification)), do: notification
   defp record_to_domain_struct(room(room: %Room{} = room)), do: room
   defp record_to_domain_struct(room_alias(alias_struct: %Room.Alias{} = room_alias)), do: room_alias
   defp record_to_domain_struct(upload() = upload_record), do: struct!(Upload, upload(upload_record))

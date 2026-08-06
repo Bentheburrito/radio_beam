@@ -9,13 +9,15 @@ defmodule RadioBeam.Room.View.Core do
   alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Threads
   alias RadioBeam.Room.View.Core.Timeline
+  alias RadioBeam.Room.View.Core.UserNotificationEventDispatcher
 
   @views [
     InviteStateEvents,
     Participating,
     RelatedEvents,
     Threads,
-    Timeline
+    Timeline,
+    UserNotificationEventDispatcher
   ]
 
   def handle_pdu(room_id, state_mapping_at_pdu, %PDU{} = pdu, deps) do
