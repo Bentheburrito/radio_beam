@@ -1,4 +1,7 @@
 defmodule RadioBeam.User.Notification do
+  @moduledoc """
+  A user notification triggered by a room event
+  """
   defstruct ~w|user_id actions event profile_tag read room_id ts|a
 
   @opaque t() :: %__MODULE__{}

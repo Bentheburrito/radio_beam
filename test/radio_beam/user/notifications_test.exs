@@ -49,7 +49,7 @@ defmodule RadioBeam.User.NotificationsTest do
       assert [] = Notifications.all_notifications(creator_id)
       assert [] = Notifications.all_notifications(user_id)
 
-      {:ok, event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, tonight we game!")
+      {:ok, _event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, tonight we game!")
 
       :pong = Room.Server.ping(room_id)
 

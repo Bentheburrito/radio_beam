@@ -1,4 +1,7 @@
 defmodule RadioBeam.User.Notifications do
+  @moduledoc """
+  Interface for user (push) notifications.
+  """
   alias RadioBeam.Room
   alias RadioBeam.Time
   alias RadioBeam.User
