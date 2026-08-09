@@ -7,10 +7,10 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.InviteStateEvents
   alias RadioBeam.Room.View.Core.Participating
-  alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Threads
   alias RadioBeam.Room.View.Core.Timeline
   alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.View.RelatedEvents
   alias RadioBeam.User
 
   @type key() :: term()
@@ -21,7 +21,6 @@ defmodule RadioBeam.Room.View do
   end
 
   def all_participating(user_id) do
-    # TODO: should hide view_state key behind fxn in Participating here?
     Database.fetch_view({Participating, user_id})
   end
 
@@ -76,8 +75,8 @@ defmodule RadioBeam.Room.View do
           %{Room.event_id() => Enumerable.t(Event.t())} | {:ok, Enumerable.t(Event.t())} | {:error, :not_found}
   def get_child_events(room_id, user_id, event_ids) when is_list(event_ids) do
     with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}),
-         {:ok, %RelatedEvents{} = relations} <- Database.fetch_view({RelatedEvents, room_id}) do
+         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
+      %RelatedEvents{} = relations = RelatedEvents.fetch!(room_id)
       fetch_pdu! = &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
 
       timeline

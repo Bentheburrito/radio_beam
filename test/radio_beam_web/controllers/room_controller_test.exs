@@ -2,6 +2,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room
+  alias RadioBeam.Room.View.RelatedEvents
   alias RadioBeam.Sync.NextBatch
 
   describe "create/2" do
@@ -911,6 +912,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
     test "returns an empty object (200) for a threaded reply", %{conn: conn, account: account} do
       {:ok, room_id} = Room.create(account.user_id)
+      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
 
       {:ok, thread_id} = Room.send_text_message(room_id, account.user_id, "helloo")
 
@@ -919,6 +921,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
           "body" => "what's up",
           "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => thread_id}
         })
+
+      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, event_id)
 
       for type <- ~w|m.read m.read.private| do
         conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/#{type}/#{event_id}", %{thread_id: thread_id})
@@ -967,8 +971,12 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "returns M_BAD_JSON (400) when the thread_id does not point to a thread root", %{conn: conn, account: account} do
       {:ok, room_id} = Room.create(account.user_id)
 
+      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+
       {:ok, not_a_thread_id} = Room.send_text_message(room_id, account.user_id, "helloo")
       {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
+
+      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, event_id)
 
       for type <- ~w|m.read m.read.private| do
         conn =

@@ -6,14 +6,12 @@ defmodule RadioBeam.Room.View.Core do
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core.InviteStateEvents
   alias RadioBeam.Room.View.Core.Participating
-  alias RadioBeam.Room.View.Core.RelatedEvents
   alias RadioBeam.Room.View.Core.Threads
   alias RadioBeam.Room.View.Core.Timeline
 
   @views [
     InviteStateEvents,
     Participating,
-    RelatedEvents,
     Threads,
     Timeline
   ]

@@ -2,23 +2,33 @@ defmodule RadioBeam.Room.ViewTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
+  alias RadioBeam.Room.View.RelatedEvents
 
   describe "get_child_events/3" do
-    test "Return an empty list when an event has no relations" do
+    setup do
       account = Fixtures.create_account()
       {:ok, room_id} = Room.create(account.user_id)
+
+      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+
       {:ok, parent_event_id} = Room.send_text_message(room_id, account.user_id, "This is a test message")
 
-      assert room_id in Room.joined(account.user_id)
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
+      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, parent_event_id)
+
+      %{room_id: room_id, user_id: account.user_id, parent_event_id: parent_event_id}
+    end
+
+    test "Return an empty list when an event has no relations", %{
+      room_id: room_id,
+      user_id: user_id,
+      parent_event_id: parent_event_id
+    } do
+      assert room_id in Room.joined(user_id)
+      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
       assert Enum.empty?(child_event_stream)
     end
 
-    test "Return an event's single child event" do
-      account = Fixtures.create_account()
-      {:ok, room_id} = Room.create(account.user_id)
-      {:ok, parent_event_id} = Room.send_text_message(room_id, account.user_id, "This is a test message")
-
+    test "Return an event's single child event", %{room_id: room_id, user_id: user_id, parent_event_id: parent_event_id} do
       content =
         %{
           "msgtype" => "m.text",
@@ -26,19 +36,17 @@ defmodule RadioBeam.Room.ViewTest do
           "m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "org.some.random.relationship"}
         }
 
-      {:ok, child_event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
+      {:ok, child_event_id} = Room.send(room_id, user_id, "m.room.message", content)
 
-      assert room_id in Room.joined(account.user_id)
+      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, child_event_id)
 
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
+      assert room_id in Room.joined(user_id)
+
+      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
       assert [%{id: ^child_event_id}] = Enum.to_list(child_event_stream)
     end
 
-    test "Return an event's two child events" do
-      account = Fixtures.create_account()
-      {:ok, room_id} = Room.create(account.user_id)
-      {:ok, parent_event_id} = Room.send_text_message(room_id, account.user_id, "This is a test message")
-
+    test "Return an event's two child events", %{room_id: room_id, user_id: user_id, parent_event_id: parent_event_id} do
       content =
         %{
           "msgtype" => "m.text",
@@ -46,14 +54,16 @@ defmodule RadioBeam.Room.ViewTest do
           "m.relates_to" => %{"event_id" => parent_event_id, "rel_type" => "org.some.random.relationship"}
         }
 
-      {:ok, child_event_id1} = Room.send(room_id, account.user_id, "m.room.message", content)
+      {:ok, child_event_id1} = Room.send(room_id, user_id, "m.room.message", content)
 
       {:ok, child_event_id2} =
-        Room.send(room_id, account.user_id, "m.room.message", Map.put(content, "body", "And a 3rd msg"))
+        Room.send(room_id, user_id, "m.room.message", Map.put(content, "body", "And a 3rd msg"))
 
-      assert room_id in Room.joined(account.user_id)
+      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, child_event_id2)
 
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
+      assert room_id in Room.joined(user_id)
+
+      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
       assert Enum.sort([child_event_id1, child_event_id2]) == child_event_stream |> Stream.map(& &1.id) |> Enum.sort()
     end
 
