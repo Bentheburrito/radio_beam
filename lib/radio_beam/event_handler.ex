@@ -2,20 +2,14 @@ defmodule RadioBeam.EventHandler do
   @moduledoc """
   Behaviour for handling room events.
 
-  Implemeters need to be added to the hard-coded set of queues in the
-  `queues_for/1` function.
+  Implemeters need to be added to the hard-coded set of queues in `config.exs`
 
   Also see `c:handle_pdu/2` for details on requirements of implementers and
   characteristics of the events that are to be handled.
   """
   alias RadioBeam.Database
   alias RadioBeam.Room.PDU
-  alias RadioBeam.Room.View.Core.InviteStateEvents
-  alias RadioBeam.Room.View.Core.Participating
-  alias RadioBeam.Room.View.Core.RelatedEvents
-  alias RadioBeam.Room.View.Core.Threads
-  alias RadioBeam.Room.View.Core.Timeline
-  alias RadioBeam.Room.View.Core.UserNotificationEventDispatcher
+  alias RadioBeam.EventHandler.Server
 
   @type event_number() :: integer()
   @type queue() ::
@@ -42,23 +36,25 @@ defmodule RadioBeam.EventHandler do
 
   # Queues Define Seriality
 
-  PDUs are routed to worker processes as defined by the `queues_for/1` function
-  in this module. As such, be sure to update that function when writing a new
-  event handler.
+  By default, PDUs are routed to worker processes as defined by the
+  `queues_for/1` function in this module. As such, be sure to update the
+  relevant `config.exs` entries when writing a new event handler. The queues to
+  route the PDU to can be overridden by providing `:queues` option via
+  `queue_event/2`.
 
   Queues are almost always a tuple, where the first element is the callback
-  module. The subsequent values of the queue-tuple determine the order PDUs are
-  processed. **You must assume that the same event handler can be called
-  concurrently for each distinct queue entry.**
+  module. The subsequent values of the queue-tuple constitute arbitrary terms
+  that are used to uniquely identify the queue. **You must assume that the same
+  event handler can be called concurrently for each distinct queue entry.**
 
   For example, if an event handler should be invoked serially
-  per room, and is allowed to process events from other rooms concurrently, the
-  `queues_for/1` entry should be `{HandlerMod, pdu.event.room_id}`. If it
-  should be invoked serially per *user*, such as the sender of the event, the
-  entry should be `{HandlerMod, pdu.event.sender}`. If the event handler must
-  process every PDU globally (which, warning you now, for busy homeservers,
-  could become an extreme bottleneck!), the entry should be just `HandlerMod` -
-  note this is not wrapped in a tuple at all.
+  per room, but concurrently across rooms, the queue entry should be
+  `{HandlerMod, pdu.event.room_id}`. If it should be invoked serially per
+  *user*, such as the sender of the event, the entry should be `{HandlerMod,
+  pdu.event.sender}`. If the event handler must process every PDU globally
+  (which, warning you now, for busy homeservers, could become an extreme
+  bottleneck!), the entry should be just `HandlerMod` - note this is not
+  wrapped in a tuple at all.
   """
   @callback handle_pdu(PDU.t(), get_state_at_pdu :: function()) :: :ok | {:error, :retry | :discard}
 
@@ -91,26 +87,28 @@ defmodule RadioBeam.EventHandler do
   """
   @callback reset_to(event_number()) :: {:ok, event_number()} | {:error, :from_the_top | :continue | :fatal}
 
-  def queue_event(%PDU{} = pdu), do: queue_event(pdu, queues_for(pdu))
+  def queue_event(%PDU{} = pdu), do: queue_event(pdu, queues: queues_for(pdu))
 
-  def queue_event(%PDU{} = pdu, queues) do
+  def queue_event(%PDU{} = pdu, opts) do
+    queues = Keyword.get_lazy(opts, :queues, fn -> queues_for(pdu) end)
+    notify? = Keyword.get(opts, :notify?, true)
+
     Enum.find_value(queues, :ok, fn queue ->
       with :ok <- Database.queue_event(queue, pdu.stream_number, pdu) do
+        if notify?, do: Server.notify_event_queued(queue)
         _continue_to_next_queue = nil
       end
     end)
   end
 
-  # TODO: this could probably be improved to be configurable/not so hard-coded.
-  #       if you do improve it, remember to update all the docs in this module!
+  @room_id_keyed_handlers Application.compile_env!(:radio_beam, [__MODULE__, :room_id_keyed_handlers])
+  @state_key_keyed_handlers Application.compile_env!(:radio_beam, [__MODULE__, :state_key_keyed_handlers])
+
   @spec queues_for(PDU.t()) :: [queue()]
-  defp queues_for(%PDU{event: %{type: "m.room.member"} = event}),
-    do: [{Participating, event.state_key} | queues_for(event)]
-
-  defp queues_for(%PDU{event: event}), do: queues_for(event)
-
-  @room_id_keyed_views [InviteStateEvents, RelatedEvents, Threads, Timeline, UserNotificationEventDispatcher]
-  defp queues_for(%{room_id: room_id}) do
-    for view <- @room_id_keyed_views, do: {view, room_id}
+  defp queues_for(%PDU{event: %{room_id: room_id, state_key: state_key}}) do
+    Enum.concat([
+      for(handler <- @room_id_keyed_handlers, do: {handler, room_id}),
+      for(handler <- @state_key_keyed_handlers, do: {handler, state_key})
+    ])
   end
 end

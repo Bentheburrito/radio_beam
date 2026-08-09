@@ -33,13 +33,13 @@ defmodule RadioBeam.EventHandler.StateTest do
       {:sent, _room, _event_id, [%{stream_number: event_num} = pdu]} =
         Fixtures.send_room_msg(room, creator_id, "hullo there")
 
-      assert :ok = EventHandler.queue_event(pdu, [queue])
+      assert :ok = EventHandler.queue_event(pdu, queues: [queue], notify?: false)
 
       assert {:ok, %State{} = state} = State.process_init(queue)
       assert ^queue = State.queue(state)
       assert :good = State.disposition(state)
 
-      assert_received {:read_model_caught_up_to, ^queue, ^event_num}
+      assert_received {:read_model_caught_up_to, ^queue, ^event_num, _event_id}
     end
   end
 
@@ -48,7 +48,7 @@ defmodule RadioBeam.EventHandler.StateTest do
       {:sent, _room, _event_id, [pdu]} =
         Fixtures.send_room_msg(room, creator_id, "hullo there")
 
-      :ok = EventHandler.queue_event(pdu, [succeed_queue, fail_queue])
+      :ok = EventHandler.queue_event(pdu, queues: [succeed_queue, fail_queue], notify?: false)
       {:ok, %State{} = good_state} = State.process_init(succeed_queue)
       {:ok, %State{} = fail_state} = State.process_init(fail_queue)
 
@@ -70,8 +70,8 @@ defmodule RadioBeam.EventHandler.StateTest do
       {:sent, room, _event_id, [pdu1]} = Fixtures.send_room_msg(room, creator_id, "hello?")
       {:sent, _room, _event_id, [pdu2]} = Fixtures.send_room_msg(room, creator_id, "oh there's no one else here yet")
 
-      assert :ok = EventHandler.queue_event(pdu1, [queue])
-      assert :ok = EventHandler.queue_event(pdu2, [queue])
+      assert :ok = EventHandler.queue_event(pdu1, queues: [queue], notify?: false)
+      assert :ok = EventHandler.queue_event(pdu2, queues: [queue], notify?: false)
 
       assert {:ok, %State{} = state} = State.process(state)
       assert ^queue = State.queue(state)
@@ -79,14 +79,14 @@ defmodule RadioBeam.EventHandler.StateTest do
 
       %{stream_number: event_num1} = pdu1
       %{stream_number: event_num2} = pdu2
-      assert_received {:read_model_caught_up_to, ^queue, ^event_num1}
-      refute_received {:read_model_caught_up_to, ^queue, ^event_num2}
+      assert_received {:read_model_caught_up_to, ^queue, ^event_num1, _event_id}
+      refute_received {:read_model_caught_up_to, ^queue, ^event_num2, _event_id}
 
       assert {:ok, %State{} = state} = State.process(state)
       assert ^queue = State.queue(state)
       assert :good = State.disposition(state)
 
-      assert_received {:read_model_caught_up_to, ^queue, ^event_num2}
+      assert_received {:read_model_caught_up_to, ^queue, ^event_num2, _event_id}
     end
 
     test "returns `{:error, state}` after failing to process a queued event", %{
@@ -100,15 +100,15 @@ defmodule RadioBeam.EventHandler.StateTest do
       {:sent, room, _event_id, [pdu1]} = Fixtures.send_room_msg(room, creator_id, "hello?")
       {:sent, room, _event_id, [pdu2]} = Fixtures.send_room_msg(room, creator_id, "oh there's no one else here yet")
 
-      assert :ok = EventHandler.queue_event(pdu1, [queue])
-      assert :ok = EventHandler.queue_event(pdu2, [queue])
+      assert :ok = EventHandler.queue_event(pdu1, queues: [queue], notify?: false)
+      assert :ok = EventHandler.queue_event(pdu2, queues: [queue], notify?: false)
 
       assert {:ok, %State{} = state} = State.process(state)
       assert {:ok, %State{} = state} = State.process(state)
       assert :good = State.disposition(state)
 
       {:sent, _room, _event_id, [pdu3]} = Fixtures.send_room_msg(room, creator_id, "rip")
-      assert :ok = EventHandler.queue_event(pdu3, [queue])
+      assert :ok = EventHandler.queue_event(pdu3, queues: [queue], notify?: false)
 
       assert {:error, %State{} = state} = State.process(state)
       assert ^queue = State.queue(state)
@@ -117,15 +117,15 @@ defmodule RadioBeam.EventHandler.StateTest do
       %{stream_number: event_num1} = pdu1
       %{stream_number: event_num2} = pdu2
       %{stream_number: event_num3} = pdu3
-      assert_received {:read_model_caught_up_to, ^queue, ^event_num1}
-      assert_received {:read_model_caught_up_to, ^queue, ^event_num2}
-      refute_received {:read_model_caught_up_to, ^queue, ^event_num3}
+      assert_received {:read_model_caught_up_to, ^queue, ^event_num1, _event_id}
+      assert_received {:read_model_caught_up_to, ^queue, ^event_num2, _event_id}
+      refute_received {:read_model_caught_up_to, ^queue, ^event_num3, _event_id}
 
       assert {:error, %State{} = state} = State.process(state)
       assert ^queue = State.queue(state)
       assert {:failing, 2} = State.disposition(state)
 
-      refute_received {:read_model_caught_up_to, ^queue, ^event_num3}
+      refute_received {:read_model_caught_up_to, ^queue, ^event_num3, _event_id}
     end
   end
 

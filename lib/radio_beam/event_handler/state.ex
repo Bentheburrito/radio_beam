@@ -19,7 +19,7 @@ defmodule RadioBeam.EventHandler.State do
 
     with {:ok, event_number, %PDU{stream_number: event_number} = pdu} <- Database.peek_event(queue),
          {:ok, %__MODULE__{} = state} <- handle_pdu(new!(queue, callback_mod, event_number), pdu) do
-      mark_event_processed(state, event_number)
+      mark_event_processed(state, event_number, pdu.event.id)
     end
   end
 
@@ -56,13 +56,13 @@ defmodule RadioBeam.EventHandler.State do
     }
   end
 
-  defp mark_event_processed(state, event_number) do
+  defp mark_event_processed(state, event_number, event_id) do
     state = put_in(state.latest_processed_event_number, event_number)
 
     with :ok <- Database.mark_event_processed(state.queue, state, event_number) do
       PubSub.broadcast(
         PubSub.read_model_caught_up_to(state.queue),
-        {:read_model_caught_up_to, state.queue, event_number}
+        {:read_model_caught_up_to, state.queue, event_number, event_id}
       )
 
       {:ok, state}
@@ -74,7 +74,7 @@ defmodule RadioBeam.EventHandler.State do
   def process(%__MODULE__{} = state) do
     with {:ok, event_number, %PDU{stream_number: event_number} = pdu} <- Database.peek_event(state.queue),
          {:ok, state} <- handle_pdu(state, pdu) do
-      mark_event_processed(state, event_number)
+      mark_event_processed(state, event_number, pdu.event.id)
     end
   end
 

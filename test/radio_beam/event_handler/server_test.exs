@@ -28,47 +28,34 @@ defmodule RadioBeam.EventHandler.ServerTest do
   end
 
   describe "a server with a healthy callback mod" do
-    setup %{always_succeeds_queue: always_succeeds, room: room, creator_id: creator_id} do
-      PubSub.subscribe(PubSub.read_model_caught_up_to(always_succeeds))
-      Process.flag(:trap_exit, true)
-
-      {:sent, _room, _event_id, [pdu]} = Fixtures.send_room_msg(room, creator_id, "hello?")
-      assert :ok = EventHandler.queue_event(pdu, [always_succeeds])
-      pid = start_supervised!({Server, always_succeeds})
-
-      %{stream_number: event_num} = pdu
-      assert_receive {:read_model_caught_up_to, ^always_succeeds, ^event_num}
-
-      %{server_pid: pid}
-    end
-
     test "successfully processes all queued messages, then waits for more", %{
       always_succeeds_queue: queue,
       room: room,
-      creator_id: creator_id,
-      server_pid: pid
+      creator_id: creator_id
     } do
+      PubSub.subscribe(PubSub.read_model_caught_up_to(queue))
+
       {:sent, room, _event_id, [pdu1]} = Fixtures.send_room_msg(room, creator_id, "hello?")
       {:sent, _room, _event_id, [pdu2]} = Fixtures.send_room_msg(room, creator_id, "oh there's no one else here yet")
 
-      assert :ok = EventHandler.queue_event(pdu1, [queue])
-      assert :ok = EventHandler.queue_event(pdu2, [queue])
+      assert :ok = EventHandler.queue_event(pdu1, queues: [queue], notify?: false)
+      assert :ok = EventHandler.queue_event(pdu2, queues: [queue], notify?: false)
 
       assert {:ok, _, _} = RadioBeam.Database.peek_event(queue)
 
       %{stream_number: event_num1} = pdu1
       %{stream_number: event_num2} = pdu2
-      refute_receive {:read_model_caught_up_to, ^queue, ^event_num1}
-      refute_receive {:read_model_caught_up_to, ^queue, ^event_num2}
+      refute_receive {:read_model_caught_up_to, ^queue, ^event_num1, _event_id}
+      refute_receive {:read_model_caught_up_to, ^queue, ^event_num2, _event_id}
 
       assert :ok = Server.notify_event_queued(queue)
 
-      assert_receive {:read_model_caught_up_to, ^queue, ^event_num1}
-      assert_receive {:read_model_caught_up_to, ^queue, ^event_num2}
+      assert_receive {:read_model_caught_up_to, ^queue, ^event_num1, _event_id}
+      assert_receive {:read_model_caught_up_to, ^queue, ^event_num2, _event_id}
 
       assert :done = RadioBeam.Database.peek_event(queue)
 
-      refute_receive {:EXIT, ^pid, _any_reason}
+      assert [{pid, nil}] = Registry.lookup(Server.registry(), queue)
       assert Process.alive?(pid)
     end
   end
@@ -82,7 +69,7 @@ defmodule RadioBeam.EventHandler.ServerTest do
       {_room, last_event_num} =
         Enum.reduce(1..10, {room, nil}, fn _i, {room, _} ->
           {:sent, room, _event_id, [pdu]} = Fixtures.send_room_msg(room, creator_id, "hello?")
-          :ok = EventHandler.queue_event(pdu, [queue])
+          :ok = EventHandler.queue_event(pdu, queues: [queue], notify?: false)
           {room, pdu.stream_number}
         end)
 
@@ -95,7 +82,7 @@ defmodule RadioBeam.EventHandler.ServerTest do
 
           assert :ok = Server.notify_event_queued(queue)
 
-          assert_receive {:read_model_caught_up_to, ^queue, ^last_event_num}, :timer.seconds(1)
+          assert_receive {:read_model_caught_up_to, ^queue, ^last_event_num, _event_id}, :timer.seconds(1)
           assert :done = RadioBeam.Database.peek_event(queue)
 
           refute_receive {:EXIT, ^pid, _any_reason}

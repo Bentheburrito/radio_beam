@@ -30,12 +30,15 @@ defmodule RadioBeam.User.NotificationsTest do
       creator_id: creator_id,
       user_id: user_id
     } do
+      queue = {Notifications, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       assert [] = Notifications.all_notifications(creator_id)
       assert [] = Notifications.all_notifications(user_id)
 
       {:ok, event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, gamenight is on!")
 
-      :pong = Room.Server.ping(room_id)
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert [%Notification{event: %{id: ^event_id}}] = Notifications.all_notifications(creator_id)
       assert [] = Notifications.all_notifications(user_id)

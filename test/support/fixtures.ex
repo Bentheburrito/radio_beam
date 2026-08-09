@@ -4,6 +4,8 @@ defmodule Fixtures do
   """
   use Boundary, check: [in: false, out: false]
 
+  import ExUnit.Assertions, only: [assert_receive: 2]
+
   alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.User.Database
   alias RadioBeam.DAG
@@ -53,6 +55,12 @@ defmodule Fixtures do
   def send_room_membership(room, sender_id, target_id, membership, deps \\ default_room_deps()) do
     event_attrs = Events.membership(room.id, sender_id, target_id, membership)
     Room.Core.send(room, event_attrs, deps)
+  end
+
+  def listen_to_queue_messages(queue), do: RadioBeam.PubSub.subscribe(RadioBeam.PubSub.read_model_caught_up_to(queue))
+
+  def assert_caught_up_to_event(queue, event_id, timeout \\ 100) do
+    assert_receive {:read_model_caught_up_to, ^queue, _, ^event_id}, timeout
   end
 
   def make_room_view(view_module, room) do

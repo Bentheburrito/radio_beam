@@ -87,6 +87,8 @@ defmodule RadioBeam.Room.Server do
         Enum.each(visible_pdus, fn %PDU{event: event} = pdu ->
           Room.View.handle_pdu(room.id, fn -> Room.Core.get_state_mapping_at(room, event.id) end, pdu)
 
+          :ok = RadioBeam.EventHandler.queue_event(pdu)
+
           if event.type == "m.room.member" and event.content["membership"] == "invite" do
             # note: `mark_dirty` needs to be called after Views are updated, not
             # just when write model is updated

@@ -2,6 +2,8 @@ defmodule RadioBeam.User.Notifications do
   @moduledoc """
   Interface for user (push) notifications.
   """
+  @behaviour RadioBeam.EventHandler
+
   alias RadioBeam.Room
   alias RadioBeam.Time
   alias RadioBeam.User
@@ -12,7 +14,8 @@ defmodule RadioBeam.User.Notifications do
 
   defdelegate all_notifications(user_id), to: Database
 
-  def handle_event(room_id, event_id, sender_id) do
+  @impl RadioBeam.EventHandler
+  def handle_pdu(%{event: %{room_id: room_id, id: event_id, sender: sender_id}}, _) do
     with {:ok, joined_member_events} <- Room.get_members(room_id, sender_id, event_id, &(&1 == "join")) do
       for %{state_key: user_id} <- joined_member_events,
           # do not notify users of events their own events
@@ -24,7 +27,12 @@ defmodule RadioBeam.User.Notifications do
         |> perform_actions(room_id, event, user_id)
       end
     end
+
+    :ok
   end
+
+  @impl RadioBeam.EventHandler
+  def reset_to(_number), do: {:error, :continue}
 
   defp perform_actions(actions, room_id, event, user_id) do
     if :notify in actions do
