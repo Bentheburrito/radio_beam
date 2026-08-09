@@ -81,11 +81,8 @@ defmodule RadioBeam.EventHandler do
   **even if some events are missed**. This option is mostly only used for
   handlers that do some kind of ephemeral work, like execute telemetry,
   broadcast PubSub messages, or send email alerts for specific events.
-  - `:fatal` - the handler cannot safely reset to the given `event_number` and
-  must not continue. The only potential path to recovery is manual
-  intervention.
   """
-  @callback reset_to(event_number()) :: {:ok, event_number()} | {:error, :from_the_top | :continue | :fatal}
+  @callback reset_to(event_number()) :: {:ok, event_number()} | {:error, :from_the_top | :continue}
 
   def queue_event(%PDU{} = pdu), do: queue_event(pdu, queues: queues_for(pdu))
 

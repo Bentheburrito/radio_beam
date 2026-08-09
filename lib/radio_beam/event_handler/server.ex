@@ -68,7 +68,7 @@ defmodule RadioBeam.EventHandler.Server do
           # everything going smoothly - tight loop to continue processing
           {:ok, %State{} = handler_state} -> {:noreply, handler_state, {:continue, :process_event}}
           # first failed event processed - next recursion will decide what to do
-          {:error, %State{} = handler_state} -> handle_bad_disposition(handler_state)
+          {:error, %State{} = handler_state} -> schedule_retry(handler_state)
           # no work left on the queue for now, spin down if nothing new after a while
           :done -> {:noreply, handler_state, @idle_timeout}
         end
@@ -80,29 +80,19 @@ defmodule RadioBeam.EventHandler.Server do
           # handler seems to have recovered, continue processing
           {:ok, %State{} = handler_state} -> log_recovery(handler_state)
           # not looking good, let's back off if it's failing
-          {:error, %State{} = handler_state} -> handle_bad_disposition(handler_state)
+          {:error, %State{} = handler_state} -> schedule_retry(handler_state)
           # kind of a weird state - we're failing but nothing to do? just wait for more I guess
           :done -> {:noreply, handler_state, @idle_timeout}
         end
-
-        # {:failed, :fatal} ->
-        #   Logger.error("#{log_prelude(handler_state)}: will not process event in a failed state")
-        #
-        #   {:noreply, handler_state, @idle_timeout}
     end
   end
 
   @impl GenServer
   def handle_cast(:event_available, %State{} = handler_state) do
     case State.disposition(handler_state) do
-      :good ->
-        {:noreply, handler_state, {:continue, :process_event}}
-
+      :good -> {:noreply, handler_state, {:continue, :process_event}}
       # do not idle timeout when failing - there should have a retry timer active
-      {:failing, _attempts} ->
-        {:noreply, handler_state}
-
-        # {:failed, :fatal} -> {:noreply, handler_state, @idle_timeout}
+      {:failing, _attempts} -> {:noreply, handler_state}
     end
   end
 
@@ -120,19 +110,12 @@ defmodule RadioBeam.EventHandler.Server do
     end
   end
 
-  defp handle_bad_disposition(handler_state) do
-    case State.disposition(handler_state) do
-      {:failing, attempts} ->
-        retry_ms = (attempts * 2) |> :timer.seconds() |> min(@retry_max_ms)
-        Logger.error("#{log_prelude(handler_state)}: failed #{attempts} times, retrying in #{retry_ms}ms")
-        Process.send_after(self(), :retry, retry_ms)
-        {:noreply, handler_state}
-
-        # {:failed, :fatal} ->
-        #   Logger.error("#{log_prelude(handler_state)}: has retried too many times and has failed fatally")
-        #
-        #   {:noreply, handler_state, @idle_timeout}
-    end
+  defp schedule_retry(handler_state) do
+    {:failing, attempts} = State.disposition(handler_state)
+    retry_ms = (attempts * 2) |> :timer.seconds() |> min(@retry_max_ms)
+    Logger.error("#{log_prelude(handler_state)}: failed #{attempts} times, retrying in #{retry_ms}ms")
+    Process.send_after(self(), :retry, retry_ms)
+    {:noreply, handler_state}
   end
 
   defp log_prelude(handler_state), do: "#{inspect(__MODULE__)} (queue #{inspect(State.queue(handler_state))})"

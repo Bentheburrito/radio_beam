@@ -11,7 +11,6 @@ defmodule RadioBeam.EventHandler.State do
   defstruct @attrs
   @opaque t() :: %__MODULE__{}
 
-  # | {:failed, :fatal}
   @type disposition() :: :good | {:failing, failed_attempts :: non_neg_integer()}
 
   def process_init(queue) do
@@ -28,7 +27,6 @@ defmodule RadioBeam.EventHandler.State do
     get_state_at_pdu = fn -> %{} end
 
     case state.callback_mod.handle_pdu(pdu, get_state_at_pdu) do
-      # {:error, :fatal} -> {:error, put_in(state.disposition, {:failed, :fatal})}
       :ok -> {:ok, put_in(state.disposition, :good)}
       {:error, :retry} -> {:error, put_failing_disposition(state)}
     end
@@ -38,10 +36,7 @@ defmodule RadioBeam.EventHandler.State do
     update_in(
       state.disposition,
       fn
-        # a {:failed, :fatal} disposition should never make it this far
         :good -> {:failing, 1}
-        # {:failing, attempts} when attempts < 10 -> {:failing, attempts + 1}
-        # {:failing, attempts} when attempts >= 10 -> {:failed, :fatal}
         {:failing, attempts} -> {:failing, attempts + 1}
       end
     )
@@ -68,8 +63,6 @@ defmodule RadioBeam.EventHandler.State do
       {:ok, state}
     end
   end
-
-  # def process(%__MODULE__{disposition: {:failed, :fatal}} = state), do: {:error, state}
 
   def process(%__MODULE__{} = state) do
     with {:ok, event_number, %PDU{stream_number: event_number} = pdu} <- Database.peek_event(state.queue),
