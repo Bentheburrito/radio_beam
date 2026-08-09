@@ -28,6 +28,8 @@ config :radio_beam, RadioBeam.ContentRepo,
   unused_mxc_uris_expire_in_ms: :timer.seconds(5),
   users: %{max_bytes: 30_000, max_files: 5, max_reserved: 5}
 
+config :radio_beam, RadioBeam.EventHandler.Server, max_retry_timeout_ms: 3
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :radio_beam, RadioBeamWeb.Endpoint,

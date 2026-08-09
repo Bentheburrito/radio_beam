@@ -69,6 +69,8 @@ config :radio_beam, RadioBeam.ContentRepo,
   # (whichever limit is reached first)
   users: %{max_bytes: 50_000_000, max_files: 50, max_reserved: 5}
 
+config :radio_beam, RadioBeam.EventHandler.Server, max_retry_timeout_ms: :timer.seconds(15)
+
 # Configures the endpoint
 config :radio_beam, RadioBeamWeb.Endpoint,
   url: [host: "localhost"],

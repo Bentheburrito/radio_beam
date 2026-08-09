@@ -11,9 +11,11 @@ defmodule RadioBeam.Database.Mnesia do
 
   import RadioBeam.Database.Mnesia.Tables.Device
   import RadioBeam.Database.Mnesia.Tables.DynamicOAuth2Client
+  import RadioBeam.Database.Mnesia.Tables.EventHandlerState
   import RadioBeam.Database.Mnesia.Tables.KeyStore
   import RadioBeam.Database.Mnesia.Tables.LocalAccount
   import RadioBeam.Database.Mnesia.Tables.Notification
+  import RadioBeam.Database.Mnesia.Tables.ProcessableEvent
   import RadioBeam.Database.Mnesia.Tables.Room
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
   import RadioBeam.Database.Mnesia.Tables.RoomView
@@ -37,9 +39,11 @@ defmodule RadioBeam.Database.Mnesia do
   @tables [
     Tables.Device,
     Tables.DynamicOAuth2Client,
+    Tables.EventHandlerState,
     Tables.KeyStore,
     Tables.LocalAccount,
     Tables.Notification,
+    Tables.ProcessableEvent,
     Tables.Room,
     Tables.RoomAlias,
     Tables.RoomView,
@@ -107,6 +111,50 @@ defmodule RadioBeam.Database.Mnesia do
         {:aborted, error} -> {:error, error}
       end
     end
+  end
+
+  @impl RadioBeam.Database
+  def queue_event(queue, event_number, event) do
+    transaction(fn -> :mnesia.write(processable_event(queue_and_event_number: {queue, event_number}, event: event)) end)
+  end
+
+  @impl RadioBeam.Database
+  def peek_event(queue) do
+    match_head = processable_event(queue_and_event_number: {queue, :_}, event: :_)
+    match_spec = [{match_head, [], [:"$_"]}]
+
+    transaction(fn ->
+      case :mnesia.select(Tables.ProcessableEvent, match_spec, 1, :read) do
+        :"$end_of_table" ->
+          :done
+
+        {[processable_event(queue_and_event_number: {^queue, event_number}, event: event)], _continuation} ->
+          {:ok, event_number, event}
+
+        # not actually done...
+        {[], _continuation} ->
+          :done
+      end
+    end)
+  end
+
+  @impl RadioBeam.Database
+  def mark_event_processed(queue, state, event_number) do
+    transaction(fn ->
+      with :ok <- :mnesia.delete({Tables.ProcessableEvent, {queue, event_number}}) do
+        :mnesia.write(event_handler_state(queue: queue, state: state))
+      end
+    end)
+  end
+
+  @impl RadioBeam.Database
+  def fetch_event_handler_state(queue) do
+    transaction(fn ->
+      case :mnesia.read(Tables.EventHandlerState, queue) do
+        [] -> {:error, :not_found}
+        [record] -> {:ok, record_to_domain_struct(record)}
+      end
+    end)
   end
 
   @impl RadioBeam.Room.Database
@@ -506,6 +554,7 @@ defmodule RadioBeam.Database.Mnesia do
   defp record_to_domain_struct(room_alias(alias_struct: %Room.Alias{} = room_alias)), do: room_alias
   defp record_to_domain_struct(upload() = upload_record), do: struct!(Upload, upload(upload_record))
   defp record_to_domain_struct(room_view(room_view: view_state)), do: view_state
+  defp record_to_domain_struct(event_handler_state(state: state)), do: state
 
   defp record_to_domain_struct(
          dynamic_oauth2_client(dynamic_oauth2_client: %DynamicOAuth2Client{} = dyn_oauth2_client)

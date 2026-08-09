@@ -42,6 +42,8 @@ defmodule RadioBeam do
       {Phoenix.PubSub, name: RadioBeam.PubSub},
       # Start the Finch HTTP client for sending emails
       {Finch, name: RadioBeam.Finch},
+      # Start the EventHandler Registry
+      {Registry, keys: :unique, name: RadioBeam.EventHandler.Server.registry()},
       # Start the RoomRegistry
       {Registry, keys: :unique, name: RadioBeam.RoomRegistry},
       # Start the RoomEphemeralStateRegistry
@@ -50,6 +52,8 @@ defmodule RadioBeam do
       {Registry, keys: :unique, name: RadioBeam.RoomAcknowledgementsRegistry},
       # Start the SyncSinkRegistry
       {Registry, keys: :unique, name: RadioBeam.Sync.SinkRegistry},
+      # Start the EventHandler DynamicSupervisor
+      RadioBeam.EventHandler.Server.Supervisor,
       # Start the GenServer that handles transaction IDs
       RadioBeam.Transaction,
       # Start the Room.Server.Supervisor
