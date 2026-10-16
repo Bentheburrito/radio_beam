@@ -20,7 +20,7 @@ mkShellNoCC {
   # ];
   #
   shellHook = ''
-    ln -s ${esbuild}/bin/esbuild ./_build/esbuild-${target}
-    ln -s ${tailwindcss_4}/bin/tailwindcss ./_build/tailwind-${target}
+    ln -sf ${esbuild}/bin/esbuild ./_build/esbuild-${target}
+    ln -sf ${tailwindcss_4}/bin/tailwindcss ./_build/tailwind-${target}
   '';
 }
