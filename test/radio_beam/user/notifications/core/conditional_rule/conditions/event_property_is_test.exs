@@ -79,4 +79,60 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
       assert {:error, {:invalid_value, ^value}} = EventPropertyIs.new("content.body", value)
     end
   end
+
+  describe "new/3 returns a predicate that" do
+    setup %{user_id: user_id, room: room} do
+      {:sent, room, event_id, _} =
+        Fixtures.send_room_event(room, user_id, "org.someones.cool.event", %{
+          "emptylist" => [],
+          "numbers" => [1, 2, 3],
+          "notalist" => "hi"
+        })
+
+      timeline = Fixtures.make_room_view(Timeline, room)
+
+      [event] =
+        Timeline.get_visible_events(timeline, [event_id], user_id, &Room.Chronicle.fetch_pdu!(room.chronicle, &1))
+        |> Enum.to_list()
+
+      %{event: event}
+    end
+
+    test "behaves exactly the same as new/2 when :exact is given as the compare mode", %{
+      user_id: user_id,
+      message_event: message_event
+    } do
+      {:ok, predicate1} = EventPropertyIs.new("type", "m.room.message")
+      {:ok, predicate2} = EventPropertyIs.new("type", "m.room.message", :exact)
+      assert predicate1.(message_event) == predicate2.(message_event)
+
+      {:ok, predicate1} = EventPropertyIs.new("sender", user_id)
+      {:ok, predicate2} = EventPropertyIs.new("sender", user_id, :exact)
+      assert predicate1.(message_event) == predicate2.(message_event)
+
+      {:ok, predicate1} = EventPropertyIs.new("content.body", @message)
+      {:ok, predicate2} = EventPropertyIs.new("content.body", @message, :exact)
+      assert predicate1.(message_event) == predicate2.(message_event)
+    end
+
+    test "when compare mode is :contains, expects the event value at the given path to be a list, and returns true only if one of the elements of that list exactly match the given value",
+         %{event: event} do
+      {:ok, predicate} = EventPropertyIs.new("content.numbers", Enum.random(1..3), :contains)
+      assert predicate.(event)
+
+      {:ok, predicate} = EventPropertyIs.new("content.numbers", "astring", :contains)
+      refute predicate.(event)
+
+      {:ok, predicate} = EventPropertyIs.new("content.numbers", 5, :contains)
+      refute predicate.(event)
+
+      for i <- 0..5 do
+        {:ok, predicate} = EventPropertyIs.new("content.emptylist", i, :contains)
+        refute predicate.(event)
+
+        {:ok, predicate} = EventPropertyIs.new("content.notalist", i, :contains)
+        refute predicate.(event)
+      end
+    end
+  end
 end

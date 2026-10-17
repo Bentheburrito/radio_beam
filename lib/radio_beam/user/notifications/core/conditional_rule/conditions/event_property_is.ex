@@ -21,21 +21,37 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
   will return `true` when given an `t:RadioBeam.Room.View.Core.Timeline.Event`
   whose value under the `event_property_string` matches the given value.
   """
-  def new(event_property_string, value) when is_non_compound(value) do
+  def new(event_property_string, value, compare \\ :exact)
+
+  def new(event_property_string, value, compare)
+      when is_non_compound(value) and
+             compare in ~w|exact contains|a do
     with {:ok, event_property_path} <- AccessExtras.property_string_to_path(event_property_string),
          :ok <- validate_string(value) do
       {:ok,
        fn %Event{} = event ->
          event_map = event |> Event.to_map() |> Map.new(fn {k, v} -> {to_string(k), v} end)
 
-         match?(^value, get_in(event_map, event_property_path))
+         case compare do
+           :exact -> match?(^value, get_in(event_map, event_property_path))
+           :contains -> Enum.any?(get_list_in_safe(event_map, event_property_path), &match?(^value, &1))
+         end
        end}
     end
   end
 
-  def new(_event_property_string, value), do: {:error, {:invalid_value, value}}
+  def new(_event_property_string, value, _compare), do: {:error, {:invalid_value, value}}
 
-  defp validate_string(value) do
+  defp validate_string(value) when is_binary(value) do
     if String.valid?(value) and String.printable?(value), do: :ok, else: {:error, {:invalid_value, value}}
+  end
+
+  defp validate_string(_not_supposed_to_be_a_str), do: :ok
+
+  defp get_list_in_safe(event_map, event_property_path) do
+    case get_in(event_map, event_property_path) do
+      list when is_list(list) -> list
+      _some_other_type -> []
+    end
   end
 end
