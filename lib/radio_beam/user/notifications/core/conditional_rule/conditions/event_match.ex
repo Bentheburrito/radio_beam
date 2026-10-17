@@ -6,6 +6,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
   """
 
   alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.AccessExtras
 
   @doc """
   Returns an ok tuple with an arity-1 function or an error tuple. The function
@@ -15,7 +16,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
   def new(event_property_string, pattern) do
     match_word_boundaries? = event_property_string == "content.body"
 
-    with {:ok, event_property_path} <- property_string_to_path(event_property_string),
+    with {:ok, event_property_path} <- AccessExtras.property_string_to_path(event_property_string),
          {:ok, pattern} <- compile_glob_style_pattern(pattern, not match_word_boundaries?) do
       predicate = if match_word_boundaries?, do: &matches_any_word?(&1, pattern), else: &String.match?(&1, pattern)
 
@@ -28,20 +29,6 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
            _not_a_string -> false
          end
        end}
-    end
-  end
-
-  defp property_string_to_path(property_string) do
-    if is_binary(property_string) and String.valid?(property_string) and String.printable?(property_string) do
-      path =
-        property_string
-        # split on periods, as long as it's not preceeded by a `\`
-        |> String.split(~r"[^\\](?<period>\.)", on: [:period])
-        |> Enum.map(&String.replace(&1, "\\", ""))
-
-      {:ok, path}
-    else
-      {:error, :invalid_key}
     end
   end
 
