@@ -29,12 +29,16 @@ defmodule RadioBeam.EventHandler.Server do
       _ ->
         Logger.debug("#{inspect(__MODULE__)} for #{inspect(queue)} is not alive, trying to start...")
 
-        with :ok <- State.validate_queue(queue) do
-          case Supervisor.start_handler(queue) do
-            {:ok, pid} -> GenServer.cast(pid, message)
-            {:error, {:already_started, pid}} -> GenServer.cast(pid, message)
-            error -> cast_error(queue, error)
-          end
+        case State.validate_queue(queue) do
+          :ok ->
+            case Supervisor.start_handler(queue) do
+              {:ok, pid} -> GenServer.cast(pid, message)
+              {:error, {:already_started, pid}} -> GenServer.cast(pid, message)
+              error -> cast_error(queue, error)
+            end
+
+          {:error, :invalid_queue} ->
+            Logger.warning("#{inspect(__MODULE__)} got invalid queue #{inspect(queue)}")
         end
     end
   end

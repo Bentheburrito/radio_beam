@@ -75,9 +75,10 @@ defmodule RadioBeam.EventHandler.State do
   def validate_queue(queue_tuple) when is_tuple(queue_tuple), do: queue_tuple |> elem(0) |> validate_queue()
 
   def validate_queue(module) when is_atom(module) do
-    if function_exported?(module, :handle_pdu, 2) and function_exported?(module, :reset_to, 1),
-      do: :ok,
-      else: {:error, :invalid_queue}
+    if Code.ensure_loaded?(module) and function_exported?(module, :handle_pdu, 2) and
+         function_exported?(module, :reset_to, 1),
+       do: :ok,
+       else: {:error, :invalid_queue}
   end
 
   def validate_queue(_not_valid), do: {:error, :invalid_queue}
