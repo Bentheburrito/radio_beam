@@ -56,7 +56,10 @@ defmodule RadioBeamWeb.Schemas.Account do
   end
 
   defp push_rule_condition do
-    Schema.any_of([%{"kind" => Schema.enum(["event_match"]), "key" => :string, "pattern" => :string}])
+    Schema.any_of([
+      %{"kind" => Schema.enum(["event_match"]), "key" => :string, "pattern" => :string},
+      %{"kind" => Schema.enum(["event_property_is"]), "key" => :string, "value" => :string}
+    ])
   end
 
   defp any_map(map) when is_map(map), do: {:ok, map}

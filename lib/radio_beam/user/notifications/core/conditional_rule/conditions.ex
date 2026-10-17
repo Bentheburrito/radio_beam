@@ -11,6 +11,6 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions do
   triggering a notification (if other corresponding conditions match too).
   """
   def parse(%{"kind" => "event_match", "key" => key, "pattern" => pattern}), do: Conditions.EventMatch.new(key, pattern)
-
+  def parse(%{"kind" => "event_property_is", "key" => key, "value" => v}), do: Conditions.EventPropertyIs.new(key, v)
   def parse(_params), do: :error
 end

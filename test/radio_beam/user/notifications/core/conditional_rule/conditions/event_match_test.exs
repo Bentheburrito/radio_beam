@@ -135,7 +135,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
   end
 
   describe "new/2" do
-    test "returns :invalid_key when given an property string" do
+    test "returns :invalid_key when given an invalid property string" do
       assert {:error, :invalid_key} = EventMatch.new(123, "hello")
       assert {:error, :invalid_key} = EventMatch.new("yo" <> <<0>>, "hello")
       assert {:error, :invalid_key} = EventMatch.new("yo" <> <<0xFF::8>>, "hello")
