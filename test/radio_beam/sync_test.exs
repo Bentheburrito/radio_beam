@@ -348,6 +348,35 @@ defmodule RadioBeam.SyncTest do
 
       assert :not_found = RuleSet.get_rule(rule_set, :override, "arule")
     end
+
+    test "returns unread notification counts", %{creator: creator, account: account, device: device} do
+      :ok =
+        User.put_global_notification_push_rule(account.user_id, :override, "ping", ["notify"], [
+          %{"kind" => "event_match", "pattern" => "PING", "key" => "content.body"}
+        ])
+
+      {:ok, room_id1} = Room.create(creator.user_id)
+
+      queue = {RadioBeam.User.Notifications, room_id1}
+      Fixtures.listen_to_queue_messages(queue)
+
+      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, event_id} = Room.join(room_id1, account.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id, 1000)
+
+      assert %{
+               "rooms" => %{"join" => %{^room_id1 => %JoinedRoomResult{unread_notifications_count: 0}}},
+               "next_batch" => %NextBatch{} = next_batch
+             } = Sync.perform_v2(account.user_id, device.id, [])
+
+      {:ok, event_id} = Room.send_text_message(room_id1, creator.user_id, "YOU WILL BE PINGED BY THIS!!!")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      assert %{"rooms" => %{"join" => %{^room_id1 => %JoinedRoomResult{unread_notifications_count: 1}}}} =
+               Sync.perform_v2(account.user_id, device.id, since: next_batch)
+    end
   end
 
   describe "sync/4 performing a follow-up sync" do

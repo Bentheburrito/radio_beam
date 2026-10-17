@@ -29,6 +29,7 @@ defmodule RadioBeam.Room.Sync.Core do
         event_stream = inputs.functions.event_stream.(room.id)
         typing_user_ids = inputs.functions.typing_user_ids.(room.id)
         receipts = inputs.functions.read_receipts.(room.id)
+        unread_notifications_count = inputs.functions.unread_notifications_count.(room.id)
 
         if Enum.empty?(event_stream) do
           :no_update
@@ -40,7 +41,8 @@ defmodule RadioBeam.Room.Sync.Core do
             event_stream,
             maybe_last_sync_room_state_events,
             typing_user_ids,
-            receipts
+            receipts,
+            unread_notifications_count
           )
         end
 
@@ -67,7 +69,8 @@ defmodule RadioBeam.Room.Sync.Core do
          event_stream,
          maybe_last_sync_room_state_events,
          typing_user_ids,
-         receipts
+         receipts,
+         unread_notifications_count
        ) do
     maybe_to_event =
       with "$" <> _ = to_event_id <- inputs.last_batch,
@@ -107,7 +110,8 @@ defmodule RadioBeam.Room.Sync.Core do
       known_memberships: inputs.known_memberships,
       filter: inputs.event_filter,
       typing: typing_user_ids,
-      receipts: receipts
+      receipts: receipts,
+      unread_notifications_count: unread_notifications_count
     ]
 
     JoinedRoomResult.new(

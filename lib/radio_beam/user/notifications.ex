@@ -14,6 +14,12 @@ defmodule RadioBeam.User.Notifications do
 
   defdelegate all_notifications(user_id), to: Database
 
+  def unread_in_room_count(user_id, room_id) do
+    user_id
+    |> all_notifications()
+    |> Enum.count(&(&1.room_id == room_id and &1.read == false))
+  end
+
   @impl RadioBeam.EventHandler
   def handle_pdu(%{event: %{room_id: room_id, id: event_id, sender: sender_id}}, _) do
     with {:ok, joined_member_events} <- Room.get_members(room_id, sender_id, event_id, &(&1 == "join")) do

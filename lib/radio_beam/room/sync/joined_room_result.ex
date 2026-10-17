@@ -6,7 +6,20 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
-  defstruct ~w|room_id timeline_events maybe_next_event_id latest_event_id state_events sender_ids filter current_membership account_data typing receipts|a
+  defstruct ~w|
+    room_id
+    timeline_events
+    maybe_next_event_id
+    latest_event_id
+    state_events
+    sender_ids
+    filter
+    current_membership
+    account_data
+    typing
+    receipts
+    unread_notifications_count
+  |a
 
   @type t() :: %__MODULE__{room_id: Room.id(), timeline_events: [Event.t()], state_events: [Room.event_id()]}
 
@@ -76,7 +89,8 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
         current_membership: membership,
         account_data: Map.get(account_data, room.id, %{}),
         typing: Keyword.get(opts, :typing, []),
-        receipts: Keyword.get(opts, :receipts, %{})
+        receipts: Keyword.get(opts, :receipts, %{}),
+        unread_notifications_count: Keyword.get(opts, :unread_notifications_count, 0)
       }
     end
   end
@@ -93,7 +107,8 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
       current_membership: membership,
       account_data: Map.get(account_data, room_id, %{}),
       typing: typing_user_ids,
-      receipts: receipts
+      receipts: receipts,
+      unread_notifications_count: 0
     }
   end
 
@@ -175,6 +190,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
           timeline: timeline,
           state: %{events: Enum.map(room_result.state_events, to_event)},
           ephemeral: %{events: encode_ephemeral(room_result.typing, room_result.receipts)},
+          unread_notifications: %{notification_count: room_result.unread_notifications_count},
           account_data: %{
             "events" =>
               Enum.map(room_result.account_data, fn {type, content} -> %{"type" => type, "content" => content} end)
