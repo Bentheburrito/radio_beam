@@ -511,13 +511,22 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def all_notifications(user_id) do
-    match_head = notification(key: {user_id, :_}, notification: :_)
-    match_spec = [{match_head, [], [:"$_"]}]
+  def all_notifications(user_id, older_than_ts \\ :now) do
+    match_spec = notifications_match_spec(user_id, older_than_ts)
 
     transaction(fn ->
-      Tables.Notification |> :mnesia.select(match_spec) |> Enum.map(&record_to_domain_struct/1)
+      Tables.Notification |> :mnesia.select_reverse(match_spec) |> Enum.map(&record_to_domain_struct/1)
     end)
+  end
+
+  defp notifications_match_spec(user_id, :now) do
+    match_head = notification(key: {user_id, :_}, notification: :_)
+    [{match_head, [], [:"$_"]}]
+  end
+
+  defp notifications_match_spec(user_id, older_than_ts) when is_integer(older_than_ts) and older_than_ts > 0 do
+    match_head = notification(key: {user_id, :"$1"}, notification: :_)
+    [{match_head, [{:<, :"$1", older_than_ts}], [:"$_"]}]
   end
 
   @impl RadioBeam.Admin.Database

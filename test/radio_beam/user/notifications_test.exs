@@ -6,6 +6,47 @@ defmodule RadioBeam.User.NotificationsTest do
   alias RadioBeam.User.Notification
   alias RadioBeam.User.Notifications
 
+  describe "all_notifications/1,2" do
+    setup do
+      %{user_id: creator_id} = Fixtures.create_account()
+      %{user_id: user_id} = Fixtures.create_account()
+
+      :ok = User.put_global_notification_push_rule(user_id, :override, "blahhhhhh", ["notify"], [])
+
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
+      {:ok, _event_id} = Room.join(room_id, user_id)
+
+      queue = {Notifications, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "yo, welcome, I hope this message alerts u")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      %{user_id: user_id, creator_id: creator_id, room_id: room_id, notifs_queue: queue}
+    end
+
+    test "lists all notifications, with optional pagination token", %{
+      user_id: user_id,
+      creator_id: creator_id,
+      room_id: room_id,
+      notifs_queue: queue
+    } do
+      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all_notifications(user_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "you there?")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      assert [%{event: %{content: %{"body" => "you there?"}}, ts: ts}, %{event: %{content: %{"body" => "yo" <> _}}}] =
+               Notifications.all_notifications(user_id)
+
+      assert [%{event: %{content: %{"body" => "yo" <> _}}}] =
+               Notifications.all_notifications(user_id, ts - 1)
+    end
+  end
+
   describe "handle_event/3" do
     setup do
       %{user_id: creator_id} = Fixtures.create_account()

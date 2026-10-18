@@ -13,6 +13,7 @@ defmodule RadioBeam.User.Notifications do
   alias RadioBeam.User.Notifications.Core.RuleSet
 
   defdelegate all_notifications(user_id), to: Database
+  defdelegate all_notifications(user_id, older_than_ts), to: Database
 
   def unread_in_room_count(user_id, room_id) do
     user_id
