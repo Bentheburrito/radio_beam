@@ -511,11 +511,14 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def all_notifications(user_id, older_than_ts \\ :now) do
+  def all_notifications(user_id, limit, older_than_ts \\ :now) do
     match_spec = notifications_match_spec(user_id, older_than_ts)
 
     transaction(fn ->
-      Tables.Notification |> :mnesia.select_reverse(match_spec) |> Enum.map(&record_to_domain_struct/1)
+      case :mnesia.select_reverse(Tables.Notification, match_spec, limit, :read) do
+        {notif_records, _cont} -> Enum.map(notif_records, &record_to_domain_struct/1)
+        :"$end_of_table" -> []
+      end
     end)
   end
 

@@ -41,8 +41,10 @@ defmodule RadioBeam.User.Database do
   @callback update_key_store(User.id(), (KeyStore.t() -> {:ok, KeyStore.t()} | {:error, term()})) ::
               {:ok, KeyStore.t()} | {:error, :not_found | term()}
   @callback insert_new_notification(Notification.t()) :: :ok | {:error, term()}
-  @callback all_notifications(User.id(), older_than_ts :: non_neg_integer()) :: [Notification.t()]
-  @callback all_notifications(User.id()) :: [Notification.t()]
+  @callback all_notifications(User.id(), limit :: non_neg_integer(), older_than_ts :: non_neg_integer()) :: [
+              Notification.t()
+            ]
+  @callback all_notifications(User.id(), limit :: non_neg_integer()) :: [Notification.t()]
 
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.User.Database, :backend])
   defdelegate insert_new_user_account(user_account), to: @database_backend
@@ -61,6 +63,6 @@ defmodule RadioBeam.User.Database do
   defdelegate insert_new_key_store(user_id, key_store), to: @database_backend
   defdelegate update_key_store(user_id, callback), to: @database_backend
   defdelegate insert_new_notification(notification), to: @database_backend
-  defdelegate all_notifications(user_id, older_than_ts), to: @database_backend
-  defdelegate all_notifications(user_id), to: @database_backend
+  defdelegate all_notifications(user_id, limit, older_than_ts), to: @database_backend
+  defdelegate all_notifications(user_id, limit), to: @database_backend
 end

@@ -43,7 +43,33 @@ defmodule RadioBeam.User.NotificationsTest do
                Notifications.all_notifications(user_id)
 
       assert [%{event: %{content: %{"body" => "yo" <> _}}}] =
-               Notifications.all_notifications(user_id, ts - 1)
+               Notifications.all_notifications(user_id, 5, ts - 1)
+    end
+
+    test "lists notifications up to the limit, paginating along the way", %{
+      user_id: user_id,
+      creator_id: creator_id,
+      room_id: room_id,
+      notifs_queue: queue
+    } do
+      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all_notifications(user_id)
+
+      {:ok, _event_id} = Room.send_text_message(room_id, creator_id, "you there?")
+      {:ok, _event_id} = Room.send_text_message(room_id, creator_id, "pls respond")
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "I'm so lonely")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      assert [
+               %{event: %{content: %{"body" => "I'm so lonely"}}},
+               %{event: %{content: %{"body" => "pls respond"}}, ts: ts}
+             ] =
+               Notifications.all_notifications(user_id, 2)
+
+      assert [%{event: %{content: %{"body" => "you there?"}}, ts: ts}] =
+               Notifications.all_notifications(user_id, 1, ts - 1)
+
+      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all_notifications(user_id, 1, ts - 1)
     end
   end
 
