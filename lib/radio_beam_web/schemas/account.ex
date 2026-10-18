@@ -2,6 +2,7 @@ defmodule RadioBeamWeb.Schemas.Account do
   @moduledoc false
 
   alias Polyjuice.Util.Schema
+  alias RadioBeamWeb.Schemas
 
   def put_pusher do
     Schema.any_of([
@@ -47,6 +48,9 @@ defmodule RadioBeamWeb.Schemas.Account do
       "kind" => push_rule_kind()
     }
   end
+
+  def get_notifications,
+    do: %{"from" => [&Schemas.as_integer/1, :optional], "limit" => [&Schemas.as_integer/1, default: 30]}
 
   defp push_rule_kind do
     Schema.enum(%{

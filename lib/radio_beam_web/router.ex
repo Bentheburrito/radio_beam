@@ -253,6 +253,8 @@ defmodule RadioBeamWeb.Router do
         # TOIMPL:
         # post "/knock/:room_id_or_alias", RoomController, :knock
 
+        get "/notifications", AccountController, :get_notifications, rl(:infrequent_bursts)
+
         post "/pushers/set", AccountController, :put_pusher, rl(:infrequent_bursts)
         get "/pushers", AccountController, :get_pushers, rl(:infrequent_bursts)
 

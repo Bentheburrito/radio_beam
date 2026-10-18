@@ -10,6 +10,7 @@ defmodule RadioBeam.User do
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.Notifications
   alias RadioBeam.User.Notifications.Core.ConditionalRule
   alias RadioBeam.User.Notifications.Core.EntityRule
   alias RadioBeam.User.Notifications.Core.Pusher
@@ -31,6 +32,8 @@ defmodule RadioBeam.User do
   def push_rule_actions(%EntityRule{} = rule), do: EntityRule.actions(rule)
   def push_rule_enabled?(%ConditionalRule{} = rule), do: ConditionalRule.enabled?(rule)
   def push_rule_enabled?(%EntityRule{} = rule), do: EntityRule.enabled?(rule)
+
+  defdelegate all_notifications(user_id, limit, from), to: Notifications
 
   @doc "Gets metadata about a user's device"
   @spec get_device_info(id(), Device.id()) :: {:ok, map()} | {:error, :not_found}

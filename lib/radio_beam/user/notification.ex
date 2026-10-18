@@ -18,4 +18,13 @@ defmodule RadioBeam.User.Notification do
     }
 
   def with_profile_tag(%__MODULE__{} = notification, profile_tag), do: put_in(notification.profile_tag, profile_tag)
+
+  defimpl JSON.Encoder do
+    def encode(notification, encoder) do
+      notification
+      |> Map.from_struct()
+      |> Map.take(~w|actions event profile_tag read room_id ts|a)
+      |> JSON.Encoder.Map.encode(encoder)
+    end
+  end
 end

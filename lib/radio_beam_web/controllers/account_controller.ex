@@ -12,7 +12,8 @@ defmodule RadioBeamWeb.AccountController do
   require Logger
 
   plug RadioBeamWeb.Plugs.EnforceSchema,
-       [mod: AccountSchema] when action in ~w|put_tag put_pusher put_push_rule get_push_rule delete_push_rule|a
+       [mod: AccountSchema]
+       when action in ~w|put_tag put_pusher put_push_rule get_push_rule delete_push_rule get_notifications|a
 
   def get_config(%{assigns: %{user_id: user_id}} = conn, %{"user_id" => user_id, "type" => type} = params) do
     scope = Map.get(params, "room_id", :global)
@@ -329,4 +330,18 @@ defmodule RadioBeamWeb.AccountController do
       {:error, :not_found} -> json_error(conn, 404, :not_found, "rule set not found")
     end
   end
+
+  def get_notifications(conn, _params) do
+    limit = max(min(conn.assigns.request["limit"], 50), 1)
+    from = Map.get(conn.assigns.request, "from", :now)
+
+    notifications = User.all_notifications(conn.assigns.user_id, limit, from)
+
+    json(conn, maybe_put_next_batch(%{notifications: notifications}))
+  end
+
+  defp maybe_put_next_batch(%{notifications: []} = response), do: response
+
+  defp maybe_put_next_batch(response),
+    do: Map.put(response, :next_batch, to_string(List.last(response.notifications).ts))
 end

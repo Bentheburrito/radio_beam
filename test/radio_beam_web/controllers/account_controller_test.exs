@@ -691,6 +691,112 @@ defmodule RadioBeamWeb.AccountControllerTest do
     end
   end
 
+  describe "get_notifications/2 when user has no notifications" do
+    test "returns an empty list (200)", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v3/notifications", %{})
+      assert %{"notifications" => []} = response = json_response(conn, 200)
+      refute is_map_key(response, "next_batch")
+    end
+  end
+
+  describe "get_notifications/2" do
+    setup %{account: %{user_id: user_id}} do
+      %{user_id: creator_id} = Fixtures.create_account()
+
+      :ok = User.put_global_notification_push_rule(user_id, :override, "blahhhhhh", ["notify"], [])
+
+      {:ok, room_id} = Room.create(creator_id)
+      {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
+      {:ok, _event_id} = Room.join(room_id, user_id)
+
+      queue = {RadioBeam.User.Notifications, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
+      {:ok, _event_id} = Room.send_text_message(room_id, creator_id, "one")
+      {:ok, _event_id} = Room.send_text_message(room_id, creator_id, "two")
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "three")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      %{user_id: user_id}
+    end
+
+    test "returns all notifications (200)", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v3/notifications", %{})
+
+      assert %{
+               "notifications" => [
+                 %{"event" => %{"content" => %{"body" => "three"}}},
+                 %{"event" => %{"content" => %{"body" => "two"}}},
+                 %{"event" => %{"content" => %{"body" => "one"}}} = notif_one
+               ],
+               "next_batch" => next_batch
+             } = json_response(conn, 200)
+
+      assert next_batch == to_string(notif_one["ts"])
+    end
+
+    test "returns all notifications up to the limit (200)", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v3/notifications?limit=1", %{})
+
+      assert %{
+               "notifications" => [
+                 %{"event" => %{"content" => %{"body" => "three"}}} = notif_three
+               ],
+               "next_batch" => next_batch
+             } = json_response(conn, 200)
+
+      assert next_batch == to_string(notif_three["ts"])
+
+      conn = get(conn, ~p"/_matrix/client/v3/notifications?limit=2", %{})
+
+      assert %{
+               "notifications" => [
+                 %{"event" => %{"content" => %{"body" => "three"}}},
+                 %{"event" => %{"content" => %{"body" => "two"}}} = notif_two
+               ],
+               "next_batch" => next_batch
+             } = json_response(conn, 200)
+
+      assert next_batch == to_string(notif_two["ts"])
+    end
+
+    test "returns all notifications up to the limit, paginating as it goes (200)", %{conn: conn} do
+      conn = get(conn, ~p"/_matrix/client/v3/notifications?limit=1", %{})
+
+      assert %{
+               "notifications" => [
+                 %{"event" => %{"content" => %{"body" => "three"}}} = notif_three
+               ],
+               "next_batch" => next_batch
+             } = json_response(conn, 200)
+
+      assert next_batch == to_string(notif_three["ts"])
+
+      conn = get(conn, ~p"/_matrix/client/v3/notifications?limit=1&from=#{next_batch}", %{})
+
+      assert %{
+               "notifications" => [
+                 %{"event" => %{"content" => %{"body" => "two"}}} = notif_two
+               ],
+               "next_batch" => next_batch
+             } = json_response(conn, 200)
+
+      assert next_batch == to_string(notif_two["ts"])
+
+      conn = get(conn, ~p"/_matrix/client/v3/notifications?limit=1&from=#{next_batch}", %{})
+
+      assert %{
+               "notifications" => [
+                 %{"event" => %{"content" => %{"body" => "one"}}} = notif_one
+               ],
+               "next_batch" => next_batch
+             } = json_response(conn, 200)
+
+      assert next_batch == to_string(notif_one["ts"])
+    end
+  end
+
   defp one_push_rule(%{account: account}) do
     kind = Enum.random(~w|override sender|a)
     rule_id = "@" <> Fixtures.random_string(12)
