@@ -12,7 +12,10 @@ defmodule RadioBeam.User.Notifications do
   alias RadioBeam.User.Notifications.Core.Pusher
   alias RadioBeam.User.Notifications.Core.RuleSet
 
+  require Logger
+
   @max_notifications_per_user 500
+  def max_per_user, do: @max_notifications_per_user
 
   defdelegate all_notifications(user_id, limit), to: Database
   defdelegate all_notifications(user_id, limit, older_than_ts), to: Database
@@ -60,7 +63,7 @@ defmodule RadioBeam.User.Notifications do
   defp mark_notification_read(%Notification{} = notification) do
     notification.read
     |> put_in(true)
-    |> Database.upsert_notification()
+    |> upsert_notification(@max_notifications_per_user)
   end
 
   @max_count 99
@@ -94,7 +97,7 @@ defmodule RadioBeam.User.Notifications do
     if :notify in actions do
       notification = Notification.new(user_id, actions, event, nil, false, room_id, Time.now())
 
-      with :ok <- Database.upsert_notification(notification) do
+      with :ok <- upsert_notification(notification, @max_notifications_per_user) do
         # note: for comprehensions will return [] if *any* of their
         # generators are empty Enumerables. We pull in pushers here because
         # we still want to generate notifications, even if a Pusher is not
@@ -104,6 +107,12 @@ defmodule RadioBeam.User.Notifications do
           # send notif to pusher
         end
       end
+    end
+  end
+
+  defp upsert_notification(%Notification{} = notification, max_per_user) do
+    with {:error, error} <- Database.upsert_notification(notification, max_per_user) do
+      Logger.error("#{__MODULE__}.upsert_notification/2: #{inspect(error)}")
     end
   end
 

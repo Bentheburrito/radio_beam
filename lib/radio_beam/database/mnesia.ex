@@ -504,10 +504,21 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def upsert_notification(%Notification{} = notification) do
+  def upsert_notification(%Notification{} = notification, max_per_user) do
     record = notification(key: {notification.user_id, notification.ts}, notification: notification)
 
-    transaction(fn -> :mnesia.write(Tables.Notification, record, :write) end)
+    transaction(fn ->
+      notifs = all_notifications(notification.user_id, max_per_user)
+
+      if length(notifs) == max_per_user do
+        oldest_notif = Enum.min_by(notifs, & &1.ts)
+        :mnesia.delete({Tables.Notification, {oldest_notif.user_id, oldest_notif.ts}})
+      else
+        :ok
+      end
+
+      :ok = :mnesia.write(Tables.Notification, record, :write)
+    end)
   end
 
   @impl RadioBeam.User.Database

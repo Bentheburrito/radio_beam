@@ -126,5 +126,43 @@ defmodule RadioBeam.User.NotificationsTest do
       assert [] = Notifications.all_notifications(creator_id)
       assert [] = Notifications.all_notifications(user_id)
     end
+
+    test "drops oldest notification if the user has too many", %{
+      room_id: room_id,
+      creator_id: creator_id,
+      user_id: user_id
+    } do
+      queue = {Notifications, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
+      assert [] = Notifications.all_notifications(creator_id)
+
+      {:ok, first_event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, gamenight is on!")
+
+      Fixtures.assert_caught_up_to_event(queue, first_event_id)
+
+      assert [%Notification{event: %{id: ^first_event_id}}] = Notifications.all_notifications(creator_id)
+
+      newest_event_id =
+        Enum.reduce(2..Notifications.max_per_user(), nil, fn i, _ ->
+          {:ok, event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, gamenight is on! #{i}")
+          event_id
+        end)
+
+      Fixtures.assert_caught_up_to_event(queue, newest_event_id, 1000)
+
+      notifications = Notifications.all_notifications(creator_id, Notifications.max_per_user() + 1)
+      assert Notifications.max_per_user() == length(notifications)
+      assert Enum.any?(notifications, &(&1.event.id == first_event_id))
+
+      {:ok, newest_event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, gamenight is on!")
+
+      Fixtures.assert_caught_up_to_event(queue, newest_event_id)
+
+      notifications = Notifications.all_notifications(creator_id, Notifications.max_per_user() + 1)
+      assert Notifications.max_per_user() == length(notifications)
+      refute Enum.any?(notifications, &(&1.event.id == first_event_id))
+      assert Enum.any?(notifications, &(&1.event.id == newest_event_id))
+    end
   end
 end
