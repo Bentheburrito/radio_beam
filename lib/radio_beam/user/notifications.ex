@@ -12,11 +12,56 @@ defmodule RadioBeam.User.Notifications do
   alias RadioBeam.User.Notifications.Core.Pusher
   alias RadioBeam.User.Notifications.Core.RuleSet
 
+  @max_notifications_per_user 500
+
   defdelegate all_notifications(user_id, limit), to: Database
   defdelegate all_notifications(user_id, limit, older_than_ts), to: Database
 
   @default_notification_limit 30
   def all_notifications(user_id), do: all_notifications(user_id, @default_notification_limit)
+
+  def mark_read(user_id, older_than_ts \\ Time.now(), fields_to_match \\ []) do
+    user_id
+    |> all_notifications(@max_notifications_per_user)
+    |> filter_by_fields(fields_to_match)
+    |> filter_for_older(older_than_ts)
+    |> Enum.each(&mark_notification_read(&1))
+  end
+
+  defp filter_by_fields(notifs, []), do: notifs
+
+  defp filter_by_fields(notifs, fields) do
+    Stream.filter(notifs, fn %Notification{} = notif ->
+      Enum.all?(fields, fn
+        {:room_id, room_id} ->
+          notif.room_id == room_id
+
+        # user is on a client that doesn't understand threaded read receipts,
+        # so I think the best UX is to mark everything as read. The alternative
+        # is to behave like `:main` was specified, but that means that if the
+        # user has threaded read receipts and never uses a client that supports
+        # threads, they're "unreachable," and they would never be acknowledged,
+        # leaving them with an "unread" count forever.
+        {:thread_id, :unthreaded} ->
+          true
+
+        {:thread_id, :main} ->
+          notif.event.content["m.relates_to"]["rel_type"] != "m.thread"
+
+        {:thread_id, thread_id} ->
+          notif.event.content["m.relates_to"]["rel_type"] == "m.thread" and
+            notif.event.content["m.relates_to"]["event_id"] == thread_id
+      end)
+    end)
+  end
+
+  defp filter_for_older(notifs, older_than_ts), do: Stream.filter(notifs, &(&1.ts < older_than_ts))
+
+  defp mark_notification_read(%Notification{} = notification) do
+    notification.read
+    |> put_in(true)
+    |> Database.upsert_notification()
+  end
 
   @max_count 99
   def unread_in_room_count(user_id, room_id) do
@@ -49,7 +94,7 @@ defmodule RadioBeam.User.Notifications do
     if :notify in actions do
       notification = Notification.new(user_id, actions, event, nil, false, room_id, Time.now())
 
-      with :ok <- Database.insert_new_notification(notification) do
+      with :ok <- Database.upsert_notification(notification) do
         # note: for comprehensions will return [] if *any* of their
         # generators are empty Enumerables. We pull in pushers here because
         # we still want to generate notifications, even if a Pusher is not

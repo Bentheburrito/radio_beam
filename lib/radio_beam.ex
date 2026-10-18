@@ -66,6 +66,8 @@ defmodule RadioBeam do
       RadioBeam.Sync.SinkServer.Supervisor,
       # Start the Sync Source Task.Supervisor
       {Task.Supervisor, name: RadioBeam.Sync.Source.Supervisor},
+      # PubSub listener to update user notifications based on read receipt updates
+      RadioBeam.User.Notifications.ReadMarkerServer,
       # Cache to reduce redundant membership events in /sync
       LazyLoadMembersCache,
       # Cache for authorization code grant flow state

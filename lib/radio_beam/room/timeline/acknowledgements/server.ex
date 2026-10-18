@@ -7,6 +7,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Server do
   alias RadioBeam.PubSub
   alias RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBox
   alias RadioBeam.Room.Timeline.Acknowledgements.Server.Supervisor
+  alias RadioBeam.Time
 
   @registry RadioBeam.RoomAcknowledgementsRegistry
 
@@ -53,8 +54,9 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Server do
 
   @impl GenServer
   def handle_call({:put_read_receipt, user_id, event_id, type, thread_id}, _from, %__MODULE__{} = state) do
-    receipt_box = ReceiptBox.put(state.receipt_box, user_id, event_id, type, thread_id)
-    broadcast(state.room_id, state.receipt_box)
+    timestamp = Time.now()
+    receipt_box = ReceiptBox.put(state.receipt_box, user_id, event_id, type, thread_id, timestamp)
+    broadcast(state.room_id, state.receipt_box, user_id, thread_id, timestamp)
     {:reply, :ok, put_in(state.receipt_box, receipt_box)}
   end
 
@@ -63,8 +65,14 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements.Server do
     {:reply, ReceiptBox.get_all(state.receipt_box, user_id, since_ts), state}
   end
 
-  defp broadcast(room_id, receipt_box),
-    do: PubSub.broadcast(PubSub.all_room_events(room_id), {:room_ephemeral_state_update, room_id, receipt_box})
+  defp broadcast(room_id, receipt_box, user_id, thread_id, timestamp) do
+    PubSub.broadcast(PubSub.all_room_events(room_id), {:room_ephemeral_state_update, room_id, receipt_box})
+
+    PubSub.broadcast(
+      PubSub.user_room_read_receipt_updated(),
+      {:user_room_read_receipt_updated, room_id, user_id, thread_id, timestamp}
+    )
+  end
 
   defp via(room_id), do: {:via, Registry, {@registry, room_id}}
 end

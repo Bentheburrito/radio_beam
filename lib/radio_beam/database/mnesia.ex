@@ -504,7 +504,7 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.User.Database
-  def insert_new_notification(%Notification{} = notification) do
+  def upsert_notification(%Notification{} = notification) do
     record = notification(key: {notification.user_id, notification.ts}, notification: notification)
 
     transaction(fn -> :mnesia.write(Tables.Notification, record, :write) end)
