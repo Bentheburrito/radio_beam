@@ -34,7 +34,8 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
 
   # https://spec.matrix.org/latest/appendices/#glob-style-matching
   defp compile_glob_style_pattern(pattern, full_match?) do
-    with :ok <- validate_reasonable_wildcard_count(pattern) do
+    with :ok <- validate_pattern(pattern),
+         :ok <- validate_reasonable_wildcard_count(pattern) do
       pattern
       |> String.split(wildcard_regex(), trim: true, include_captures: true)
       |> Enum.map_join(fn
@@ -44,6 +45,14 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
       end)
       |> maybe_full_match(full_match?)
       |> Regex.compile("i")
+    end
+  end
+
+  defp validate_pattern(pattern) do
+    if is_binary(pattern) and String.valid?(pattern) and String.printable?(pattern) do
+      :ok
+    else
+      {:error, :invalid_pattern}
     end
   end
 

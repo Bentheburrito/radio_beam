@@ -7,6 +7,7 @@ defmodule RadioBeam.User.ClientConfig do
   """
   alias RadioBeam.User.EventFilter
   alias RadioBeam.User.Notifications.Core.ConditionalRule
+  alias RadioBeam.User.Notifications.Core.EntityRule
   alias RadioBeam.User.Notifications.Core.Pusher
   alias RadioBeam.User.Notifications.Core.RuleSet
 
@@ -95,16 +96,20 @@ defmodule RadioBeam.User.ClientConfig do
   @doc """
   Creates a new global push rule.
   """
-  def put_global_notification_push_rule(config, kind, rule_id, actions, conditions, enabled? \\ true)
+  def put_global_notification_push_rule(config, kind, rule_id, actions, conditions_or_pattern, enabled? \\ true)
 
   def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions, conditions, enabled?)
-      when kind in ~w|override underride|a do
-    rule_type =
-      case kind do
-        kind when kind in ~w|override underride|a -> ConditionalRule
-      end
+      when kind in ~w|override underride|a and is_list(conditions) do
+    with {:ok, %ConditionalRule{} = rule} <- ConditionalRule.new(rule_id, actions, conditions, enabled?) do
+      {:ok, update_in(config.notification_rule_sets.global, &RuleSet.put_rule(&1, kind, rule))}
+    end
+  end
 
-    with {:ok, %^rule_type{} = rule} <- rule_type.new(rule_id, actions, conditions, enabled?) do
+  def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions, maybe_pattern, enabled?)
+      when kind in ~w|content room sender|a do
+    entity_type = if kind == :content, do: {:content, maybe_pattern}, else: kind
+
+    with {:ok, %EntityRule{} = rule} <- EntityRule.new(rule_id, actions, enabled?, entity_type) do
       {:ok, update_in(config.notification_rule_sets.global, &RuleSet.put_rule(&1, kind, rule))}
     end
   end
@@ -119,39 +124,41 @@ defmodule RadioBeam.User.ClientConfig do
   of the rule are updated.
   """
   def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, enabled?)
-      when is_boolean(enabled?) and kind in ~w|override underride|a do
-    with %ConditionalRule{} = rule <- RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
+      when is_boolean(enabled?) and kind in ~w|override content room sender underride|a do
+    with %rule_type{} = rule <- RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
       actions =
         rule
-        |> ConditionalRule.actions()
+        |> rule_type.actions()
         |> Enum.map(fn
           action when is_map(action) -> Map.new(action, fn {k, v} -> {to_string(k), v} end)
           action when is_atom(action) -> to_string(action)
         end)
 
-      conditions = ConditionalRule.raw_conditions(rule)
-      put_global_notification_push_rule(config, kind, rule_id, actions, conditions, enabled?)
+      put_global_notification_push_rule(config, kind, rule_id, actions, conditions_or_pattern(kind, rule), enabled?)
     end
   end
 
   def put_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id, actions)
-      when kind in ~w|override underride|a do
-    with %ConditionalRule{} = rule <- RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
-      conditions = ConditionalRule.raw_conditions(rule)
-      enabled? = ConditionalRule.enabled?(rule)
-      put_global_notification_push_rule(config, kind, rule_id, actions, conditions, enabled?)
+      when kind in ~w|override content room sender underride|a do
+    with %rule_type{} = rule <- RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
+      enabled? = rule_type.enabled?(rule)
+      put_global_notification_push_rule(config, kind, rule_id, actions, conditions_or_pattern(kind, rule), enabled?)
     end
+  end
+
+  defp conditions_or_pattern(kind, rule) do
+    if kind in ~w|content room sender|a, do: EntityRule.pattern(rule), else: ConditionalRule.raw_conditions(rule)
   end
 
   def fetch_global_notification_push_rule(%__MODULE__{} = config, kind, rule_id) do
     case RuleSet.get_rule(config.notification_rule_sets.global, kind, rule_id) do
       :not_found -> {:error, :not_found}
-      %rule_type{} = rule when rule_type in [ConditionalRule] -> {:ok, rule}
+      %rule_type{} = rule when rule_type in [ConditionalRule, EntityRule] -> {:ok, rule}
     end
   end
 
   def delete_global_notification_push_rule!(%__MODULE__{} = config, kind, rule_id)
-      when kind in ~w|override underride|a do
+      when kind in ~w|override content room sender underride|a do
     update_in(config.notification_rule_sets.global, &RuleSet.delete_rule(&1, kind, rule_id))
   end
 

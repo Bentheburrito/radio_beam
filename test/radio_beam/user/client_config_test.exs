@@ -3,6 +3,7 @@ defmodule RadioBeam.User.ClientConfigTest do
 
   alias RadioBeam.User.ClientConfig
   alias RadioBeam.User.Notifications.Core.ConditionalRule
+  alias RadioBeam.User.Notifications.Core.EntityRule
   alias RadioBeam.User.Notifications.Core.Pusher
 
   describe "put_account_data" do
@@ -180,6 +181,20 @@ defmodule RadioBeam.User.ClientConfigTest do
 
         assert ^rule_id = ConditionalRule.id(rule)
       end
+
+      for {kind, rule_id} <- [
+            {:content, Fixtures.random_string(9)},
+            {:room, "!asdf"},
+            {:sender, "@asdf:localhost"}
+          ] do
+        assert {:ok, %ClientConfig{} = config} =
+                 ClientConfig.put_global_notification_push_rule(config, kind, rule_id, ["notify"], "hi")
+
+        assert {:ok, %EntityRule{} = rule} =
+                 ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+
+        assert ^rule_id = EntityRule.id(rule)
+      end
     end
 
     @sound_tweak %{"set_tweak" => "sound", "value" => "default"}
@@ -199,6 +214,24 @@ defmodule RadioBeam.User.ClientConfigTest do
         {:ok, %ConditionalRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
         assert [%{set_tweak: "sound", value: "default"}] = ConditionalRule.actions(rule)
       end
+
+      for {kind, rule_id} <- [
+            {:content, Fixtures.random_string(9)},
+            {:room, "!asdf"},
+            {:sender, "@asdf:localhost"}
+          ] do
+        {:ok, %ClientConfig{} = config} =
+          ClientConfig.put_global_notification_push_rule(config, kind, rule_id, ["notify"], "hi")
+
+        {:ok, %EntityRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        assert [:notify] = EntityRule.actions(rule)
+
+        {:ok, %ClientConfig{} = config} =
+          ClientConfig.put_global_notification_push_rule(config, kind, rule_id, [@sound_tweak])
+
+        {:ok, %EntityRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        assert [%{set_tweak: "sound", value: "default"}] = EntityRule.actions(rule)
+      end
     end
 
     test "successfully enable/disables an existing push rule", %{config: config} do
@@ -215,6 +248,23 @@ defmodule RadioBeam.User.ClientConfigTest do
 
         {:ok, %ConditionalRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
         refute ConditionalRule.enabled?(rule)
+      end
+
+      for {kind, rule_id} <- [
+            {:content, Fixtures.random_string(9)},
+            {:room, "!asdf"},
+            {:sender, "@asdf:localhost"}
+          ] do
+        {:ok, %ClientConfig{} = config} =
+          ClientConfig.put_global_notification_push_rule(config, kind, rule_id, ["notify"], "hi")
+
+        {:ok, %EntityRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        assert EntityRule.enabled?(rule)
+
+        {:ok, %ClientConfig{} = config} = ClientConfig.put_global_notification_push_rule(config, kind, rule_id, false)
+
+        {:ok, %EntityRule{} = rule} = ClientConfig.fetch_global_notification_push_rule(config, kind, rule_id)
+        refute EntityRule.enabled?(rule)
       end
     end
 

@@ -255,6 +255,9 @@ defmodule RadioBeamWeb.AccountController do
         %{"kind" => kind, "rule_id" => rule_id, "actions" => actions, "conditions" => conditions} ->
           User.put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions)
 
+        %{"kind" => kind, "rule_id" => rule_id, "actions" => actions, "pattern" => pattern} ->
+          User.put_global_notification_push_rule(user_id, kind, rule_id, actions, pattern)
+
         %{"kind" => kind, "rule_id" => rule_id, "actions" => actions} ->
           User.put_global_notification_push_rule(user_id, kind, rule_id, actions)
 
@@ -269,7 +272,10 @@ defmodule RadioBeamWeb.AccountController do
       {:error, field_name} when field_name in ~w|rule_id actions conditions|a ->
         json_error(conn, 400, :bad_json, "field `#{field_name}` is invalid.")
 
-      {:error, :kind} ->
+      {:error, {:invalid_rule_id_for_entity, invalid_rule_id, kind}} ->
+        json_error(conn, 400, :bad_json, "rule ID '#{inspect(invalid_rule_id)}' invalid, must be a #{kind} ID")
+
+      {:error, error} when error in ~w|kind entity_type|a ->
         json_error(conn, 400, :endpoint_error, [
           :invalid_param,
           "`#{conn.assigns.request["kind"]}` is not a supported `kind`"

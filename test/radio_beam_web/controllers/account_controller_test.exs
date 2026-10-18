@@ -480,15 +480,32 @@ defmodule RadioBeamWeb.AccountControllerTest do
   end
 
   describe "put_push_rule/2" do
-    test "returns an empty object (200) when putting a new push rule", %{conn: conn} do
-      conn =
-        put(conn, ~p"/_matrix/client/v3/pushrules/global/override/mynewrule", %{
-          "conditions" => [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}],
-          "actions" => ["notify", %{"set_tweak" => "sound", "value" => "harp"}]
-        })
+    test "returns an empty object (200) when putting a new override/underride push rule", %{conn: conn} do
+      for kind <- ~w|override underride|a do
+        rule_id = "mynew#{kind}rule"
 
-      assert %{} = response = json_response(conn, 200)
-      assert 0 = map_size(response)
+        conn =
+          put(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}", %{
+            "conditions" => [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}],
+            "actions" => ["notify", %{"set_tweak" => "sound", "value" => "harp"}]
+          })
+
+        assert %{} = response = json_response(conn, 200)
+        assert 0 = map_size(response)
+      end
+    end
+
+    test "returns an empty object (200) when putting a new  push rule", %{conn: conn} do
+      for {kind, rule_id} <- [{:content, "blahhhmynewrule"}, {:room, "!roomid"}, {:sender, "@ok:localhost"}] do
+        conn =
+          put(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}", %{
+            "actions" => ["notify", %{"set_tweak" => "sound", "value" => "harp"}],
+            "pattern" => "just here for content push rule"
+          })
+
+        assert %{} = response = json_response(conn, 200)
+        assert 0 = map_size(response)
+      end
     end
 
     test "returns an M_BAD_JSON (400) error when putting new a push rule with invalid actions", %{
@@ -526,14 +543,22 @@ defmodule RadioBeamWeb.AccountControllerTest do
     end
 
     test "returns an M_BAD_JSON (400) error when putting new a push rule with invalid rule_id", %{conn: conn} do
-      for invalid_rule_id <- ["asdf!@#", ".m.lmao"] do
+      for {kind, invalid_rule_id} <- [
+            {:override, "asdf!@#"},
+            {:underride, ".m.lmao"},
+            {:room, "blah"},
+            {:sender, "blahh"}
+          ] do
         conn =
-          put(conn, ~p"/_matrix/client/v3/pushrules/global/override/#{invalid_rule_id}", %{
+          put(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{invalid_rule_id}", %{
             "conditions" => [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}],
             "actions" => ["notify"]
           })
 
-        assert %{"errcode" => "M_BAD_JSON", "error" => "field `rule_id` is invalid."} = json_response(conn, 400)
+        assert %{"errcode" => "M_BAD_JSON", "error" => error} = json_response(conn, 400)
+
+        assert error == "field `rule_id` is invalid." or
+                 error == "rule ID '#{inspect(invalid_rule_id)}' invalid, must be a #{kind} ID"
       end
     end
   end
@@ -574,8 +599,12 @@ defmodule RadioBeamWeb.AccountControllerTest do
     test "returns the requested push rule (200)", %{conn: conn, kind: kind, rule_id: rule_id} do
       conn = get(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}", %{})
 
-      assert %{"rule_id" => ^rule_id, "actions" => ["notify"], "conditions" => [%{"key" => "content.body"}]} =
-               json_response(conn, 200)
+      if kind in ~w|override underride|a do
+        assert %{"rule_id" => ^rule_id, "actions" => ["notify"], "conditions" => [%{"key" => "content.body"}]} =
+                 json_response(conn, 200)
+      else
+        assert %{"rule_id" => ^rule_id, "actions" => ["notify"]} = json_response(conn, 200)
+      end
     end
 
     test "returns the only actions when that's all that's requested (200)", %{conn: conn, kind: kind, rule_id: rule_id} do
@@ -620,40 +649,51 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
     test "returns the requested push rule set (200), only :global is supported right now", %{
       conn: conn,
+      kind: kind,
       rule_id: rule_id
     } do
       conn = get(conn, ~p"/_matrix/client/v3/pushrules/global", %{})
+      kind = to_string(kind)
 
       assert %{
-               "override" => [
-                 %{"rule_id" => ^rule_id, "actions" => ["notify"], "conditions" => [%{"key" => "content.body"}]}
+               ^kind => [
+                 %{"rule_id" => ^rule_id, "actions" => ["notify"]} = response
                ],
                "underride" => []
              } =
                json_response(conn, 200)
+
+      if kind in ~w|override underride|a do
+        assert %{"conditions" => [%{"key" => "content.body"}]} = response
+      end
     end
   end
 
   describe "get_all_push_rule_sets/2" do
     setup :one_push_rule
 
-    test "returns all rule sets", %{conn: conn, rule_id: rule_id} do
+    test "returns all rule sets", %{conn: conn, kind: kind, rule_id: rule_id} do
       conn = get(conn, ~p"/_matrix/client/v3/pushrules", %{})
+      kind = to_string(kind)
 
       assert %{
                "global" => %{
-                 "override" => [
-                   %{"rule_id" => ^rule_id, "actions" => ["notify"], "conditions" => [%{"key" => "content.body"}]}
+                 ^kind => [
+                   %{"rule_id" => ^rule_id, "actions" => ["notify"]} = response
                  ],
                  "underride" => []
                }
              } = json_response(conn, 200)
+
+      if kind in ~w|override underride|a do
+        assert %{"conditions" => [%{"key" => "content.body"}]} = response
+      end
     end
   end
 
   defp one_push_rule(%{account: account}) do
-    kind = :override
-    rule_id = Fixtures.random_string(12)
+    kind = Enum.random(~w|override sender|a)
+    rule_id = "@" <> Fixtures.random_string(12)
 
     conditions = [%{"kind" => "event_match", "key" => "content.body", "pattern" => "*world"}]
 

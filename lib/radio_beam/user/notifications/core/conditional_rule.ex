@@ -35,9 +35,10 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
   # > Slashes ("/") and backslashes ("\") are also not allowed.
   # https://spec.matrix.org/v1.18/client-server-api/#put_matrixclientv3pushrulesglobalkindruleid
   defp validate_rule_id(rule_id) do
-    if is_binary(rule_id) and not String.starts_with?(rule_id, ".") and String.match?(rule_id, ~r/^[a-zA-Z0-9_\-\.]+$/),
-      do: :ok,
-      else: {:error, :rule_id}
+    if is_binary(rule_id) and not String.starts_with?(rule_id, ".") and
+         String.match?(rule_id, ~r/^[a-zA-Z0-9_\-\.@!:=]+$/),
+       do: :ok,
+       else: {:error, :rule_id}
   end
 
   defp parse_actions(action_params) when is_list(action_params) do
@@ -78,6 +79,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
     |> Enum.reduce_while([], fn condition_param, conditions ->
       case parse_condition(condition_param) do
         {:ok, condition} -> {:cont, [condition | conditions]}
+        {:error, error} -> {:halt, {:error, error}}
         :error -> {:halt, {:error, :conditions}}
       end
     end)

@@ -10,6 +10,8 @@ defmodule RadioBeam.User do
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
   alias RadioBeam.User.EventFilter
+  alias RadioBeam.User.Notifications.Core.ConditionalRule
+  alias RadioBeam.User.Notifications.Core.EntityRule
   alias RadioBeam.User.Notifications.Core.Pusher
 
   @type id() :: String.t()
@@ -24,8 +26,11 @@ defmodule RadioBeam.User do
   ### DEVICE ###
 
   defdelegate default_device_name, to: Device, as: :default_name
-  defdelegate push_rule_actions(conditional_rule), to: RadioBeam.User.Notifications.Core.ConditionalRule, as: :actions
-  defdelegate push_rule_enabled?(conditional_rule), to: RadioBeam.User.Notifications.Core.ConditionalRule, as: :enabled?
+
+  def push_rule_actions(%ConditionalRule{} = rule), do: ConditionalRule.actions(rule)
+  def push_rule_actions(%EntityRule{} = rule), do: EntityRule.actions(rule)
+  def push_rule_enabled?(%ConditionalRule{} = rule), do: ConditionalRule.enabled?(rule)
+  def push_rule_enabled?(%EntityRule{} = rule), do: EntityRule.enabled?(rule)
 
   @doc "Gets metadata about a user's device"
   @spec get_device_info(id(), Device.id()) :: {:ok, map()} | {:error, :not_found}
@@ -168,10 +173,10 @@ defmodule RadioBeam.User do
          do: {:ok, ClientConfig.get_all_notification_pushers(config)}
   end
 
-  def put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions) do
+  def put_global_notification_push_rule(user_id, kind, rule_id, actions, conditions_or_pattern) do
     upsert_push_rule_change(
       user_id,
-      &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions, conditions)
+      &ClientConfig.put_global_notification_push_rule(&1, kind, rule_id, actions, conditions_or_pattern)
     )
   end
 

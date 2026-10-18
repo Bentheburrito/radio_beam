@@ -6,6 +6,7 @@ defmodule RadioBeam.UserTest do
   alias RadioBeam.User
   alias RadioBeam.User.Database
   alias RadioBeam.User.Device
+  alias RadioBeam.User.Notifications.Core.EntityRule
   alias RadioBeam.User.Notifications.Core.ConditionalRule
   alias RadioBeam.User.Notifications.Core.RuleSet
 
@@ -325,6 +326,14 @@ defmodule RadioBeam.UserTest do
 
         assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], [])
       end
+
+      for {kind, rule_id} <- [
+            {:content, Fixtures.random_string(9)},
+            {:room, "!asdf"},
+            {:sender, "@asdf:localhost"}
+          ] do
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], "pattern")
+      end
     end
 
     test "successfully updates an existing push rule", %{account: account} do
@@ -332,6 +341,16 @@ defmodule RadioBeam.UserTest do
         rule_id = Fixtures.random_string(9)
 
         assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], [])
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, [%{"set_tweak" => "sound"}])
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, false)
+      end
+
+      for {kind, rule_id} <- [
+            {:content, Fixtures.random_string(9)},
+            {:room, "!asdf"},
+            {:sender, "@asdf:localhost"}
+          ] do
+        assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, ["notify"], "pattern")
         assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, [%{"set_tweak" => "sound"}])
         assert :ok = User.put_global_notification_push_rule(account.user_id, kind, rule_id, false)
       end
@@ -345,6 +364,9 @@ defmodule RadioBeam.UserTest do
 
       assert {:error, :actions} =
                User.put_global_notification_push_rule(account.user_id, :override, "bcde", "notify", [])
+
+      assert {:error, {:invalid_rule_id_for_entity, "notauser!!!", :sender}} =
+               User.put_global_notification_push_rule(account.user_id, :sender, "notauser!!!", "notify", "pattern")
     end
   end
 
@@ -352,12 +374,14 @@ defmodule RadioBeam.UserTest do
     setup do
       account = Fixtures.create_account()
       assert :ok = User.put_global_notification_push_rule(account.user_id, :override, "cooolrule", ["notify"], [])
+      assert :ok = User.put_global_notification_push_rule(account.user_id, :content, "cooolrule2", ["notify"], "cool")
       %{account: account}
     end
 
     test "gets the user's global RuleSet", %{account: account} do
       assert {:ok, %RuleSet{} = rule_set} = User.get_global_rule_set(account.user_id)
       assert %ConditionalRule{} = RuleSet.get_rule(rule_set, :override, "cooolrule")
+      assert %EntityRule{} = RuleSet.get_rule(rule_set, :content, "cooolrule2")
     end
   end
 end
