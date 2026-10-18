@@ -33,7 +33,7 @@ defmodule RadioBeam.User do
   def push_rule_enabled?(%ConditionalRule{} = rule), do: ConditionalRule.enabled?(rule)
   def push_rule_enabled?(%EntityRule{} = rule), do: EntityRule.enabled?(rule)
 
-  defdelegate all_notifications(user_id, limit, from), to: Notifications
+  defdelegate all_notifications(user_id, limit, from), to: Notifications, as: :all
 
   @doc "Gets metadata about a user's device"
   @spec get_device_info(id(), Device.id()) :: {:ok, map()} | {:error, :not_found}

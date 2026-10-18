@@ -53,22 +53,22 @@ defmodule RadioBeam.User.Notifications.ReadMarkerServerTest do
            room_id: room_id
          } do
       assert [%{read: false}, %{read: false}, %{read: false, ts: first_notif_ts}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, :main, first_notif_ts + 1)
 
       assert [%{read: false}, %{read: false, ts: second_notif_ts}, %{read: true}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, :main, second_notif_ts + 1)
 
       assert [%{read: false, ts: third_notif_ts}, %{read: true}, %{read: true}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, :main, third_notif_ts + 1)
 
       # last read is still false, because thread_type == :main
-      assert [%{read: false}, %{read: true}, %{read: true}] = Notifications.all_notifications(user_id)
+      assert [%{read: false}, %{read: true}, %{read: true}] = Notifications.all(user_id)
     end
 
     test "if thread_id == :unthreaded, any notifications (no matter whether they are main-timeline or threaded) whose event's timestamp is older than the provided timestamp are marked as read",
@@ -77,22 +77,22 @@ defmodule RadioBeam.User.Notifications.ReadMarkerServerTest do
            room_id: room_id
          } do
       assert [%{read: false}, %{read: false}, %{read: false, ts: first_notif_ts}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, :unthreaded, first_notif_ts + 1)
 
       assert [%{read: false}, %{read: false, ts: second_notif_ts}, %{read: true}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, :unthreaded, second_notif_ts + 1)
 
       assert [%{read: false, ts: third_notif_ts}, %{read: true}, %{read: true}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, :unthreaded, third_notif_ts + 1)
 
       # last read is true even though it's in a thread, because thread_type == :unthreaded
-      assert [%{read: true}, %{read: true}, %{read: true}] = Notifications.all_notifications(user_id)
+      assert [%{read: true}, %{read: true}, %{read: true}] = Notifications.all(user_id)
     end
 
     test "if thread_id is a thread ID, any notifs whose event has an m.relates_to for the given thread ID, and whose ts is older than the provided ts are marked read",
@@ -102,13 +102,13 @@ defmodule RadioBeam.User.Notifications.ReadMarkerServerTest do
            thread_id: thread_id
          } do
       assert [%{read: false}, %{read: false}, %{read: false, ts: first_notif_ts}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, thread_id, first_notif_ts + 1)
 
       # first event was not a part of the thread
       assert [%{read: false}, %{read: false, ts: second_notif_ts}, %{read: false}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, thread_id, second_notif_ts + 1)
 
@@ -117,12 +117,12 @@ defmodule RadioBeam.User.Notifications.ReadMarkerServerTest do
       # are considered to be a part of the `main` timeline. This is per the
       # [spec](https://spec.matrix.org/latest/client-server-api/#threaded-read-receipts)
       assert [%{read: false, ts: third_notif_ts}, %{read: false}, %{read: false}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       broadcast_user_room_read_receipt_updated(room_id, user_id, thread_id, third_notif_ts + 1)
 
       # last read is true, as it has an m.thread m.relates_to that points to `thread_id`
-      assert [%{read: true}, %{read: false}, %{read: false}] = Notifications.all_notifications(user_id)
+      assert [%{read: true}, %{read: false}, %{read: false}] = Notifications.all(user_id)
     end
   end
 

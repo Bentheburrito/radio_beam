@@ -33,17 +33,17 @@ defmodule RadioBeam.User.NotificationsTest do
       room_id: room_id,
       notifs_queue: queue
     } do
-      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all_notifications(user_id)
+      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all(user_id)
 
       {:ok, event_id} = Room.send_text_message(room_id, creator_id, "you there?")
 
       Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert [%{event: %{content: %{"body" => "you there?"}}, ts: ts}, %{event: %{content: %{"body" => "yo" <> _}}}] =
-               Notifications.all_notifications(user_id)
+               Notifications.all(user_id)
 
       assert [%{event: %{content: %{"body" => "yo" <> _}}}] =
-               Notifications.all_notifications(user_id, 5, ts - 1)
+               Notifications.all(user_id, 5, ts - 1)
     end
 
     test "lists notifications up to the limit, paginating along the way", %{
@@ -52,7 +52,7 @@ defmodule RadioBeam.User.NotificationsTest do
       room_id: room_id,
       notifs_queue: queue
     } do
-      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all_notifications(user_id)
+      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all(user_id)
 
       {:ok, _event_id} = Room.send_text_message(room_id, creator_id, "you there?")
       {:ok, _event_id} = Room.send_text_message(room_id, creator_id, "pls respond")
@@ -64,12 +64,12 @@ defmodule RadioBeam.User.NotificationsTest do
                %{event: %{content: %{"body" => "I'm so lonely"}}},
                %{event: %{content: %{"body" => "pls respond"}}, ts: ts}
              ] =
-               Notifications.all_notifications(user_id, 2)
+               Notifications.all(user_id, 2)
 
       assert [%{event: %{content: %{"body" => "you there?"}}, ts: ts}] =
-               Notifications.all_notifications(user_id, 1, ts - 1)
+               Notifications.all(user_id, 1, ts - 1)
 
-      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all_notifications(user_id, 1, ts - 1)
+      assert [%{event: %{content: %{"body" => "yo" <> _}}}] = Notifications.all(user_id, 1, ts - 1)
     end
   end
 
@@ -100,15 +100,15 @@ defmodule RadioBeam.User.NotificationsTest do
       queue = {Notifications, room_id}
       Fixtures.listen_to_queue_messages(queue)
 
-      assert [] = Notifications.all_notifications(creator_id)
-      assert [] = Notifications.all_notifications(user_id)
+      assert [] = Notifications.all(creator_id)
+      assert [] = Notifications.all(user_id)
 
       {:ok, event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, gamenight is on!")
 
       Fixtures.assert_caught_up_to_event(queue, event_id)
 
-      assert [%Notification{event: %{id: ^event_id}}] = Notifications.all_notifications(creator_id)
-      assert [] = Notifications.all_notifications(user_id)
+      assert [%Notification{event: %{id: ^event_id}}] = Notifications.all(creator_id)
+      assert [] = Notifications.all(user_id)
     end
 
     test "does not insert a Notification if the event doesn't match any push rule", %{
@@ -116,15 +116,15 @@ defmodule RadioBeam.User.NotificationsTest do
       creator_id: creator_id,
       user_id: user_id
     } do
-      assert [] = Notifications.all_notifications(creator_id)
-      assert [] = Notifications.all_notifications(user_id)
+      assert [] = Notifications.all(creator_id)
+      assert [] = Notifications.all(user_id)
 
       {:ok, _event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, tonight we game!")
 
       :pong = Room.Server.ping(room_id)
 
-      assert [] = Notifications.all_notifications(creator_id)
-      assert [] = Notifications.all_notifications(user_id)
+      assert [] = Notifications.all(creator_id)
+      assert [] = Notifications.all(user_id)
     end
 
     test "drops oldest notification if the user has too many", %{
@@ -135,13 +135,13 @@ defmodule RadioBeam.User.NotificationsTest do
       queue = {Notifications, room_id}
       Fixtures.listen_to_queue_messages(queue)
 
-      assert [] = Notifications.all_notifications(creator_id)
+      assert [] = Notifications.all(creator_id)
 
       {:ok, first_event_id} = Room.send_text_message(room_id, user_id, "G'DAY LADS, gamenight is on!")
 
       Fixtures.assert_caught_up_to_event(queue, first_event_id)
 
-      assert [%Notification{event: %{id: ^first_event_id}}] = Notifications.all_notifications(creator_id)
+      assert [%Notification{event: %{id: ^first_event_id}}] = Notifications.all(creator_id)
 
       newest_event_id =
         Enum.reduce(2..Notifications.max_per_user(), nil, fn i, _ ->
@@ -151,7 +151,7 @@ defmodule RadioBeam.User.NotificationsTest do
 
       Fixtures.assert_caught_up_to_event(queue, newest_event_id, 1000)
 
-      notifications = Notifications.all_notifications(creator_id, Notifications.max_per_user() + 1)
+      notifications = Notifications.all(creator_id, Notifications.max_per_user() + 1)
       assert Notifications.max_per_user() == length(notifications)
       assert Enum.any?(notifications, &(&1.event.id == first_event_id))
 
@@ -159,7 +159,7 @@ defmodule RadioBeam.User.NotificationsTest do
 
       Fixtures.assert_caught_up_to_event(queue, newest_event_id)
 
-      notifications = Notifications.all_notifications(creator_id, Notifications.max_per_user() + 1)
+      notifications = Notifications.all(creator_id, Notifications.max_per_user() + 1)
       assert Notifications.max_per_user() == length(notifications)
       refute Enum.any?(notifications, &(&1.event.id == first_event_id))
       assert Enum.any?(notifications, &(&1.event.id == newest_event_id))

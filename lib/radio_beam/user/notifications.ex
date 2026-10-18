@@ -17,15 +17,15 @@ defmodule RadioBeam.User.Notifications do
   @max_notifications_per_user 500
   def max_per_user, do: @max_notifications_per_user
 
-  defdelegate all_notifications(user_id, limit), to: Database
-  defdelegate all_notifications(user_id, limit, older_than_ts), to: Database
+  defdelegate all(user_id, limit), to: Database, as: :all_notifications
+  defdelegate all(user_id, limit, older_than_ts), to: Database, as: :all_notifications
 
   @default_notification_limit 30
-  def all_notifications(user_id), do: all_notifications(user_id, @default_notification_limit)
+  def all(user_id), do: all(user_id, @default_notification_limit)
 
   def mark_read(user_id, older_than_ts \\ Time.now(), fields_to_match \\ []) do
     user_id
-    |> all_notifications(@max_notifications_per_user)
+    |> all(@max_notifications_per_user)
     |> filter_by_fields(fields_to_match)
     |> filter_for_older(older_than_ts)
     |> Enum.each(&mark_notification_read(&1))
@@ -69,7 +69,7 @@ defmodule RadioBeam.User.Notifications do
   @max_count 99
   def unread_in_room_count(user_id, room_id) do
     user_id
-    |> all_notifications(@max_count)
+    |> all(@max_count)
     |> Enum.count(&(&1.room_id == room_id and &1.read == false))
   end
 
