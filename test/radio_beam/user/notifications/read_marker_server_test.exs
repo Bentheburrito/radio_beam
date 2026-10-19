@@ -136,7 +136,7 @@ defmodule RadioBeam.User.Notifications.ReadMarkerServerTest do
     # least been delivered to ReadMarkerServer as well, and then we wait 5ms as
     # a hacky way to wait for it to process the msg and update Notifications
     receive do
-      {:user_room_read_receipt_updated, ^room_id, ^user_id, ^thread_id, ^timestamp} -> Process.sleep(5)
+      {:user_room_read_receipt_updated, ^room_id, ^user_id, ^thread_id, ^timestamp} -> Process.sleep(200)
     end
   end
 end

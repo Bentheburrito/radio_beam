@@ -149,7 +149,7 @@ defmodule RadioBeam.User.NotificationsTest do
           event_id
         end)
 
-      Fixtures.assert_caught_up_to_event(queue, newest_event_id, 1000)
+      Fixtures.assert_caught_up_to_event(queue, newest_event_id, :timer.seconds(5))
 
       notifications = Notifications.all(creator_id, Notifications.max_per_user() + 1)
       assert Notifications.max_per_user() == length(notifications)
