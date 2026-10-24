@@ -131,7 +131,7 @@ defmodule RadioBeam.Room.CoreTest do
     setup %{room_version: version, chronicle_backend: chronicle_backend, dag_backend: dag_backend} do
       user_id = Fixtures.user_id()
 
-      {room, _pdus} =
+      {%Room{} = room, _pdus} =
         Room.Core.new(version, user_id, default_deps(), chronicle_backend: chronicle_backend, dag_backend: dag_backend)
 
       %{room: room, creator_id: user_id}
@@ -215,19 +215,7 @@ defmodule RadioBeam.Room.CoreTest do
       {target_room, _pdus} = Room.Core.new(version, creator_id, default_deps(), opts)
       target_room_id = Core.room_id(target_room)
 
-      # TODO: Polyjuice RoomState protocol
-      polyjuice_state_mapping =
-        target_room
-        |> Core.get_state_mapping()
-        |> Map.new(fn {state_type_key, event_id} ->
-          {:ok, event} = Chronicle.fetch_event(target_room.chronicle, event_id)
-          {state_type_key, event}
-        end)
-
-      deps =
-        put_in(default_deps().get_room_metadata, fn ^target_room_id ->
-          {:ok, Core.room_version(target_room), polyjuice_state_mapping}
-        end)
+      deps = put_in(default_deps().fetch_room, fn ^target_room_id -> {:ok, target_room} end)
 
       %{room: room, creator_id: creator_id, target_room: target_room, deps: deps}
     end
@@ -363,20 +351,9 @@ defmodule RadioBeam.Room.CoreTest do
 
       {:sent, target_room, _, [_]} = Core.send(target_room, power_level_event, deps)
 
-      # update get_room_metadata dep to return target_room's new state
-      # TODO: Polyjuice RoomState protocol
-      polyjuice_state_mapping =
-        target_room
-        |> Core.get_state_mapping()
-        |> Map.new(fn {state_type_key, event_id} ->
-          {:ok, event} = Chronicle.fetch_event(target_room.chronicle, event_id)
-          {state_type_key, event}
-        end)
-
+      # update fetch_room dep to return up-to-date target_room
       deps =
-        put_in(deps.get_room_metadata, fn ^target_room_id ->
-          {:ok, Core.room_version(target_room), polyjuice_state_mapping}
-        end)
+        put_in(deps.fetch_room, fn ^target_room_id -> {:ok, target_room} end)
 
       parent_event = Events.state(room_id, "m.space.parent", user_id, %{"via" => ["some.server.com"]}, target_room_id)
       assert {:sent, _, _, [_]} = Room.Core.send(room, parent_event, deps)
@@ -397,19 +374,8 @@ defmodule RadioBeam.Room.CoreTest do
         Events.state(target_room_id, "m.space.child", creator_id, %{"via" => ["some.server.com"]}, room_id)
 
       {:sent, target_room, _, [_]} = Core.send(target_room, child_event, deps)
-      # TODO: Polyjuice RoomState protocol
-      polyjuice_state_mapping =
-        target_room
-        |> Core.get_state_mapping()
-        |> Map.new(fn {state_type_key, event_id} ->
-          {:ok, event} = Chronicle.fetch_event(target_room.chronicle, event_id)
-          {state_type_key, event}
-        end)
 
-      deps =
-        put_in(deps.get_room_metadata, fn ^target_room_id ->
-          {:ok, Core.room_version(target_room), polyjuice_state_mapping}
-        end)
+      deps = put_in(deps.fetch_room, fn ^target_room_id -> {:ok, target_room} end)
 
       invite_event = Events.membership(room_id, creator_id, user_id, :invite)
       {:sent, room, _, [_]} = Core.send(room, invite_event, deps)
@@ -452,7 +418,7 @@ defmodule RadioBeam.Room.CoreTest do
       deps: deps
     } do
       parent_event = Events.state(room.id, "m.space.parent", creator_id, %{"via" => ["some.server.com"]}, "!IDONTEXIST")
-      deps = put_in(deps.get_room_metadata, fn "!IDONTEXIST" -> {:error, :not_found} end)
+      deps = put_in(deps.fetch_room, fn "!IDONTEXIST" -> {:error, :not_found} end)
       assert {:error, :not_found} = Room.Core.send(room, parent_event, deps)
     end
   end
@@ -464,7 +430,7 @@ defmodule RadioBeam.Room.CoreTest do
         %Room.Alias{localpart: "not_mapped", server_name: "localhost"}, _ -> :ok
         _alias, _ -> {:error, :alias_in_use}
       end,
-      get_room_metadata: fn _room_id -> {:error, :not_found} end
+      fetch_room: fn _room_id -> {:error, :not_found} end
     }
   end
 

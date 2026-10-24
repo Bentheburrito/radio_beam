@@ -27,7 +27,7 @@ defmodule Fixtures do
     do: server_name |> Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate() |> to_string()
 
   def room(version \\ "11", creator_id \\ user_id(), deps \\ default_room_deps(), opts \\ []) do
-    {room, _pdus} = Room.Core.new(version, creator_id, deps, opts)
+    {%Room{} = room, _pdus} = Room.Core.new(version, creator_id, deps, opts)
     room
   end
 

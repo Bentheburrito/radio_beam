@@ -5,6 +5,7 @@ defmodule RadioBeam.Room.Chronicle.Map do
   alias Polyjuice.Util.RoomVersion
   alias RadioBeam.DAG
   alias RadioBeam.Room.AuthorizedEvent
+  alias RadioBeam.Room.Chronicle.Map.SimpleStateMapping
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.PDU
 
@@ -12,13 +13,16 @@ defmodule RadioBeam.Room.Chronicle.Map do
 
   @opaque t() :: %__MODULE__{
             dag: DAG.t(),
-            resolved_state_before_event: %{Room.event_id() => %{{String.t(), String.t()} => Room.event_id()}}
+            resolved_state_before_event: %{
+              RadioBeam.Room.event_id() => %{{String.t(), String.t()} => RadioBeam.Room.event_id()}
+            }
           }
 
   def new!(%{"content" => %{"room_version" => version}} = create_event_attrs, dag_backend) do
     create_event_attrs = Map.put(create_event_attrs, "prev_events", [])
+    blank_mapping = SimpleStateMapping.new(%{}, fn _ -> {:error, :not_found} end)
 
-    with {:ok, %AuthorizedEvent{} = create_event} <- authorize_event(%{}, version, create_event_attrs) do
+    with {:ok, %AuthorizedEvent{} = create_event} <- authorize_event(blank_mapping, version, create_event_attrs) do
       dag = dag_backend.new!(create_event.id, create_event)
 
       %__MODULE__{dag: dag, resolved_state_before_event: %{create_event.id => %{}}}
@@ -42,16 +46,9 @@ defmodule RadioBeam.Room.Chronicle.Map do
   def try_append(%__MODULE__{} = chronicle, event_attrs) do
     prev_event_ids = DAG.zid_keys(chronicle.dag)
     event_attrs = Map.put(event_attrs, "prev_events", prev_event_ids)
-    state_mapping_before_event = resolve_state(chronicle, prev_event_ids, true)
 
-    # TODO: Polyjuice RoomState protocol
-    state_mapping =
-      Map.new(state_mapping_before_event, fn {state_event_type_and_key, event_id} ->
-        %DAG.Vertex{payload: event} = DAG.fetch!(chronicle.dag, event_id)
-        {state_event_type_and_key, event}
-      end)
-
-    with {:ok, %AuthorizedEvent{} = event} <- authorize_event(state_mapping, room_version(chronicle), event_attrs) do
+    with {:ok, %AuthorizedEvent{} = event} <- authorize_event(chronicle, event_attrs) do
+      state_mapping_before_event = resolve_state(chronicle, prev_event_ids, true)
       chronicle = put_in(chronicle.resolved_state_before_event[event.id], state_mapping_before_event)
       {:ok, update_in(chronicle.dag, &DAG.append!(&1, event.id, event)), event}
     end
@@ -60,14 +57,10 @@ defmodule RadioBeam.Room.Chronicle.Map do
   @doc """
   Gets the state at the given event
   """
-  def get_state_event_mapping_before(%__MODULE__{} = chronicle, event_id) do
+  def get_state_event_mapping(%__MODULE__{} = chronicle, event_id, apply_event_ids? \\ false) do
     chronicle
-    |> get_state_mapping(event_id)
-    # TODO: Polyjuice RoomState protocol
-    |> Map.new(fn {state_event_type_and_key, event_id} ->
-      %DAG.Vertex{payload: event} = DAG.fetch!(chronicle.dag, event_id)
-      {state_event_type_and_key, event}
-    end)
+    |> get_state_mapping(event_id, apply_event_ids?)
+    |> SimpleStateMapping.new(&fetch_event(chronicle, &1))
   end
 
   @doc """
@@ -135,21 +128,31 @@ defmodule RadioBeam.Room.Chronicle.Map do
     Map.put(state_mapping_before, {type, state_key}, event_id)
   end
 
-  defp authorize_event(state_mapping, room_version, %{} = event_attrs) do
-    auth_events = select_auth_events(state_mapping, room_version, event_attrs)
+  defp authorize_event(%__MODULE__{} = chronicle, %{} = event_attrs) do
+    state_event_mapping =
+      chronicle
+      |> get_state_mapping(:current_state, true)
+      |> SimpleStateMapping.new(&fetch_event(chronicle, &1))
 
-    if authorized?(state_mapping, room_version, event_attrs, auth_events) do
+    room_version = room_version(chronicle)
+
+    authorize_event(state_event_mapping, room_version, event_attrs)
+  end
+
+  defp authorize_event(state_event_mapping, room_version, %{} = event_attrs) do
+    auth_events = select_auth_events(state_event_mapping, room_version, event_attrs)
+
+    if authorized?(state_event_mapping, room_version, event_attrs, auth_events) do
       authz_event_attrs = Map.put(event_attrs, "auth_events", Enum.map(auth_events, & &1.id))
 
       with {:ok, populated_event_attrs} <- compute_and_put_hashes(authz_event_attrs, room_version) do
         prev_state_content =
-          if state_key = Map.get(event_attrs, "state_key") do
-            case Map.fetch(state_mapping, {event_attrs["type"], state_key}) do
-              {:ok, %{content: prev_state_content}} -> prev_state_content
-              :error -> :none
-            end
+          with "" <> _ = state_key <- Map.get(event_attrs, "state_key", :none),
+               {:ok, %{content: prev_content}} <-
+                 SimpleStateMapping.fetch(state_event_mapping, event_attrs["type"], state_key) do
+            prev_content
           else
-            :none
+            _error -> :none
           end
 
         authz_event =
@@ -174,7 +177,7 @@ defmodule RadioBeam.Room.Chronicle.Map do
     end
   end
 
-  defp select_auth_events(state_mapping, room_version, event_attrs) do
+  defp select_auth_events(state_event_mapping, room_version, event_attrs) do
     keys = [{"m.room.power_levels", ""}]
 
     keys = if room_version in ~w|1 2 3 4 5 6 7 8 9 10 11|, do: [{"m.room.create", ""} | keys], else: keys
@@ -210,10 +213,10 @@ defmodule RadioBeam.Room.Chronicle.Map do
         keys
       end
 
-    for key <- keys, is_map_key(state_mapping, key), do: state_mapping[key]
+    for {type, key} <- keys, {:ok, event} <- [SimpleStateMapping.fetch(state_event_mapping, type, key)], do: event
   end
 
-  defp authorized?(state_mapping, room_version, event, auth_event_pdus) do
-    RoomVersion.authorized?(room_version, event, state_mapping, auth_event_pdus)
+  defp authorized?(state_event_mapping, room_version, event, auth_event_pdus) do
+    RoomVersion.authorized?(room_version, event, state_event_mapping, auth_event_pdus)
   end
 end

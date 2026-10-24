@@ -44,8 +44,8 @@ defmodule RadioBeam.Room.Core.Space do
   end
 
   def validate_link(%Room{} = room, %AuthorizedEvent{type: "m.space.parent"} = event, deps) do
-    with {:ok, parent_room_version, parent_state_mapping} <- deps.get_room_metadata.(event.state_key) do
-      if valid_parent_link?(room, event, parent_state_mapping, parent_room_version) do
+    with {:ok, %Room{} = parent_room} <- deps.fetch_room.(event.state_key) do
+      if valid_parent_link?(room, event, parent_room) do
         :ok
       else
         {:error, :invalid_space_parent_link}
@@ -69,20 +69,21 @@ defmodule RadioBeam.Room.Core.Space do
   defp valid_parent_link?(
          %Room{} = room,
          %AuthorizedEvent{type: "m.space.parent", sender: sender} = event,
-         latest_parent_state_mapping,
-         parent_room_version
+         %Room{} = parent_room
        ) do
     (active_link?(event) or state_entry_present?(room, event.type, event.state_key, event.id)) and
-      (child_of_room?(latest_parent_state_mapping, event.room_id) or
-         sender_authz?(parent_room_version, latest_parent_state_mapping, sender))
+      (child_of_room?(parent_room, Room.Core.room_id(room)) or
+         sender_authz?(parent_room, sender))
   end
 
-  defp child_of_room?(parent_state_mapping, child_room_id) do
-    is_map_key(parent_state_mapping, {"m.space.child", child_room_id})
+  defp child_of_room?(parent_room, child_room_id) do
+    parent_room.chronicle
+    |> Chronicle.get_state_mapping(:current_state, true)
+    |> is_map_key({"m.space.child", child_room_id})
   end
 
-  defp sender_authz?(room_version, state_mapping, sender) do
-    PowerLevels.user_has_power?(room_version, state_mapping, ~w|events m.space.child|, sender, true) == true
+  defp sender_authz?(parent_room, sender) do
+    PowerLevels.can_send_event?(parent_room, sender, "m.space.child", "") == true
   end
 
   defp valid_child_link?(%Room{} = room, %AuthorizedEvent{type: "m.space.child", state_key: "!" <> _} = event) do

@@ -57,7 +57,7 @@ defmodule RadioBeam.Room.Core.Redactions do
   defp should_apply_redaction?(%Room{} = room, %{sender: redactor, id: redaction_id}, original_sender) do
     # is there a case where we would have accepted a redaction event without
     # knowing the state of the room at its send time? I don't *think* so...
-    state_mapping = Chronicle.get_state_event_mapping_before(room.chronicle, redaction_id)
+    state_mapping = Chronicle.get_state_event_mapping(room.chronicle, redaction_id, false)
     room_version = Chronicle.room_version(room.chronicle)
 
     # TOOD: explicitly pass down dependency fxn to check admins

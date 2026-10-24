@@ -91,7 +91,7 @@ defmodule RadioBeam.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
-      {:boundary, "~> 0.10", runtime: false}
+      {:boundary, "~> 0.11", runtime: false}
     ]
   end
 

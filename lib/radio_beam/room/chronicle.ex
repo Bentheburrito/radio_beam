@@ -20,7 +20,8 @@ defmodule RadioBeam.Room.Chronicle do
   @callback try_append(t(), event_attrs :: map()) ::
               {:ok, AuthorizedEvent.t()} | {:error, :unauthorized | :could_not_compute_reference_hash}
 
-  @callback get_state_event_mapping_before(t(), Room.event_id()) :: {:ok, state_event_mapping()} | {:error, :not_found}
+  @callback get_state_event_mapping(t(), Room.event_id(), boolean()) ::
+              {:ok, state_event_mapping()} | {:error, :not_found}
 
   @callback get_state_mapping(t(), Room.event_id(), boolean()) :: {:ok, state_mapping()} | {:error, :not_found}
   @callback get_state_mapping(t(), Room.event_id()) :: {:ok, state_mapping()} | {:error, :not_found}
@@ -37,8 +38,8 @@ defmodule RadioBeam.Room.Chronicle do
   def try_append(%chronicle_backend{} = chronicle, event_attrs),
     do: chronicle_backend.try_append(chronicle, event_attrs)
 
-  def get_state_event_mapping_before(%chronicle_backend{} = chronicle, event_id),
-    do: chronicle_backend.get_state_event_mapping_before(chronicle, event_id)
+  def get_state_event_mapping(%chronicle_backend{} = chronicle, event_id, apply_event_ids?),
+    do: chronicle_backend.get_state_event_mapping(chronicle, event_id, apply_event_ids?)
 
   def get_state_mapping(%chronicle_backend{} = chronicle, event_id \\ :current_state, apply_event_ids? \\ false),
     do: chronicle_backend.get_state_mapping(chronicle, event_id, apply_event_ids?)

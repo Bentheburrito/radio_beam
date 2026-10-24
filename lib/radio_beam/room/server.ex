@@ -126,7 +126,7 @@ defmodule RadioBeam.Room.Server do
   defp deps(register_alias_ensure_room_exists? \\ true) do
     %{
       register_room_alias: &Room.bind_alias_to_room(&1, &2, register_alias_ensure_room_exists?),
-      get_room_metadata: &Room.get_metadata/1
+      get_room: &Database.fetch_room/1
     }
   end
 

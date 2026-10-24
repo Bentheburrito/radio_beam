@@ -4,10 +4,10 @@ defmodule RadioBeam.Room.Core do
   """
   import Kernel, except: [send: 2]
 
-  alias Polyjuice.Util.RoomVersion
   alias RadioBeam.Room
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.Room.Chronicle
+  alias RadioBeam.Room.Core.PowerLevels
   alias RadioBeam.Room.Core.Redactions
   alias RadioBeam.Room.Core.Relationships
   alias RadioBeam.Room.Core.Space
@@ -145,22 +145,8 @@ defmodule RadioBeam.Room.Core do
     end
   end
 
-  def can_send_event?(room, user_id, event_type, state_key \\ :none) do
-    room_version = room_version(room)
-
-    state_mapping =
-      room
-      |> get_state_mapping()
-      # TODO: Polyjuice RoomState protocol
-      |> Map.new(fn {state_event_type_and_key, event_id} ->
-        %RadioBeam.DAG.Vertex{payload: event} = RadioBeam.DAG.fetch!(room.chronicle.dag, event_id)
-        {state_event_type_and_key, event}
-      end)
-
-    state_event? = state_key != :none
-
-    RoomVersion.has_power?(room_version, user_id, ["events", event_type], state_event?, state_mapping)
-  end
+  defdelegate can_send_event?(room, user_id, event_type, state_key), to: PowerLevels
+  defdelegate can_send_event?(room, user_id, event_type), to: PowerLevels
 
   def room_id(room), do: Chronicle.room_id(room.chronicle)
   def room_version(room), do: Chronicle.room_version(room.chronicle)
