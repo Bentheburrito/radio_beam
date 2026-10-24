@@ -124,7 +124,10 @@ defmodule RadioBeam.Room.Server do
   def handle_call(:ping, _from, %Room{} = room), do: {:reply, :pong, room}
 
   defp deps(register_alias_ensure_room_exists? \\ true) do
-    %{register_room_alias: &Room.bind_alias_to_room(&1, &2, register_alias_ensure_room_exists?)}
+    %{
+      register_room_alias: &Room.bind_alias_to_room(&1, &2, register_alias_ensure_room_exists?),
+      get_room_metadata: &Room.get_metadata/1
+    }
   end
 
   defp via(room_id), do: {:via, Registry, {RadioBeam.RoomRegistry, room_id}}

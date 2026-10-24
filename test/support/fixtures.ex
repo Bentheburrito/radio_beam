@@ -6,7 +6,6 @@ defmodule Fixtures do
 
   import ExUnit.Assertions, only: [assert_receive: 2]
 
-  alias Polyjuice.Util.Identifiers.V1.UserIdentifier
   alias RadioBeam.User.Database
   alias RadioBeam.DAG
   alias RadioBeam.Room
@@ -44,6 +43,11 @@ defmodule Fixtures do
 
   def send_room_event(room, sender_id, type, content, deps \\ default_room_deps()) do
     event_attrs = Events.message(room.id, sender_id, type, content)
+    Room.Core.send(room, event_attrs, deps)
+  end
+
+  def send_room_state_event(room, sender_id, type, state_key, content, deps \\ default_room_deps()) do
+    event_attrs = Events.state(room.id, sender_id, type, content, state_key)
     Room.Core.send(room, event_attrs, deps)
   end
 
@@ -96,7 +100,8 @@ defmodule Fixtures do
     end
   end
 
-  def user_id(server_name \\ "localhost"), do: server_name |> UserIdentifier.generate() |> to_string()
+  def user_id(server_name \\ "localhost"),
+    do: "@#{24 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower)}:#{server_name}"
 
   def create_account(user_id \\ user_id()) do
     {:ok, local_account} = LocalAccount.new(user_id, strong_password())

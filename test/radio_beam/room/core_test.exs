@@ -201,13 +201,270 @@ defmodule RadioBeam.Room.CoreTest do
     end
   end
 
+  describe "send/3 (with m.space.{child,parent} events)" do
+    setup %{
+      room_version: version,
+      chronicle_backend: chronicle_backend,
+      dag_backend: dag_backend
+    } do
+      creator_id = Fixtures.user_id()
+
+      opts = [chronicle_backend: chronicle_backend, dag_backend: dag_backend, content: %{"type" => "m.space"}]
+
+      {room, _pdus} = Room.Core.new(version, creator_id, default_deps(), opts)
+      {target_room, _pdus} = Room.Core.new(version, creator_id, default_deps(), opts)
+      target_room_id = Core.room_id(target_room)
+
+      # TODO: Polyjuice RoomState protocol
+      polyjuice_state_mapping =
+        target_room
+        |> Core.get_state_mapping()
+        |> Map.new(fn {state_type_key, event_id} ->
+          {:ok, event} = Chronicle.fetch_event(target_room.chronicle, event_id)
+          {state_type_key, event}
+        end)
+
+      deps =
+        put_in(default_deps().get_room_metadata, fn ^target_room_id ->
+          {:ok, Core.room_version(target_room), polyjuice_state_mapping}
+        end)
+
+      %{room: room, creator_id: creator_id, target_room: target_room, deps: deps}
+    end
+
+    test "accepts the first occurence of an m.space.child events if it's active", %{
+      room: room,
+      target_room: target_room,
+      creator_id: creator_id
+    } do
+      child_event =
+        Events.state(room.id, "m.space.child", creator_id, %{"via" => ["some.server.com"]}, Core.room_id(target_room))
+
+      assert {:sent, _room, _event_id, [_]} = Room.Core.send(room, child_event, default_deps())
+    end
+
+    test "rejects the first occurence of an m.space.child events if it's inactive", %{
+      room: room,
+      target_room: target_room,
+      creator_id: creator_id
+    } do
+      child_event =
+        Events.state(room.id, "m.space.child", creator_id, %{"via" => []}, Core.room_id(target_room))
+
+      assert {:error, :invalid_space_child_link} = Room.Core.send(room, child_event, default_deps())
+    end
+
+    test "accepts an inactive an m.space.child event if it's inactive AND there's already a state entry for its {type, state_key}",
+         %{
+           room: room,
+           target_room: target_room,
+           creator_id: creator_id
+         } do
+      child_event =
+        Events.state(room.id, "m.space.child", creator_id, %{"via" => ["some.server.com"]}, Core.room_id(target_room))
+
+      assert {:sent, room, _event_id, [_]} = Room.Core.send(room, child_event, default_deps())
+
+      child_event = put_in(child_event["content"]["via"], [])
+
+      assert {:sent, _room, _event_id, [_]} = Room.Core.send(room, child_event, default_deps())
+    end
+
+    test "accepts the first occurence of an m.space.parent events if it's active and the sender is the creator of the target room",
+         %{
+           room: room,
+           target_room: target_room,
+           creator_id: creator_id,
+           deps: deps
+         } do
+      parent_event =
+        Events.state(
+          Core.room_id(room),
+          "m.space.parent",
+          creator_id,
+          %{"via" => ["some.server.com"]},
+          Core.room_id(target_room)
+        )
+
+      assert {:sent, _room, _event_id, [_]} = Room.Core.send(room, parent_event, deps)
+    end
+
+    test "rejects the first occurence of an m.space.parent events if it's inactive", %{
+      room: room,
+      target_room: target_room,
+      creator_id: creator_id,
+      deps: deps
+    } do
+      parent_event =
+        Events.state(Core.room_id(room), "m.space.parent", creator_id, %{"via" => []}, Core.room_id(target_room))
+
+      assert {:error, :invalid_space_parent_link} = Room.Core.send(room, parent_event, deps)
+    end
+
+    test "rejects an active m.space.parent event but the sender doesn't have perms to reciprocate the link from the target room",
+         %{
+           room: room,
+           target_room: target_room,
+           creator_id: creator_id,
+           deps: deps
+         } do
+      room_id = Core.room_id(room)
+      %{user_id: user_id} = Fixtures.create_account()
+
+      invite_event = Events.membership(room_id, creator_id, user_id, :invite)
+      {:sent, room, _, [_]} = Core.send(room, invite_event, deps)
+      join_event = Events.membership(room_id, user_id, user_id, :join)
+      {:sent, room, _, [_]} = Core.send(room, join_event, deps)
+
+      power_level_event =
+        Events.power_levels(room_id, Core.room_version(room), creator_id, %{
+          "users" => %{user_id => 51}
+          # "events" => %{"m.space.child" => 52}
+        })
+
+      {:sent, room, _, [_]} = Core.send(room, power_level_event, deps)
+
+      parent_event =
+        Events.state(room_id, "m.space.parent", user_id, %{"via" => ["some.server.com"]}, Core.room_id(target_room))
+
+      assert {:error, :invalid_space_parent_link} = Room.Core.send(room, parent_event, deps)
+    end
+
+    test "accepts an active m.space.parent event if the sender has perms to reciprocate the link from the target room",
+         %{
+           room: room,
+           target_room: target_room,
+           creator_id: creator_id,
+           deps: deps
+         } do
+      room_id = Core.room_id(room)
+      target_room_id = Core.room_id(target_room)
+      %{user_id: user_id} = Fixtures.create_account()
+
+      # add user_id to creator_id's two rooms
+      invite_event = Events.membership(room_id, creator_id, user_id, :invite)
+      {:sent, room, _, [_]} = Core.send(room, invite_event, deps)
+      join_event = Events.membership(room_id, user_id, user_id, :join)
+      {:sent, room, _, [_]} = Core.send(room, join_event, deps)
+
+      invite_event = put_in(invite_event["room_id"], target_room_id)
+      {:sent, target_room, _, [_]} = Core.send(target_room, invite_event, deps)
+      join_event = put_in(join_event["room_id"], target_room_id)
+      {:sent, target_room, _, [_]} = Core.send(target_room, join_event, deps)
+
+      # give user_id perms to send state events in both rooms
+      power_level_event =
+        Events.power_levels(room_id, Core.room_version(room), creator_id, %{"users" => %{user_id => 51}})
+
+      {:sent, room, _, [_]} = Core.send(room, power_level_event, deps)
+
+      power_level_event =
+        Events.power_levels(target_room_id, Core.room_version(target_room), creator_id, %{"users" => %{user_id => 51}})
+
+      {:sent, target_room, _, [_]} = Core.send(target_room, power_level_event, deps)
+
+      # update get_room_metadata dep to return target_room's new state
+      # TODO: Polyjuice RoomState protocol
+      polyjuice_state_mapping =
+        target_room
+        |> Core.get_state_mapping()
+        |> Map.new(fn {state_type_key, event_id} ->
+          {:ok, event} = Chronicle.fetch_event(target_room.chronicle, event_id)
+          {state_type_key, event}
+        end)
+
+      deps =
+        put_in(deps.get_room_metadata, fn ^target_room_id ->
+          {:ok, Core.room_version(target_room), polyjuice_state_mapping}
+        end)
+
+      parent_event = Events.state(room_id, "m.space.parent", user_id, %{"via" => ["some.server.com"]}, target_room_id)
+      assert {:sent, _, _, [_]} = Room.Core.send(room, parent_event, deps)
+    end
+
+    test "accepts an active m.space.parent event when there's a reciprocating m.space.child event in the target room, even if the sender doesn't have perms to send that event",
+         %{
+           room: room,
+           target_room: target_room,
+           creator_id: creator_id,
+           deps: deps
+         } do
+      room_id = Core.room_id(room)
+      target_room_id = Core.room_id(target_room)
+      %{user_id: user_id} = Fixtures.create_account()
+
+      child_event =
+        Events.state(target_room_id, "m.space.child", creator_id, %{"via" => ["some.server.com"]}, room_id)
+
+      {:sent, target_room, _, [_]} = Core.send(target_room, child_event, deps)
+      # TODO: Polyjuice RoomState protocol
+      polyjuice_state_mapping =
+        target_room
+        |> Core.get_state_mapping()
+        |> Map.new(fn {state_type_key, event_id} ->
+          {:ok, event} = Chronicle.fetch_event(target_room.chronicle, event_id)
+          {state_type_key, event}
+        end)
+
+      deps =
+        put_in(deps.get_room_metadata, fn ^target_room_id ->
+          {:ok, Core.room_version(target_room), polyjuice_state_mapping}
+        end)
+
+      invite_event = Events.membership(room_id, creator_id, user_id, :invite)
+      {:sent, room, _, [_]} = Core.send(room, invite_event, deps)
+      join_event = Events.membership(room_id, user_id, user_id, :join)
+      {:sent, room, _, [_]} = Core.send(room, join_event, deps)
+
+      power_level_event =
+        Events.power_levels(room_id, Core.room_version(room), creator_id, %{"users" => %{user_id => 51}})
+
+      {:sent, room, _, [_]} = Core.send(room, power_level_event, deps)
+
+      parent_event =
+        Events.state(room_id, "m.space.parent", user_id, %{"via" => ["some.server.com"]}, target_room_id)
+
+      assert {:sent, _, _, [_]} = Room.Core.send(room, parent_event, deps)
+    end
+
+    test "accepts an inactive an m.space.parent event if it's inactive AND there's already a state entry for its {type, state_key}",
+         %{
+           room: room,
+           target_room: target_room,
+           creator_id: creator_id,
+           deps: deps
+         } do
+      room_id = Core.room_id(room)
+
+      parent_event =
+        Events.state(room_id, "m.space.parent", creator_id, %{"via" => ["some.server.com"]}, Core.room_id(target_room))
+
+      assert {:sent, room, _event_id, [_]} = Room.Core.send(room, parent_event, deps)
+
+      parent_event = put_in(parent_event["content"]["via"], [])
+
+      assert {:sent, _room, _event_id, [_]} = Room.Core.send(room, parent_event, deps)
+    end
+
+    test "rejects an active m.space.parent event if the target room's metadata is not found", %{
+      room: room,
+      creator_id: creator_id,
+      deps: deps
+    } do
+      parent_event = Events.state(room.id, "m.space.parent", creator_id, %{"via" => ["some.server.com"]}, "!IDONTEXIST")
+      deps = put_in(deps.get_room_metadata, fn "!IDONTEXIST" -> {:error, :not_found} end)
+      assert {:error, :not_found} = Room.Core.send(room, parent_event, deps)
+    end
+  end
+
   defp default_deps do
     %{
       register_room_alias: fn
         %Room.Alias{localpart: "invalid", server_name: "localhost"}, _ -> {:error, :invalid_alias}
         %Room.Alias{localpart: "not_mapped", server_name: "localhost"}, _ -> :ok
         _alias, _ -> {:error, :alias_in_use}
-      end
+      end,
+      get_room_metadata: fn _room_id -> {:error, :not_found} end
     }
   end
 

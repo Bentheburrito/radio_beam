@@ -120,6 +120,11 @@ defmodule RadioBeam.Room.Events do
 
   defp maybe_put_creator(content, _version, _creator_id), do: content
 
+  def create_space(gen_room_id!, creator_id, room_version, create_content) do
+    create_content = Map.put(create_content, "type", "m.space")
+    create(gen_room_id!, creator_id, room_version, create_content)
+  end
+
   @membership_values [:join, :invite, :leave, :kick, :ban]
   def membership(room_id, sender_id, subject_id, membership, reason \\ nil, direct? \\ false)
       when membership in @membership_values do

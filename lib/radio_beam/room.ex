@@ -376,6 +376,21 @@ defmodule RadioBeam.Room do
   defp apply_order(event_stream, :reverse_chronological),
     do: Enum.sort_by(event_stream, & &1.order_id, {:desc, TopologicalID})
 
+  def get_metadata(room_id) do
+    with {:ok, %Room{} = room} <- get(room_id) do
+      # TODO: Polyjuice RoomState protocol
+      polyjuice_state_mapping =
+        room
+        |> Room.Core.get_state_mapping()
+        |> Map.new(fn {state_type_key, event_id} ->
+          {:ok, event} = Room.Chronicle.fetch_event(room.chronicle, event_id)
+          {state_type_key, event}
+        end)
+
+      {:ok, Room.Core.room_version(room), polyjuice_state_mapping}
+    end
+  end
+
   defp get(id) do
     with {:error, :not_found} <- Database.fetch_room(id), do: {:error, :unauthorized}
   end

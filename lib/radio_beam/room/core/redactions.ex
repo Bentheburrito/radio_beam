@@ -6,6 +6,7 @@ defmodule RadioBeam.Room.Core.Redactions do
   alias RadioBeam.Room
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.Room.Chronicle
+  alias RadioBeam.Room.Core.PowerLevels
 
   defstruct pending: %{}
 
@@ -61,11 +62,7 @@ defmodule RadioBeam.Room.Core.Redactions do
 
     # TOOD: explicitly pass down dependency fxn to check admins
     redactor in RadioBeam.Config.admins() or
-      user_has_power?(room_version, state_mapping, ["redact"], redactor, _state_event? = false) or
+      PowerLevels.user_has_power?(room_version, state_mapping, ["redact"], redactor, _state_event? = false) or
       original_sender == redactor
-  end
-
-  defp user_has_power?(room_version, state_mapping, power_level_content_path, user_id, state_event?) do
-    RoomVersion.has_power?(room_version, user_id, power_level_content_path, state_event?, state_mapping)
   end
 end

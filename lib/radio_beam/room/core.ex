@@ -10,6 +10,7 @@ defmodule RadioBeam.Room.Core do
   alias RadioBeam.Room.Chronicle
   alias RadioBeam.Room.Core.Redactions
   alias RadioBeam.Room.Core.Relationships
+  alias RadioBeam.Room.Core.Space
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.PDU
 
@@ -91,6 +92,13 @@ defmodule RadioBeam.Room.Core do
     end)
   end
 
+  @space_link_types Space.link_event_types()
+  def send(%Room{} = room, %AuthorizedEvent{type: type} = event, deps) when type in @space_link_types do
+    with :ok <- Space.validate_link(room, event, deps) do
+      send_common(room, event)
+    end
+  end
+
   def send(%Room{} = room, %AuthorizedEvent{} = event, _deps), do: send_common(room, event)
 
   def send(%Room{} = room, event_attrs, deps) do
@@ -138,7 +146,7 @@ defmodule RadioBeam.Room.Core do
   end
 
   def can_send_event?(room, user_id, event_type, state_key \\ :none) do
-    room_version = Chronicle.room_version(room.chronicle)
+    room_version = room_version(room)
 
     state_mapping =
       room
@@ -153,4 +161,7 @@ defmodule RadioBeam.Room.Core do
 
     RoomVersion.has_power?(room_version, user_id, ["events", event_type], state_event?, state_mapping)
   end
+
+  def room_id(room), do: Chronicle.room_id(room.chronicle)
+  def room_version(room), do: Chronicle.room_version(room.chronicle)
 end
