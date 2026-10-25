@@ -1015,6 +1015,9 @@ defmodule RadioBeam.RoomTest do
 
       {:ok, room_id} = Room.create(account1.user_id)
 
+      queue = {RadioBeam.Room.View.Threads, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
       {:ok, _event_id} = Room.invite(room_id, account1.user_id, account3.user_id)
       {:ok, _event_id} = Room.join(room_id, account2.user_id, "requested assistance")
@@ -1023,12 +1026,14 @@ defmodule RadioBeam.RoomTest do
       {:ok, thread_id1} = Room.send_text_message(room_id, user_id, "I'm in the lobby")
       {:ok, _} = Room.send(room_id, user_id2, "m.room.message", relates_to(thread_id1, "I'll be down in a minute"))
       {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id1, "oki"))
-      {:ok, _} = Room.send(room_id, user_id3, "m.room.message", relates_to(thread_id1, "omw now"))
+      {:ok, event_id} = Room.send(room_id, user_id3, "m.room.message", relates_to(thread_id1, "omw now"))
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       {:ok, _non_thread} = Room.send_text_message(room_id, user_id2, "reminder to bring a jacket, it's cold")
 
       {:ok, thread_id2} = Room.send_text_message(room_id, user_id2, "let's plan to leave by midnight btw")
-      {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id2, "sounds good"))
+      {:ok, event_id} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id2, "sounds good"))
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       %{
         room_id: room_id,
@@ -1036,7 +1041,8 @@ defmodule RadioBeam.RoomTest do
         account2: account2,
         account3: account3,
         thread_id1: thread_id1,
-        thread_id2: thread_id2
+        thread_id2: thread_id2,
+        queue: queue
       }
     end
 
@@ -1071,13 +1077,15 @@ defmodule RadioBeam.RoomTest do
       account1: %{user_id: user_id},
       account2: %{user_id: user_id2},
       thread_id1: thread_id1,
-      thread_id2: thread_id2
+      thread_id2: thread_id2,
+      queue: queue
     } do
       # 3..5 bc `setup/0` already created the first two
       thread_ids =
         for i <- 3..5 do
           {:ok, thread_id} = Room.send_text_message(room_id, user_id, "thread #{i}")
-          {:ok, _} = Room.send(room_id, user_id2, "m.room.message", relates_to(thread_id, "thread reply #{i}"))
+          {:ok, event_id} = Room.send(room_id, user_id2, "m.room.message", relates_to(thread_id, "thread reply #{i}"))
+          Fixtures.assert_caught_up_to_event(queue, event_id)
           thread_id
         end ++ [thread_id1, thread_id2]
 

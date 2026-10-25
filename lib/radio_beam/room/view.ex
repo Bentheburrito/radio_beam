@@ -6,10 +6,10 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.InviteStateEvents
-  alias RadioBeam.Room.View.Core.Threads
   alias RadioBeam.Room.View.Core.Timeline
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.View.Threads
   alias RadioBeam.User
 
   @type key() :: term()
@@ -89,10 +89,9 @@ defmodule RadioBeam.Room.View do
   def get_thread_event_ids(room_id, user_id, include, limit, from)
       when is_integer(limit) and limit in 0..50 do
     with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}),
-         {:ok, %Threads{} = threads} <- Database.fetch_view({Threads, room_id}) do
+         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
       fetch_pdu! = &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
-      event_ids = threads |> Threads.stream_event_ids() |> drop_until_from(from)
+      event_ids = room_id |> Threads.stream_event_ids() |> drop_until_from(from)
 
       timeline
       |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!, _bundle_aggregations? = true)

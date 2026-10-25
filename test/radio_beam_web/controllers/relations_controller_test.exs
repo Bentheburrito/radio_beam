@@ -3,6 +3,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.View.Threads
 
   defp relates_to(parent_id, msg) do
     %{
@@ -227,6 +228,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
     test "returns a chunk of threads", %{conn: conn, account: %{user_id: user_id}} do
       {:ok, room_id} = Room.create(user_id)
       Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+      Fixtures.listen_to_queue_messages({Threads, room_id})
       :pong = Room.Server.ping(room_id)
 
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/threads", %{})
@@ -238,7 +240,8 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id, "the world doesn't care man"))
 
       {:ok, another_thread_id} = Room.send_text_message(room_id, user_id, "hello?")
-      {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(another_thread_id, "alone again..."))
+      {:ok, event_id} = Room.send(room_id, user_id, "m.room.message", relates_to(another_thread_id, "alone again..."))
+      Fixtures.assert_caught_up_to_event({Threads, room_id}, event_id)
 
       :pong = Room.Server.ping(room_id)
 

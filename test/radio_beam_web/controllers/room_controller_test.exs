@@ -574,7 +574,11 @@ defmodule RadioBeamWeb.RoomControllerTest do
       conn: conn,
       account: account
     } do
+      queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(queue)
       {:ok, room_id} = Room.create(account.user_id)
+
+      Fixtures.assert_processed_count(queue, 1)
 
       :pong = Room.Server.ping(room_id)
 
@@ -849,8 +853,13 @@ defmodule RadioBeamWeb.RoomControllerTest do
       conn: conn,
       account: %{user_id: user_id} = account
     } do
+      queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, room_id} = Room.create(account.user_id)
       :pong = Room.Server.ping(room_id)
+
+      Fixtures.assert_processed_count(queue, 1)
 
       for typing <- ~w|true false|a do
         req_body = %{typing: typing, timeout: 5_000}

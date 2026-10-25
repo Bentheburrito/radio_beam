@@ -72,7 +72,7 @@ config :radio_beam, RadioBeam.ContentRepo,
 config :radio_beam, RadioBeam.EventHandler.Server, max_retry_timeout_ms: :timer.seconds(15)
 
 config :radio_beam, RadioBeam.EventHandler,
-  room_id_keyed_handlers: [RadioBeam.User.Notifications, RadioBeam.Room.View.RelatedEvents],
+  room_id_keyed_handlers: [RadioBeam.User.Notifications, RadioBeam.Room.View.RelatedEvents, RadioBeam.Room.View.Threads],
   state_key_keyed_handlers: [RadioBeam.User.RoomMemberships]
 
 # Configures the endpoint
