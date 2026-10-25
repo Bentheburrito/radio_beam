@@ -28,7 +28,8 @@ defmodule RadioBeam do
       User.Authentication.LegacyAPI,
       User.Authentication.OAuth2,
       User.EventFilter,
-      User.KeyStore
+      User.KeyStore,
+      User.RoomMemberships
     ]
 
   alias RadioBeam.Config

@@ -91,8 +91,9 @@ defmodule RadioBeam.EventHandler do
     notify? = Keyword.get(opts, :notify?, true)
 
     Enum.find_value(queues, :ok, fn queue ->
-      with :ok <- Database.queue_event(queue, pdu.stream_number, pdu) do
+      with :ok <- Database.queue_event(queue, pdu.stream_number, pdu.event.id, pdu) do
         if notify?, do: Server.notify_event_queued(queue)
+
         _continue_to_next_queue = nil
       end
     end)
@@ -102,10 +103,14 @@ defmodule RadioBeam.EventHandler do
   @state_key_keyed_handlers Application.compile_env!(:radio_beam, [__MODULE__, :state_key_keyed_handlers])
 
   @spec queues_for(PDU.t()) :: [queue()]
+  defp queues_for(%PDU{event: %{room_id: room_id, state_key: :none}}), do: room_id_keyed_queues(room_id)
+
   defp queues_for(%PDU{event: %{room_id: room_id, state_key: state_key}}) do
     Enum.concat([
-      for(handler <- @room_id_keyed_handlers, do: {handler, room_id}),
+      room_id_keyed_queues(room_id),
       for(handler <- @state_key_keyed_handlers, do: {handler, state_key})
     ])
   end
+
+  defp room_id_keyed_queues(room_id), do: for(handler <- @room_id_keyed_handlers, do: {handler, room_id})
 end

@@ -73,7 +73,7 @@ config :radio_beam, RadioBeam.EventHandler.Server, max_retry_timeout_ms: :timer.
 
 config :radio_beam, RadioBeam.EventHandler,
   room_id_keyed_handlers: [RadioBeam.User.Notifications, RadioBeam.Room.View.RelatedEvents],
-  state_key_keyed_handlers: []
+  state_key_keyed_handlers: [RadioBeam.User.RoomMemberships]
 
 # Configures the endpoint
 config :radio_beam, RadioBeamWeb.Endpoint,

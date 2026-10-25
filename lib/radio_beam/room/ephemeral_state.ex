@@ -1,6 +1,6 @@
 defmodule RadioBeam.Room.EphemeralState do
   @moduledoc false
-  alias RadioBeam.Room
+  alias RadioBeam.User.RoomMemberships
   alias RadioBeam.Room.EphemeralState.Core
   alias RadioBeam.Room.EphemeralState.Server
 
@@ -20,5 +20,5 @@ defmodule RadioBeam.Room.EphemeralState do
     if member?(room_id, user_id), do: Server.delete_typing(room_id, user_id)
   end
 
-  defp member?(room_id, user_id), do: room_id in Room.joined(user_id)
+  defp member?(room_id, user_id), do: room_id in RoomMemberships.joined(user_id)
 end

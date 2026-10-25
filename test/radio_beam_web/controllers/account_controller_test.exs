@@ -705,9 +705,14 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
       :ok = User.put_global_notification_push_rule(user_id, :override, "blahhhhhh", ["notify"], [])
 
+      queue = {RadioBeam.User.RoomMemberships, user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, room_id} = Room.create(creator_id)
       {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
-      {:ok, _event_id} = Room.join(room_id, user_id)
+      {:ok, event_id} = Room.join(room_id, user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       queue = {RadioBeam.User.Notifications, room_id}
       Fixtures.listen_to_queue_messages(queue)

@@ -7,7 +7,6 @@ defmodule RadioBeam.Room.Timeline do
   alias RadioBeam.Room
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.Timeline.TopologicalID
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
@@ -86,9 +85,7 @@ defmodule RadioBeam.Room.Timeline do
   defp from_ignored_user?(event, ignored_user_ids), do: is_nil(event.state_key) and event.sender in ignored_user_ids
 
   defp check_membership(room_id, user_id) do
-    with {:ok, %Participating{all: room_ids_with_membership}} <- Room.View.all_participating(user_id) do
-      if room_id in room_ids_with_membership, do: :ok, else: {:error, :unauthorized}
-    end
+    if User.RoomMemberships.has?(user_id, room_id), do: :ok, else: {:error, :unauthorized}
   end
 
   defp dir_of_from(:root), do: :forward

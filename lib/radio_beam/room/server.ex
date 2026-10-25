@@ -72,8 +72,10 @@ defmodule RadioBeam.Room.Server do
         end
       end)
 
-    for pdu <- pdu_stream,
-        do: Room.View.handle_pdu(room.id, fn -> Room.Core.get_state_mapping_at(room, pdu.event.id) end, pdu)
+    for pdu <- pdu_stream do
+      Room.View.handle_pdu(room.id, fn -> Room.Core.get_state_mapping_at(room, pdu.event.id) end, pdu)
+      :ok = RadioBeam.EventHandler.queue_event(pdu)
+    end
 
     {:noreply, room}
   end

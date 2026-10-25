@@ -12,7 +12,6 @@ defmodule RadioBeam.Sync.SinkServer do
   use GenServer, restart: :transient
 
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias RadioBeam.Room.View
   alias RadioBeam.Sync.NextBatch
   alias RadioBeam.Sync.Source
   alias RadioBeam.User
@@ -61,11 +60,8 @@ defmodule RadioBeam.Sync.SinkServer do
   end
 
   defp start_v2_sync(user_id, device_id, opts) do
-    {joined_room_ids, invited_room_ids} =
-      case View.all_participating(user_id) do
-        {:ok, participating} -> {Map.keys(participating.latest_known_join_pdus), MapSet.to_list(participating.invited)}
-        {:error, :not_found} -> {[], []}
-      end
+    joined_room_ids = User.RoomMemberships.joined_now_or_previously(user_id)
+    invited_room_ids = User.RoomMemberships.invited(user_id)
 
     known_memberships = LazyLoadMembersCache.get(joined_room_ids, device_id)
     maybe_last_batch_token = Keyword.get(opts, :since)

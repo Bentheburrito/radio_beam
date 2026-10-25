@@ -105,10 +105,13 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "joined/2" do
-    test "returns a list of rooms the user is joined to", %{conn: conn} do
+    test "returns a list of rooms the user is joined to", %{conn: conn, account: %{user_id: user_id}} do
       conn = get(conn, ~p"/_matrix/client/v3/joined_rooms", %{})
 
       assert %{"joined_rooms" => []} = json_response(conn, 200)
+
+      queue = {RadioBeam.User.RoomMemberships, user_id}
+      Fixtures.listen_to_queue_messages(queue)
 
       req_body = %{
         "name" => "A room",
@@ -118,6 +121,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       conn = post(conn, ~p"/_matrix/client/v3/createRoom", req_body)
       assert %{"room_id" => room_id} = json_response(conn, 200)
+
+      Fixtures.assert_processed_count(queue, 1)
 
       :pong = Room.Server.ping(room_id)
 

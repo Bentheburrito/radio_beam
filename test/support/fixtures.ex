@@ -63,8 +63,14 @@ defmodule Fixtures do
 
   def listen_to_queue_messages(queue), do: RadioBeam.PubSub.subscribe(RadioBeam.PubSub.read_model_caught_up_to(queue))
 
-  def assert_caught_up_to_event(queue, event_id, timeout \\ 100) do
+  def assert_caught_up_to_event(queue, event_id, timeout \\ 200) do
     assert_receive {:read_model_caught_up_to, ^queue, _, ^event_id}, timeout
+  end
+
+  def assert_processed_count(queue, count, timeout \\ 200) do
+    for _i <- 1..count do
+      assert_receive {:read_model_caught_up_to, ^queue, _, _}, timeout
+    end
   end
 
   def make_room_view(view_module, room) do

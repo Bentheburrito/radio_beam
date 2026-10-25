@@ -6,7 +6,6 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.InviteStateEvents
-  alias RadioBeam.Room.View.Core.Participating
   alias RadioBeam.Room.View.Core.Threads
   alias RadioBeam.Room.View.Core.Timeline
   alias RadioBeam.Room.View.Core.Timeline.Event
@@ -14,21 +13,10 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.User
 
   @type key() :: term()
-  @type t() :: InviteStateEvents.t() | Participating.t() | RelatedEvents.t() | Timeline.t()
+  @type t() :: InviteStateEvents.t() | RelatedEvents.t() | Timeline.t()
 
   def handle_pdu(room_id, state_mapping_at_pdu, %PDU{} = pdu) do
     Core.handle_pdu(room_id, state_mapping_at_pdu, pdu, deps())
-  end
-
-  def all_participating(user_id) do
-    Database.fetch_view({Participating, user_id})
-  end
-
-  def latest_known_join_pdu(room_id, user_id) do
-    with {:ok, %Participating{} = participating} <- Database.fetch_view({Participating, user_id}),
-         :error <- Map.fetch(participating.latest_known_join_pdus, room_id) do
-      {:error, :never_joined}
-    end
   end
 
   def timeline_event_stream(room_id, user_id, from) do

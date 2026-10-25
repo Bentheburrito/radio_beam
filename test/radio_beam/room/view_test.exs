@@ -3,6 +3,7 @@ defmodule RadioBeam.Room.ViewTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.User.RoomMemberships
 
   describe "get_child_events/3" do
     setup do
@@ -23,7 +24,7 @@ defmodule RadioBeam.Room.ViewTest do
       user_id: user_id,
       parent_event_id: parent_event_id
     } do
-      assert room_id in Room.joined(user_id)
+      assert room_id in RoomMemberships.joined(user_id)
       assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
       assert Enum.empty?(child_event_stream)
     end
@@ -40,7 +41,7 @@ defmodule RadioBeam.Room.ViewTest do
 
       Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, child_event_id)
 
-      assert room_id in Room.joined(user_id)
+      assert room_id in RoomMemberships.joined(user_id)
 
       assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
       assert [%{id: ^child_event_id}] = Enum.to_list(child_event_stream)
@@ -61,7 +62,7 @@ defmodule RadioBeam.Room.ViewTest do
 
       Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, child_event_id2)
 
-      assert room_id in Room.joined(user_id)
+      assert room_id in RoomMemberships.joined(user_id)
 
       assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
       assert Enum.sort([child_event_id1, child_event_id2]) == child_event_stream |> Stream.map(& &1.id) |> Enum.sort()
@@ -92,7 +93,7 @@ defmodule RadioBeam.Room.ViewTest do
 
       {:ok, grandchild_event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
 
-      assert room_id in Room.joined(account.user_id)
+      assert room_id in RoomMemberships.joined(account.user_id)
 
       assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
 
@@ -125,7 +126,7 @@ defmodule RadioBeam.Room.ViewTest do
       recurse_max = 2
       expected_ids = ids |> Enum.reverse() |> Enum.take(recurse_max)
 
-      assert room_id in Room.joined(account.user_id)
+      assert room_id in RoomMemberships.joined(account.user_id)
 
       assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
       actual_ids = Enum.map(child_event_stream, & &1.id)
@@ -185,7 +186,7 @@ defmodule RadioBeam.Room.ViewTest do
       _recurse_max = 3
       [_would_need_to_recurse_to_4_for_this | expected_ids] = ids
 
-      assert room_id in Room.joined(account.user_id)
+      assert room_id in RoomMemberships.joined(account.user_id)
 
       assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
       actual_ids = Enum.map(child_event_stream, & &1.id)

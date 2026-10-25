@@ -38,9 +38,15 @@ defmodule RadioBeamWeb.AdminControllerTest do
   describe "report_room_event/2" do
     test "saves the report and returns an empty JSON object (200)", %{conn: conn, account: %{user_id: reporter_id}} do
       %{user_id: creator_id} = Fixtures.create_account()
+
+      queue = {RadioBeam.User.RoomMemberships, reporter_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, room_id} = Room.create(creator_id)
       {:ok, _} = Room.invite(room_id, creator_id, reporter_id)
-      {:ok, _} = Room.join(room_id, reporter_id)
+      {:ok, event_id} = Room.join(room_id, reporter_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       {:ok, event_id} = Room.send_text_message(room_id, creator_id, "blahblahblahblahblahblahblah")
 
@@ -84,9 +90,15 @@ defmodule RadioBeamWeb.AdminControllerTest do
       account: %{user_id: reporter_id}
     } do
       %{user_id: creator_id} = Fixtures.create_account()
+
+      queue = {RadioBeam.User.RoomMemberships, reporter_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, room_id} = Room.create(creator_id)
       {:ok, _} = Room.invite(room_id, creator_id, reporter_id)
-      {:ok, _} = Room.join(room_id, reporter_id)
+      {:ok, event_id} = Room.join(room_id, reporter_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       {:ok, event_id} = Room.send_text_message(room_id, creator_id, "blahblahblahblahblahblahblah")
 

@@ -59,7 +59,7 @@ defmodule RadioBeam.Admin do
   end
 
   defp validate_membership(room_id, submitter_id) do
-    if room_id in Room.joined(submitter_id), do: :ok, else: {:error, :not_a_member}
+    if room_id in User.RoomMemberships.joined(submitter_id), do: :ok, else: {:error, :not_a_member}
   end
 
   def all_reports, do: Database.all_reports()

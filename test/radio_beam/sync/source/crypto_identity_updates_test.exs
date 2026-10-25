@@ -4,6 +4,7 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
   alias RadioBeam.Room
   alias RadioBeam.Sync.NextBatch
   alias RadioBeam.Sync.Source.CryptoIdentityUpdates
+  alias RadioBeam.User.RoomMemberships
 
   describe "run/3" do
     setup do
@@ -65,7 +66,7 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
       creator_id = add_to_new_room(inputs.user_id)
       add_device_keys(creator_id)
 
-      [room_id] = creator_id |> Room.joined() |> Enum.to_list()
+      [room_id] = creator_id |> RoomMemberships.joined() |> Enum.to_list()
       {:ok, event_id} = Room.send_text_message(room_id, creator_id, "yo")
 
       next_batch = :millisecond |> System.os_time() |> Kernel.+(1) |> NextBatch.new!(%{room_id => event_id})
@@ -103,9 +104,15 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
 
   defp add_to_new_room(user_id) do
     %{user_id: creator_id} = Fixtures.create_account()
+
+    queue = {RadioBeam.User.RoomMemberships, user_id}
+    Fixtures.listen_to_queue_messages(queue)
+
     {:ok, room_id} = Room.create(creator_id)
     {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
-    {:ok, _event_id} = Room.join(room_id, user_id)
+    {:ok, event_id} = Room.join(room_id, user_id)
+
+    Fixtures.assert_caught_up_to_event(queue, event_id)
 
     creator_id
   end

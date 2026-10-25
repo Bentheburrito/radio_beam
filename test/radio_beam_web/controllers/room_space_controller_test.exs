@@ -4,11 +4,16 @@ defmodule RadioBeamWeb.RoomSpaceControllerTest do
   alias RadioBeam.Room
 
   setup %{account: account} do
+    queue = {RadioBeam.User.RoomMemberships, account.user_id}
+    Fixtures.listen_to_queue_messages(queue)
+
     {:ok, room_id} = Room.create(account.user_id)
+
+    Fixtures.assert_processed_count(queue, 1, 500)
 
     :pong = Room.Server.ping(room_id)
 
-    %{room_id: room_id}
+    %{room_id: room_id, queue: queue}
   end
 
   describe "hierarchy/2" do
@@ -18,21 +23,30 @@ defmodule RadioBeamWeb.RoomSpaceControllerTest do
       assert %{"rooms" => []} = json_response(conn, 200)
     end
 
-    test "returns child rooms", %{conn: conn, room_id: room_id, account: %{user_id: user_id}} do
+    test "returns child rooms", %{conn: conn, room_id: room_id, account: %{user_id: user_id}, queue: queue} do
       {:ok, another_room_id} = Room.create(user_id)
       {:ok, _} = Room.put_state(room_id, user_id, "m.space.child", another_room_id, %{"via" => ["some.cool.server"]})
+
+      Fixtures.assert_processed_count(queue, 1)
 
       conn = get(conn, ~p"/_matrix/client/v1/rooms/#{room_id}/hierarchy")
 
       assert %{"rooms" => [%{"room_id" => ^another_room_id}]} = json_response(conn, 200)
     end
 
-    test "returns child rooms in a depth-first manner", %{conn: conn, room_id: room_id, account: %{user_id: user_id}} do
+    test "returns child rooms in a depth-first manner", %{
+      conn: conn,
+      room_id: room_id,
+      account: %{user_id: user_id},
+      queue: queue
+    } do
       {:ok, subspace_id} = Room.create(user_id, content: %{"type" => "m.space"})
       {:ok, super_subspace_id} = Room.create(user_id, content: %{"type" => "m.space"})
       {:ok, super_subspace_child_id} = Room.create(user_id)
       {:ok, subspace_child_id} = Room.create(user_id)
       {:ok, child_id} = Room.create(user_id)
+
+      Fixtures.assert_processed_count(queue, 5)
 
       content = %{"via" => ["some.cool.server"]}
 
@@ -47,12 +61,9 @@ defmodule RadioBeamWeb.RoomSpaceControllerTest do
       # subspace_id, subspace_child_id, super_subspace_id, super_subspace_child_id, child_id
       #
       {:ok, _} = Room.put_state(room_id, user_id, "m.space.child", subspace_id, content)
-      # uughhh...once Participating is moved to EventHandler, can await event instead of sleep
-      Process.sleep(10)
       {:ok, _} = Room.put_state(room_id, user_id, "m.space.child", child_id, content)
       {:ok, _} = Room.put_state(subspace_id, user_id, "m.space.child", subspace_child_id, content)
       {:ok, _} = Room.put_state(super_subspace_id, user_id, "m.space.child", super_subspace_child_id, content)
-      Process.sleep(10)
       {:ok, _} = Room.put_state(subspace_id, user_id, "m.space.child", super_subspace_id, content)
 
       for id <- [room_id, subspace_id, super_subspace_id] do

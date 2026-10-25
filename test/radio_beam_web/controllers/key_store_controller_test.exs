@@ -14,8 +14,14 @@ defmodule RadioBeamWeb.KeysControllerTest do
       {:ok, room_id} = RadioBeam.Room.create(someone.user_id)
       %{"next_batch" => since} = RadioBeam.Sync.perform_v2(account.user_id, user_device.id, [])
 
+      queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, _} = RadioBeam.Room.invite(room_id, someone.user_id, account.user_id)
-      {:ok, _} = RadioBeam.Room.join(room_id, account.user_id)
+      {:ok, event_id} = RadioBeam.Room.join(room_id, account.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
       Fixtures.create_and_put_device_keys(someone.user_id, device.id)
 
       since_encoded = to_string(since)

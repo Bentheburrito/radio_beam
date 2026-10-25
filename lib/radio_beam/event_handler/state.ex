@@ -54,7 +54,7 @@ defmodule RadioBeam.EventHandler.State do
   defp mark_event_processed(state, event_number, event_id) do
     state = put_in(state.latest_processed_event_number, event_number)
 
-    with :ok <- Database.mark_event_processed(state.queue, state, event_number) do
+    with :ok <- Database.mark_event_processed(state.queue, state, event_number, event_id) do
       PubSub.broadcast(
         PubSub.read_model_caught_up_to(state.queue),
         {:read_model_caught_up_to, state.queue, event_number, event_id}

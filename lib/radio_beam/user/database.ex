@@ -10,6 +10,7 @@ defmodule RadioBeam.User.Database do
   alias RadioBeam.User.Device
   alias RadioBeam.User.KeyStore
   alias RadioBeam.User.Notification
+  alias RadioBeam.User.RoomMemberships
 
   @type return_value() :: term()
 
@@ -46,6 +47,9 @@ defmodule RadioBeam.User.Database do
             ]
   @callback all_notifications(User.id(), limit :: non_neg_integer()) :: [Notification.t()]
 
+  @callback fetch_user_room_memberships(User.id()) :: {:ok, RoomMemberships.t()} | {:error, :not_found}
+  @callback upsert_user_room_memberships(User.id(), RoomMemberships.t()) :: :ok
+
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.User.Database, :backend])
   defdelegate insert_new_user_account(user_account), to: @database_backend
   defdelegate fetch_user_account(user_id), to: @database_backend
@@ -65,4 +69,6 @@ defmodule RadioBeam.User.Database do
   defdelegate upsert_notification(notification, max_per_user), to: @database_backend
   defdelegate all_notifications(user_id, limit, older_than_ts), to: @database_backend
   defdelegate all_notifications(user_id, limit), to: @database_backend
+  defdelegate fetch_user_room_memberships(user_id), to: @database_backend
+  defdelegate upsert_user_room_memberships(user_id, memberships), to: @database_backend
 end

@@ -22,6 +22,7 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.Upload
   import RadioBeam.Database.Mnesia.Tables.UserClientConfig
   import RadioBeam.Database.Mnesia.Tables.UserGeneratedReport
+  import RadioBeam.Database.Mnesia.Tables.UserRoomMemberships
 
   alias RadioBeam.Admin.UserGeneratedReport
   alias RadioBeam.ContentRepo.Upload
@@ -33,6 +34,7 @@ defmodule RadioBeam.Database.Mnesia do
   alias RadioBeam.User.KeyStore
   alias RadioBeam.User.LocalAccount
   alias RadioBeam.User.Notification
+  alias RadioBeam.User.RoomMemberships
 
   require Logger
 
@@ -49,7 +51,8 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.RoomView,
     Tables.Upload,
     Tables.UserClientConfig,
-    Tables.UserGeneratedReport
+    Tables.UserGeneratedReport,
+    Tables.UserRoomMemberships
   ]
 
   @impl RadioBeam.Database
@@ -114,13 +117,17 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.Database
-  def queue_event(queue, event_number, event) do
-    transaction(fn -> :mnesia.write(processable_event(queue_and_event_number: {queue, event_number}, event: event)) end)
+  def queue_event(queue, event_number, event_id, event) do
+    transaction(fn ->
+      :mnesia.write(
+        processable_event(queue_and_event_number_and_event_id: {queue, event_number, event_id}, event: event)
+      )
+    end)
   end
 
   @impl RadioBeam.Database
   def peek_event(queue) do
-    match_head = processable_event(queue_and_event_number: {queue, :_}, event: :_)
+    match_head = processable_event(queue_and_event_number_and_event_id: {queue, :_, :_}, event: :_)
     match_spec = [{match_head, [], [:"$_"]}]
 
     transaction(fn ->
@@ -128,7 +135,8 @@ defmodule RadioBeam.Database.Mnesia do
         :"$end_of_table" ->
           :done
 
-        {[processable_event(queue_and_event_number: {^queue, event_number}, event: event)], _continuation} ->
+        {[processable_event(queue_and_event_number_and_event_id: {^queue, event_number, _id}, event: event)],
+         _continuation} ->
           {:ok, event_number, event}
 
         # not actually done...
@@ -139,9 +147,9 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.Database
-  def mark_event_processed(queue, state, event_number) do
+  def mark_event_processed(queue, state, event_number, event_id) do
     transaction(fn ->
-      with :ok <- :mnesia.delete({Tables.ProcessableEvent, {queue, event_number}}) do
+      with :ok <- :mnesia.delete({Tables.ProcessableEvent, {queue, event_number, event_id}}) do
         :mnesia.write(event_handler_state(queue: queue, state: state))
       end
     end)
@@ -531,6 +539,26 @@ defmodule RadioBeam.Database.Mnesia do
         :"$end_of_table" -> []
       end
     end)
+  end
+
+  @impl RadioBeam.User.Database
+  def fetch_user_room_memberships(user_id) do
+    transaction(fn ->
+      case :mnesia.read(Tables.UserRoomMemberships, user_id) do
+        [] ->
+          {:error, :not_found}
+
+        [user_room_memberships(user_id: ^user_id, room_ids_to_membership: room_ids_to_membership)] ->
+          {:ok, %RoomMemberships{room_ids_to_membership: room_ids_to_membership}}
+      end
+    end)
+  end
+
+  @impl RadioBeam.User.Database
+  def upsert_user_room_memberships(user_id, %RoomMemberships{} = memberships) do
+    record = user_room_memberships(user_id: user_id, room_ids_to_membership: memberships.room_ids_to_membership)
+
+    transaction(fn -> :mnesia.write(Tables.UserRoomMemberships, record, :write) end)
   end
 
   defp notifications_match_spec(user_id, :now) do

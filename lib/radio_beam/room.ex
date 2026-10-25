@@ -49,26 +49,6 @@ defmodule RadioBeam.Room do
     end
   end
 
-  @doc "Returns all room IDs that `user_id` is joined to"
-  @spec joined(user_id :: String.t()) :: MapSet.t(id())
-  def joined(user_id) do
-    case Room.View.all_participating(user_id) do
-      {:ok, %{latest_known_join_pdus: join_pdus_map}} -> Stream.map(join_pdus_map, fn {room_id, _pdu} -> room_id end)
-      {:error, :not_found} -> []
-    end
-  end
-
-  @doc """
-  Returns all rooms whose state has a `{"m.room.member", user_id}` key
-  """
-  @spec all_where_has_membership(user_id :: String.t()) :: MapSet.t(id())
-  def all_where_has_membership(user_id) do
-    case Room.View.all_participating(user_id) do
-      {:ok, %{all: all}} -> all
-      _ -> MapSet.new()
-    end
-  end
-
   def get_invite_state_events(room_id, user_id), do: Room.View.get_invite_state(room_id, user_id)
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
@@ -189,7 +169,7 @@ defmodule RadioBeam.Room do
   def get_members(room_id, user_id, at_event_id \\ :latest_visible, membership_filter \\ fn _ -> true end)
 
   def get_members(room_id, user_id, at_event_id_or_current, membership_filter) do
-    with true <- room_id in all_where_has_membership(user_id),
+    with true <- User.RoomMemberships.has?(user_id, room_id),
          {:ok, room} <- get(room_id),
          {:ok, latest_visible_state_events} <- get_latest_visible_state(room, at_event_id_or_current, user_id) do
       {:ok, filter_member_events(latest_visible_state_events, membership_filter)}
@@ -384,7 +364,7 @@ defmodule RadioBeam.Room do
         # sort per level of depth - spec doesn't define an order here, but it
         # helps test the DFS constraint, since `get_state/2` returns events in
         # no particular order
-        |> Enum.sort_by(& &1.origin_server_ts, :asc)
+        |> apply_order(:chronological)
         |> Enum.flat_map(fn m_child_space_event ->
           child_room_id = m_child_space_event.state_key
 
@@ -401,14 +381,11 @@ defmodule RadioBeam.Room do
   end
 
   defp validate_space_child_visible(child_room_id, user_id) do
-    with {:ok, participating} <- Room.View.all_participating(user_id) do
+    case User.RoomMemberships.fetch(user_id, child_room_id) do
       # TODO: join_rules == public, history_visibility == world_readable,
       # restricted, and knock checks may make room visible too
-      if is_map_key(participating.latest_known_join_pdus, child_room_id) or child_room_id in participating.invited do
-        :ok
-      else
-        {:error, :not_visible}
-      end
+      {:ok, membership} when membership in ~w|join invite| -> :ok
+      _else -> {:error, :not_visible}
     end
   end
 

@@ -3,9 +3,12 @@ defmodule RadioBeamWeb.RoomController do
 
   import RadioBeamWeb.Utils, only: [handle_common_error: 2, handle_common_error: 3, json_error: 3, json_error: 4]
 
+  alias RadioBeam.Errors
+  alias RadioBeam.Room
   alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.Timeline.Acknowledgements
-  alias RadioBeam.{Errors, Room, Transaction}
+  alias RadioBeam.Transaction
+  alias RadioBeam.User.RoomMemberships
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
 
   require Logger
@@ -82,8 +85,7 @@ defmodule RadioBeamWeb.RoomController do
     end
   end
 
-  def joined(conn, _params),
-    do: json(conn, %{joined_rooms: conn.assigns.user_id |> Room.joined() |> Enum.to_list()})
+  def joined(conn, _params), do: json(conn, %{joined_rooms: RoomMemberships.joined(conn.assigns.user_id)})
 
   def invite(conn, %{"room_id" => room_id}) do
     inviter_id = conn.assigns.user_id

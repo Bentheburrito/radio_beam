@@ -148,7 +148,7 @@ defmodule RadioBeam.User.KeyStore do
   end
 
   def all_changed_since(user_id, fetch_last_seen_event_id, since_ts) do
-    room_ids = Room.joined(user_id)
+    room_ids = User.RoomMemberships.joined(user_id)
 
     membership_event_stream =
       Stream.flat_map(room_ids, fn room_id ->

@@ -54,8 +54,14 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       # ---
 
+      queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, room_id1} = Room.create(creator.user_id, name: "name one")
-      {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+      {:ok, event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
       :ok = User.put_account_data(account.user_id, :global, "m.some_config", %{"hello" => "world"})
       :ok = User.put_account_data(account.user_id, room_id1, "m.some_config", %{"hello" => "room"})
 
@@ -95,8 +101,10 @@ defmodule RadioBeamWeb.SyncControllerTest do
       creator_device = Fixtures.create_device(creator.user_id)
       Fixtures.create_and_put_device_keys(creator.user_id, creator_device.id)
 
-      {:ok, _event_id} = Room.join(room_id1, account.user_id)
+      {:ok, event_id} = Room.join(room_id1, account.user_id)
       {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "yo")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       User.send_to_devices(
         %{account.user_id => %{device_id => %{"hello" => "world"}}},
