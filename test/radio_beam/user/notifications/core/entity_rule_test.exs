@@ -31,11 +31,11 @@ defmodule RadioBeam.User.Notifications.Core.EntityRuleTest do
     } do
       assert {:ok, %EntityRule{} = rule} = EntityRule.new(rule_id, actions, true, {:content, "yo*"})
       assert length(actions) == rule |> EntityRule.actions() |> length()
-      assert EntityRule.event_passes_condition?(rule, event)
+      assert EntityRule.event_passes_conditions?(rule, event)
 
       assert {:ok, %EntityRule{} = rule} = EntityRule.new(rule_id, actions, true, {:content, "yo?!"})
       assert length(actions) == rule |> EntityRule.actions() |> length()
-      refute EntityRule.event_passes_condition?(rule, event)
+      refute EntityRule.event_passes_conditions?(rule, event)
     end
 
     test "creates a new valid room rule", %{
@@ -45,11 +45,11 @@ defmodule RadioBeam.User.Notifications.Core.EntityRuleTest do
     } do
       assert {:ok, %EntityRule{} = rule} = EntityRule.new(room.id, actions, true, :room)
       assert length(actions) == rule |> EntityRule.actions() |> length()
-      assert EntityRule.event_passes_condition?(rule, event)
+      assert EntityRule.event_passes_conditions?(rule, event)
 
       assert {:ok, %EntityRule{} = rule} = EntityRule.new(room.id, actions, true, :room)
       assert length(actions) == rule |> EntityRule.actions() |> length()
-      refute EntityRule.event_passes_condition?(rule, put_in(event.room_id, "!incorrect_room"))
+      refute EntityRule.event_passes_conditions?(rule, put_in(event.room_id, "!incorrect_room"))
     end
 
     test "creates a new valid sender rule", %{
@@ -59,11 +59,11 @@ defmodule RadioBeam.User.Notifications.Core.EntityRuleTest do
     } do
       assert {:ok, %EntityRule{} = rule} = EntityRule.new(user_id, actions, true, :sender)
       assert length(actions) == rule |> EntityRule.actions() |> length()
-      assert EntityRule.event_passes_condition?(rule, event)
+      assert EntityRule.event_passes_conditions?(rule, event)
 
       assert {:ok, %EntityRule{} = rule} = EntityRule.new(user_id, actions, true, :sender)
       assert length(actions) == rule |> EntityRule.actions() |> length()
-      refute EntityRule.event_passes_condition?(rule, put_in(event.sender, "@someone:else"))
+      refute EntityRule.event_passes_conditions?(rule, put_in(event.sender, "@someone:else"))
     end
 
     test "errors when entity is content and pattern is invalid", %{

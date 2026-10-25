@@ -5,16 +5,17 @@ defmodule RadioBeamWeb.Router do
 
   alias RadioBeamWeb.AccountController
   alias RadioBeamWeb.AdminController
-  alias RadioBeamWeb.LegacyAuthAPIController
   alias RadioBeamWeb.ClientController
   alias RadioBeamWeb.ContentRepoController
   alias RadioBeamWeb.FilterController
   alias RadioBeamWeb.HomeserverInfoController
   alias RadioBeamWeb.KeyStoreController
+  alias RadioBeamWeb.LegacyAuthAPIController
   alias RadioBeamWeb.OAuth2Controller
   alias RadioBeamWeb.RelationsController
   alias RadioBeamWeb.RoomController
   alias RadioBeamWeb.RoomKeysController
+  alias RadioBeamWeb.RoomSpaceController
   alias RadioBeamWeb.SyncController
 
   alias RadioBeamWeb.Plugs
@@ -131,6 +132,8 @@ defmodule RadioBeamWeb.Router do
         end
 
         get "/rooms/:room_id/threads", RelationsController, :get_threads, rl(:frequent_cheap)
+
+        get "/rooms/:room_id/hierarchy", RoomSpaceController, :hierarchy, rl(:infrequent_bursts)
 
         scope "/rooms/:room_id/relations" do
           get "/:event_id", RelationsController, :get_children, rl(:user_sync)

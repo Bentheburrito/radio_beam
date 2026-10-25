@@ -150,4 +150,5 @@ defmodule RadioBeam.Room.Core do
 
   def room_id(room), do: Chronicle.room_id(room.chronicle)
   def room_version(room), do: Chronicle.room_version(room.chronicle)
+  def room_type(room), do: Chronicle.get_create_event(room.chronicle).content["type"]
 end

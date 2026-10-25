@@ -80,6 +80,12 @@ defmodule RadioBeam.Room.Events do
       opts
       |> Keyword.get(:invite, [])
       |> Stream.map(&membership(room_id, creator_id, &1, :invite, "New room invitation", direct?))
+      |> Stream.concat(
+        Stream.map(
+          Map.get(create_event.content, "additional_creators", []),
+          &membership(room_id, creator_id, &1, :invite, "Additional creator invitation", direct?)
+        )
+      )
 
     [
       membership(room_id, creator_id, creator_id, :join, "Creator join event", direct?),

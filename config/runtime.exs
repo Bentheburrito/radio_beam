@@ -52,7 +52,7 @@ if Config.config_env() == :test do
 else
   config :radio_beam, RadioBeam.RateLimit,
     admin: new!(5000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5), 3000 / seconds(5)),
-    infrequent_bursts: new!(200 / minutes(1), 50 / hours(1), 40 / hours(1), 40 / minutes(2)),
+    infrequent_bursts: new!(200 / minutes(1), 100 / hours(1), 50 / hours(1), 50 / minutes(2)),
     frequent_cheap: new!(5000 / seconds(5), 500 / minutes(2), 100 / minutes(2), 5000 / seconds(30)),
     exp_write: new!(100 / seconds(15), 30 / minutes(2), 15 / minutes(2), 80 / seconds(30)),
     heavily_restrict_ip: new!(100 / seconds(30), 10 / minutes(1), 10 / minutes(1), 5 / minutes(2)),

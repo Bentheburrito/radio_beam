@@ -53,8 +53,6 @@ defmodule RadioBeam.Room.Core.Space do
     end
   end
 
-  def validate_link(%Room{}, %AuthorizedEvent{}, _deps), do: :ok
-
   # Quoting from [the spec](https://spec.matrix.org/latest/client-server-api/#mspaceparent-relationships):
   #
   # To avoid situations where a room falsely claims it is part of a given
@@ -90,8 +88,6 @@ defmodule RadioBeam.Room.Core.Space do
     active_link?(event) or state_entry_present?(room, event.type, event.state_key, event.id)
   end
 
-  defp valid_child_link?(%Room{}, %AuthorizedEvent{}), do: false
-
   defp state_entry_present?(room, type, state_key, event_id) do
     state_mapping = Chronicle.get_state_mapping(room.chronicle, event_id, _apply_event_ids? = false)
     is_map_key(state_mapping, {type, state_key})
@@ -104,6 +100,4 @@ defmodule RadioBeam.Room.Core.Space do
       _else -> false
     end
   end
-
-  defp active_link?(%AuthorizedEvent{}), do: false
 end

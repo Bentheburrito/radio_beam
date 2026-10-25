@@ -376,6 +376,57 @@ defmodule RadioBeam.Room do
   defp apply_order(event_stream, :reverse_chronological),
     do: Enum.sort_by(event_stream, & &1.order_id, {:desc, TopologicalID})
 
+  def get_hierarchy(room_id, user_id, already_seen \\ MapSet.new()) do
+    with {:ok, state_events} <- get_state(room_id, user_id) do
+      descriptions =
+        state_events
+        |> Stream.filter(&(&1.type == "m.space.child" and &1.state_key not in already_seen))
+        # sort per level of depth - spec doesn't define an order here, but it
+        # helps test the DFS constraint, since `get_state/2` returns events in
+        # no particular order
+        |> Enum.sort_by(& &1.origin_server_ts, :asc)
+        |> Enum.flat_map(fn m_child_space_event ->
+          child_room_id = m_child_space_event.state_key
+
+          with :ok <- validate_space_child_visible(child_room_id, user_id),
+               {:ok, descriptions} <- get_hierarchy(child_room_id, user_id, MapSet.put(already_seen, child_room_id)) do
+            [hierarchy_description(child_room_id) | descriptions]
+          else
+            {:error, error} when error in ~w|not_found not_visible|a -> []
+          end
+        end)
+
+      {:ok, descriptions}
+    end
+  end
+
+  defp validate_space_child_visible(child_room_id, user_id) do
+    with {:ok, participating} <- Room.View.all_participating(user_id) do
+      # TODO: join_rules == public, history_visibility == world_readable,
+      # restricted, and knock checks may make room visible too
+      if is_map_key(participating.latest_known_join_pdus, child_room_id) or child_room_id in participating.invited do
+        :ok
+      else
+        {:error, :not_visible}
+      end
+    end
+  end
+
+  defp hierarchy_description(child_room_id) do
+    %{
+      # why would we include this when these links will have an entry right
+      # after this one???? Isn't that the point of doing a DFS?????
+      children_state: [],
+      # radio_beam does not support the legacy guests feature
+      guest_can_join: false,
+      # TODO
+      num_joined_members: 0,
+      room_id: child_room_id,
+      # TODO
+      world_readable: false
+    }
+  end
+
   defp get(id) do
     with {:error, :not_found} <- Database.fetch_room(id), do: {:error, :unauthorized}
   end

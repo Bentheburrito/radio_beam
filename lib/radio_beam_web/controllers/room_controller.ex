@@ -3,12 +3,12 @@ defmodule RadioBeamWeb.RoomController do
 
   import RadioBeamWeb.Utils, only: [handle_common_error: 2, handle_common_error: 3, json_error: 3, json_error: 4]
 
-  require Logger
-
   alias RadioBeam.Room.EphemeralState
   alias RadioBeam.Room.Timeline.Acknowledgements
   alias RadioBeam.{Errors, Room, Transaction}
   alias RadioBeamWeb.Schemas.Room, as: RoomSchema
+
+  require Logger
 
   @schema_actions ~w|create invite join leave kick ban unban get_nearest_event get_event_context put_typing upgrade put_receipt put_markers|a
 

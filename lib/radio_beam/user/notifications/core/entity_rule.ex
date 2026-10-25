@@ -30,7 +30,7 @@ defmodule RadioBeam.User.Notifications.Core.EntityRule do
   def pattern(%__MODULE__{entity_type: {:content, pattern}}), do: pattern
   def pattern(%__MODULE__{}), do: nil
 
-  def event_passes_condition?(%__MODULE__{} = rule, event),
+  def event_passes_conditions?(%__MODULE__{} = rule, event),
     do: ConditionalRule.event_passes_conditions?(rule.conditional_rule, event)
 
   defp conditions_from_type({:content, pattern}, _id),
