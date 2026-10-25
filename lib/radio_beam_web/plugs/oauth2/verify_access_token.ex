@@ -31,6 +31,9 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken do
       {:error, :invalid_token} ->
         conn |> json_error(401, :unknown_token, ["Unknown token", false]) |> halt()
 
+      {:error, :not_found} ->
+        conn |> json_error(401, :unknown_token, ["Unknown token", false]) |> halt()
+
       {:error, error} ->
         Logger.error("A fatal error occurred trying to authenticate a device's session: #{inspect(error)}")
         conn |> json_error(500, :unknown) |> halt()

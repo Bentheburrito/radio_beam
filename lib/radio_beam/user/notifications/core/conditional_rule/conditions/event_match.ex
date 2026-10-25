@@ -17,16 +17,22 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
     match_word_boundaries? = event_property_string == "content.body"
 
     with {:ok, event_property_path} <- AccessExtras.property_string_to_path(event_property_string),
-         {:ok, pattern} <- compile_glob_style_pattern(pattern, not match_word_boundaries?) do
-      predicate = if match_word_boundaries?, do: &matches_any_word?(&1, pattern), else: &String.match?(&1, pattern)
+         # we will recompile the regex every predicate invocaton, because regexes
+         # will not survive a BEAM restart when persisted to the DB.
+         {:ok, _pattern} <- compile_glob_style_pattern(pattern, not match_word_boundaries?) do
+      predicate = if match_word_boundaries?, do: &matches_any_word?(&1, &2), else: &String.match?(&1, &2)
 
       {:ok,
        fn %Event{} = event ->
          event_map = event |> Event.to_map() |> Map.new(fn {k, v} -> {to_string(k), v} end)
 
          case get_in(event_map, event_property_path) do
-           value when is_binary(value) -> predicate.(value)
-           _not_a_string -> false
+           value when is_binary(value) ->
+             {:ok, pattern} = compile_glob_style_pattern(pattern, not match_word_boundaries?)
+             predicate.(value, pattern)
+
+           _not_a_string ->
+             false
          end
        end}
     end
