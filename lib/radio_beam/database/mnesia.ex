@@ -18,6 +18,7 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.ProcessableEvent
   import RadioBeam.Database.Mnesia.Tables.Room
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
+  import RadioBeam.Database.Mnesia.Tables.RoomThreadParent
   import RadioBeam.Database.Mnesia.Tables.RoomTimelineStreamPointer
   import RadioBeam.Database.Mnesia.Tables.RoomTimestampPointer
   import RadioBeam.Database.Mnesia.Tables.RoomView
@@ -50,6 +51,7 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.ProcessableEvent,
     Tables.Room,
     Tables.RoomAlias,
+    Tables.RoomThreadParent,
     Tables.RoomTimelineStreamPointer,
     Tables.RoomTimestampPointer,
     Tables.RoomView,
@@ -359,18 +361,48 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   defp select_room_timestamp_chunk(room_id, timestamp, :backward, chunk_size) do
-    guards = stream_room_timestamp_match_spec(room_id, [{:<, :"$1", timestamp}])
-    :mnesia.select_reverse(Tables.RoomTimestampPointer, guards, chunk_size, :read)
+    match_spec = stream_room_timestamp_match_spec(room_id, [{:<, :"$1", timestamp}])
+    :mnesia.select_reverse(Tables.RoomTimestampPointer, match_spec, chunk_size, :read)
   end
 
   defp select_room_timestamp_chunk(room_id, timestamp, :forward, chunk_size) do
-    guards = stream_room_timestamp_match_spec(room_id, [{:>, :"$1", timestamp}])
-    :mnesia.select(Tables.RoomTimestampPointer, guards, chunk_size, :read)
+    match_spec = stream_room_timestamp_match_spec(room_id, [{:>, :"$1", timestamp}])
+    :mnesia.select(Tables.RoomTimestampPointer, match_spec, chunk_size, :read)
   end
 
   defp stream_room_timestamp_match_spec(room_id, guards) do
     match_head = room_timestamp_pointer(room_id_and_timestamp: {room_id, :"$1"}, event_id: :"$2")
     [{match_head, guards, [{{:"$1", :"$2"}}]}]
+  end
+
+  @impl RadioBeam.Room.Database
+  def upsert_room_thread_parent(room_id, stream_number, event_id) do
+    transaction(fn ->
+      [room_id_and_stream_number: {room_id, stream_number}, event_id: event_id]
+      |> room_thread_parent()
+      |> :mnesia.write()
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def get_room_thread_parents(room_id, opts) do
+    limit = Keyword.get(opts, :limit, 50)
+
+    guards =
+      case Keyword.get(opts, :from, :latest) do
+        :latest -> []
+        stream_number -> [{:<, :"$1", stream_number}]
+      end
+
+    match_head = room_thread_parent(room_id_and_stream_number: {room_id, :"$1"}, event_id: :"$2")
+    match_spec = [{match_head, guards, [:"$2"]}]
+
+    transaction(fn ->
+      case :mnesia.select_reverse(Tables.RoomThreadParent, match_spec, limit, :read) do
+        {event_ids, _cont} -> event_ids
+        :"$end_of_table" -> []
+      end
+    end)
   end
 
   @impl RadioBeam.ContentRepo.Database

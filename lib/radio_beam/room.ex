@@ -316,9 +316,19 @@ defmodule RadioBeam.Room do
   end
 
   def get_thread_event_ids(room_id, user_id, include, limit, from \\ :latest) do
-    case Room.View.get_thread_event_ids(room_id, user_id, include, limit, from) do
-      [] -> {:ok, [], :end}
-      thread_event_maps -> {:ok, thread_event_maps, List.last(thread_event_maps).event_id}
+    with {:ok, from} <- map_from_event_id_to_stream_number(room_id, from) do
+      case Room.View.Threads.get_thread_event_ids(room_id, user_id, include, limit, from) do
+        [] -> {:ok, [], :end}
+        thread_event_maps -> {:ok, thread_event_maps, List.last(thread_event_maps).event_id}
+      end
+    end
+  end
+
+  defp map_from_event_id_to_stream_number(_room_id, :latest), do: {:ok, :latest}
+
+  defp map_from_event_id_to_stream_number(room_id, "$" <> _ = from_event_id) do
+    with {:ok, %{stream_number: stream_number}} <- fetch_pdu(room_id, from_event_id) do
+      {:ok, stream_number}
     end
   end
 

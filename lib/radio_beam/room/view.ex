@@ -9,7 +9,6 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.View.Core.InviteStateEvents
   alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.Room.View.RelatedEvents
-  alias RadioBeam.Room.View.Threads
   alias RadioBeam.User
 
   @type key() :: term()
@@ -47,30 +46,6 @@ defmodule RadioBeam.Room.View do
       %{^event_id => related_events_stream} -> {:ok, related_events_stream}
       %{} -> {:error, :not_found}
     end
-  end
-
-  def get_thread_event_ids(room_id, user_id, include, limit, from) when is_integer(limit) and limit in 0..50 do
-    event_ids = room_id |> Threads.stream_event_ids() |> drop_until_from(from)
-
-    room_id
-    |> UserTimeline.map_filter_user_events(user_id, event_ids)
-    |> Stream.map(&Event.to_map/1)
-    |> filter_by_include(include)
-    |> Enum.take(limit)
-  end
-
-  defp drop_until_from(event_ids, :latest), do: event_ids
-
-  defp drop_until_from(event_ids, from_event_id) do
-    event_ids
-    |> Stream.drop_while(&(&1 != from_event_id))
-    |> Stream.drop(1)
-  end
-
-  defp filter_by_include(event_maps, :all), do: event_maps
-
-  defp filter_by_include(event_maps, :participated) do
-    Stream.filter(event_maps, &get_in(&1, [:unsigned, "m.relations", "m.thread", :current_user_participated]))
   end
 
   @stripped_state_event_keys ~w|content sender state_key type|a

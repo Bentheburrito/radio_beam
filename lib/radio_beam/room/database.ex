@@ -21,6 +21,8 @@ defmodule RadioBeam.Room.Database do
   @callback upsert_room_timestamp_pointer(Room.id(), non_neg_integer(), Room.event_id()) :: :ok
   @callback stream_room_event_ids_from_timestamp(Room.id(), non_neg_integer(), :backward | :forward, Keyword.t()) ::
               Enumerable.t(Room.event_id())
+  @callback upsert_room_thread_parent(Room.id(), non_neg_integer(), Room.event_id()) :: :ok
+  @callback get_room_thread_parents(Room.id(), Keyword.t()) :: View.Threads.t()
 
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.Room.Database, :backend])
   defdelegate upsert_room(room), to: @database_backend
@@ -34,6 +36,8 @@ defmodule RadioBeam.Room.Database do
   defdelegate upsert_room_timestamp_pointer(room_id, timestamp, event_id), to: @database_backend
   defdelegate stream_room_event_ids_from_timestamp(room_id, timestamp, direction), to: @database_backend
   defdelegate stream_room_event_ids_from_timestamp(room_id, timestamp, direction, opts), to: @database_backend
+  defdelegate upsert_room_thread_parent(room_id, stream_number, event_id), to: @database_backend
+  defdelegate get_room_thread_parents(room_id, opts), to: @database_backend
 
   def create_alias(alias, room_id, ensure_room_exists?) do
     if alias.server_name != RadioBeam.Config.server_name() do

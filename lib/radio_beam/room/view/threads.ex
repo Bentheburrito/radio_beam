@@ -4,48 +4,32 @@ defmodule RadioBeam.Room.View.Threads do
   """
   @behaviour RadioBeam.EventHandler
 
-  defstruct event_ids: :gb_sets.new()
-
-  @opaque t() :: %__MODULE__{}
-
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.PDU
+  alias RadioBeam.Room.UserTimeline
+  alias RadioBeam.Room.UserTimeline.Event
 
-  def new!, do: %__MODULE__{}
+  def get_thread_event_ids(room_id, user_id, include, limit, from) when is_integer(limit) and limit in 0..50 do
+    event_ids = Database.get_room_thread_parents(room_id, from: from, limit: limit)
 
-  @doc "Returns a `Stream` of the parent thread IDs in a room"
-  def stream_event_ids(room_id) do
-    %__MODULE__{event_ids: event_ids} = fetch!(room_id)
-
-    event_ids
-    |> :gb_sets.iterator(:reversed)
-    |> Stream.unfold(fn set_iter ->
-      case :gb_sets.next(set_iter) do
-        {{_stream_number, "$" <> _ = event_id}, set_iter} -> {event_id, set_iter}
-        :none -> nil
-      end
-    end)
-    |> Stream.uniq()
+    room_id
+    |> UserTimeline.map_filter_user_events(user_id, event_ids)
+    |> Stream.map(&Event.to_map/1)
+    |> filter_by_include(include)
+    |> Enum.uniq()
   end
 
-  defp fetch!(room_id) do
-    case Database.fetch_view(key(room_id)) do
-      {:ok, %__MODULE__{} = threads} -> threads
-      {:error, :not_found} -> new!()
-    end
-  end
+  defp filter_by_include(event_maps, :all), do: event_maps
 
-  defp key(room_id), do: {__MODULE__, room_id}
+  defp filter_by_include(event_maps, :participated) do
+    Stream.filter(event_maps, &get_in(&1, [:unsigned, "m.relations", "m.thread", :current_user_participated]))
+  end
 
   @impl RadioBeam.EventHandler
   def handle_pdu(%PDU{} = pdu) do
     case pdu.event.content do
       %{"m.relates_to" => %{"rel_type" => "m.thread", "event_id" => thread_root_id}} ->
-        %__MODULE__{} = thread_roots = fetch!(pdu.event.room_id)
-        event_ids = :gb_sets.add({pdu.stream_number, thread_root_id}, thread_roots.event_ids)
-
-        thread_roots = struct!(thread_roots, event_ids: event_ids)
-        Database.upsert_view(key(pdu.event.room_id), thread_roots)
+        Database.upsert_room_thread_parent(pdu.event.room_id, pdu.stream_number, thread_root_id)
 
       _else ->
         :ok
