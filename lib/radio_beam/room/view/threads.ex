@@ -38,7 +38,7 @@ defmodule RadioBeam.Room.View.Threads do
   defp key(room_id), do: {__MODULE__, room_id}
 
   @impl RadioBeam.EventHandler
-  def handle_pdu(%PDU{} = pdu, _) do
+  def handle_pdu(%PDU{} = pdu) do
     %__MODULE__{} = thread_roots = fetch!(pdu.event.room_id)
 
     event_ids =

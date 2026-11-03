@@ -2,7 +2,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventPropertyIs
 
   @message "Hello world, this is a message."
@@ -12,13 +12,9 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
     {:sent, room, message_id, _} =
       "12" |> Fixtures.room(user_id) |> Fixtures.send_room_msg(user_id, @message)
 
-    timeline = Fixtures.make_room_view(Timeline, room)
+    message_event = room.chronicle |> Room.Chronicle.fetch_pdu!(message_id) |> Event.new!([], user_id)
 
-    [message_event] =
-      Timeline.get_visible_events(timeline, [message_id], user_id, &Room.Chronicle.fetch_pdu!(room.chronicle, &1))
-      |> Enum.to_list()
-
-    %{room: room, timeline: timeline, user_id: user_id, message_event: message_event}
+    %{room: room, user_id: user_id, message_event: message_event}
   end
 
   describe "new/2 returns a predicate that" do
@@ -89,11 +85,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
           "notalist" => "hi"
         })
 
-      timeline = Fixtures.make_room_view(Timeline, room)
-
-      [event] =
-        Timeline.get_visible_events(timeline, [event_id], user_id, &Room.Chronicle.fetch_pdu!(room.chronicle, &1))
-        |> Enum.to_list()
+      event = room.chronicle |> Room.Chronicle.fetch_pdu!(event_id) |> Event.new!([], user_id)
 
       %{event: event}
     end

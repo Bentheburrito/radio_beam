@@ -46,7 +46,7 @@ defmodule RadioBeam.Room.Upgrades do
 
     {[power_levels_event], state_events_to_transfer} =
       old_room.id
-      |> View.get_events!(creator_id, event_id_stream, false)
+      |> View.get_events(creator_id, event_id_stream, false)
       |> Stream.map(&map_power_levels_content(new_version, &1, [creator_id | addl_creator_ids]))
       |> Stream.map(&%{"content" => &1.content, "type" => &1.type, "state_key" => &1.state_key})
       |> Enum.split_with(&(&1["type"] == "m.room.power_levels"))

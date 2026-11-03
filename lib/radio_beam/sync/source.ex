@@ -142,7 +142,7 @@ defmodule RadioBeam.Sync.Source do
   def key(%__MODULE__{key: key}), do: key
 
   def aggregate_results(sources, maybe_since) do
-    Enum.reduce(sources, %{"next_batch" => NextBatch.new!(System.os_time(:millisecond))}, fn
+    Enum.reduce(sources, %{"next_batch" => NextBatch.new!(RadioBeam.Time.now())}, fn
       %Source{state: {:done, result, next_batch}} = source, sync_result ->
         top_level_path = source.mod.top_level_path(source.key, result)
 

@@ -2,7 +2,7 @@ defmodule RadioBeam.User.KeyStore.Core do
   @moduledoc """
   Functional core for key store operations
   """
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
@@ -70,7 +70,7 @@ defmodule RadioBeam.User.KeyStore.Core do
   end
 
   defp event_occurred_later?(_event, nil), do: false
-  defp event_occurred_later?(event, since_event), do: TopologicalID.compare(event.order_id, since_event.order_id) == :gt
+  defp event_occurred_later?(event, since_event), do: Event.compare(event, since_event) == :gt
 
   def add_all_keys(key_results, querying_user_id, querying_user_key_store, queried_device_ids, all_devices) do
     user_signing_key = querying_user_key_store.cross_signing_key_ring.user

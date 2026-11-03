@@ -2,7 +2,7 @@ defmodule RadioBeam.Room.ViewTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.View.Timeline
   alias RadioBeam.User.RoomMemberships
 
   describe "get_child_events/3" do
@@ -10,11 +10,11 @@ defmodule RadioBeam.Room.ViewTest do
       account = Fixtures.create_account()
       {:ok, room_id} = Room.create(account.user_id)
 
-      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+      Fixtures.listen_to_queue_messages({Timeline, room_id})
 
       {:ok, parent_event_id} = Room.send_text_message(room_id, account.user_id, "This is a test message")
 
-      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, parent_event_id)
+      Fixtures.assert_caught_up_to_event({Timeline, room_id}, parent_event_id)
 
       %{room_id: room_id, user_id: account.user_id, parent_event_id: parent_event_id}
     end
@@ -39,7 +39,7 @@ defmodule RadioBeam.Room.ViewTest do
 
       {:ok, child_event_id} = Room.send(room_id, user_id, "m.room.message", content)
 
-      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, child_event_id)
+      Fixtures.assert_caught_up_to_event({Timeline, room_id}, child_event_id)
 
       assert room_id in RoomMemberships.joined(user_id)
 
@@ -60,7 +60,7 @@ defmodule RadioBeam.Room.ViewTest do
       {:ok, child_event_id2} =
         Room.send(room_id, user_id, "m.room.message", Map.put(content, "body", "And a 3rd msg"))
 
-      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, child_event_id2)
+      Fixtures.assert_caught_up_to_event({Timeline, room_id}, child_event_id2)
 
       assert room_id in RoomMemberships.joined(user_id)
 

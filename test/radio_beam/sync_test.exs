@@ -23,18 +23,26 @@ defmodule RadioBeam.SyncTest do
 
   describe "performing an initial sync" do
     test "successfully syncs all events in a newly created room", %{creator: creator, account: account, device: device} do
-      queue = {User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id1} = Room.create(creator.user_id)
       {:ok, room_id2} = Room.create(creator.user_id, name: "The Chatroom")
+
+      memberships_queue = {User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+
+      tl_queue1 = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(tl_queue1)
+      tl_queue2 = {RadioBeam.Room.View.Timeline, room_id2}
+      Fixtures.listen_to_queue_messages(tl_queue2)
+
       {:ok, event_id1} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, event_id2} = Room.invite(room_id2, creator.user_id, account.user_id)
       {:ok, event_id3} = Room.join(room_id1, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id1)
-      Fixtures.assert_caught_up_to_event(queue, event_id2)
-      Fixtures.assert_caught_up_to_event(queue, event_id3)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id1)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id2)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id3)
+      Fixtures.assert_caught_up_to_event(tl_queue1, event_id3)
+      Fixtures.assert_caught_up_to_event(tl_queue2, event_id2)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])
@@ -43,7 +51,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream(account.user_id, :tip) |> Enum.take(1)
 
       user_id = account.user_id
 
@@ -109,8 +117,13 @@ defmodule RadioBeam.SyncTest do
 
       Room.send(room_id1, account.user_id, "m.room.message", content)
 
+      queue = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, latest_event_id} =
         Room.send(room_id1, creator.user_id, "m.room.message", put_in(content["content"], "happy bday @bob!!!!!"))
+
+      Fixtures.assert_caught_up_to_event(queue, latest_event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])
@@ -119,7 +132,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream(account.user_id, :tip) |> Enum.take(1)
 
       assert %{
                "join" => %{
@@ -157,16 +170,23 @@ defmodule RadioBeam.SyncTest do
     end
 
     test "successfully syncs all events up to n", %{creator: creator, account: account, device: device} do
-      queue = {User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id1} = Room.create(creator.user_id)
       {:ok, room_id2} = Room.create(creator.user_id)
+
+      memberships_queue = {User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue1 = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(tl_queue1)
+      tl_queue2 = {RadioBeam.Room.View.Timeline, room_id2}
+      Fixtures.listen_to_queue_messages(tl_queue2)
+
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
-      {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
+      {:ok, event_id2} = Room.invite(room_id2, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id1, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue1, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue2, event_id2)
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 5}}})
 
@@ -186,7 +206,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream!(account.user_id, :tip) |> Enum.take(1)
+               room_id1 |> Room.View.timeline_event_stream(account.user_id, :tip) |> Enum.take(1)
 
       assert %{
                "invite" => %{
@@ -239,16 +259,20 @@ defmodule RadioBeam.SyncTest do
           "ignored_users" => %{annoying_account.user_id => %{}}
         })
 
-      queue = {RadioBeam.User.RoomMemberships, annoying_account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id} = Room.create(creator.user_id)
+
+      memberships_queue = {RadioBeam.User.RoomMemberships, annoying_account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id, account.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, annoying_account.user_id)
       {:ok, event_id} = Room.join(room_id, annoying_account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       Room.send_text_message(room_id, annoying_account.user_id, "blah blah blah")
       Room.send_text_message(room_id, annoying_account.user_id, "you shouldn't see this")
@@ -262,9 +286,12 @@ defmodule RadioBeam.SyncTest do
       refute Enum.any?(events, &match?(%{sender: ^annoying_user_id, state_key: nil}, &1))
 
       {:ok, event_id} = Room.leave(room_id, annoying_account.user_id)
-      Fixtures.assert_caught_up_to_event(queue, event_id)
 
-      Room.send_text_message(room_id, creator.user_id, "welp, bye")
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+
+      {:ok, event_id} = Room.send_text_message(room_id, creator.user_id, "welp, bye")
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 1}}})
 
@@ -309,14 +336,19 @@ defmodule RadioBeam.SyncTest do
 
     test "includes typing and read receipt ephemeral events", %{account: %{user_id: creator_id}, device: device} do
       %{user_id: user_id} = Fixtures.create_account()
-      queue = {RadioBeam.User.RoomMemberships, user_id}
-      Fixtures.listen_to_queue_messages(queue)
+      memberships_queue = {RadioBeam.User.RoomMemberships, user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
 
       {:ok, room_id1} = Room.create(creator_id)
+
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id1, creator_id, user_id)
       {:ok, event_id} = Room.join(room_id1, user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       EphemeralState.put_typing(room_id1, user_id, :timer.seconds(4))
 
@@ -392,14 +424,17 @@ defmodule RadioBeam.SyncTest do
 
       notif_queue = {RadioBeam.User.Notifications, room_id1}
       membership_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
       Fixtures.listen_to_queue_messages(notif_queue)
       Fixtures.listen_to_queue_messages(membership_queue)
+      Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id1, account.user_id)
 
       Fixtures.assert_caught_up_to_event(notif_queue, event_id)
       Fixtures.assert_caught_up_to_event(membership_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{
                "rooms" => %{"join" => %{^room_id1 => %JoinedRoomResult{unread_notifications_count: 0}}},
@@ -408,6 +443,7 @@ defmodule RadioBeam.SyncTest do
 
       {:ok, event_id} = Room.send_text_message(room_id1, creator.user_id, "YOU WILL BE PINGED BY THIS!!!")
 
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
       Fixtures.assert_caught_up_to_event(notif_queue, event_id)
 
       assert %{"rooms" => %{"join" => %{^room_id1 => %JoinedRoomResult{unread_notifications_count: 1}}}} =
@@ -425,14 +461,18 @@ defmodule RadioBeam.SyncTest do
 
       # ---
 
-      queue = {RadioBeam.User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id1} = Room.create(creator.user_id)
+
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id1, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, since: next_batch)
@@ -467,8 +507,14 @@ defmodule RadioBeam.SyncTest do
       # ---
 
       {:ok, room_id2} = Room.create(creator.user_id, name: "Notes")
+
+      tl_queue2 = {RadioBeam.Room.View.Timeline, room_id2}
+      Fixtures.listen_to_queue_messages(tl_queue2)
+
       {:ok, event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue2, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, since: next_batch)
@@ -501,6 +547,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, event_id} = Room.join(room_id1, rando_id)
 
       Fixtures.assert_caught_up_to_event(rando_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, since: next_batch)
@@ -528,7 +575,8 @@ defmodule RadioBeam.SyncTest do
       {:ok, event_id} = Room.leave(room_id1, account.user_id, "byeeeeeeeeeeeeeee")
       {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "alright user is gone let's party!!!!!!!!")
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       filter = EventFilter.new(%{"room" => %{"include_leave" => true}})
 
@@ -564,14 +612,18 @@ defmodule RadioBeam.SyncTest do
       account: account,
       device: device
     } do
-      queue = {User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id1} = Room.create(creator.user_id)
+
+      memberships_queue = {User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id1, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])
@@ -607,7 +659,9 @@ defmodule RadioBeam.SyncTest do
 
       {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "Name update outside of window")
       {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "First name update")
-      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "Second name update")
+      {:ok, event_id} = Room.set_name(room_id1, creator.user_id, "Second name update")
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
@@ -644,7 +698,10 @@ defmodule RadioBeam.SyncTest do
         "body" => "Hello? Is anyone there?"
       })
 
-      Room.send(room_id1, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
+      {:ok, event_id} =
+        Room.send(room_id1, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "HE CAN'T HIT"})
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results} =
                Sync.perform_v2(account.user_id, device.id, since: next_batch, filter: filter)
@@ -705,13 +762,19 @@ defmodule RadioBeam.SyncTest do
       {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.invite(room_id3, creator.user_id, account.user_id)
 
-      {:ok, _event_id} = Room.join(room_id1, account.user_id)
-      {:ok, _event_id} = Room.join(room_id2, account.user_id)
+      {:ok, event_id} = Room.join(room_id1, account.user_id)
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+      {:ok, event_id} = Room.join(room_id2, account.user_id)
+      Fixtures.assert_caught_up_to_event(queue, event_id)
       {:ok, event_id} = Room.join(room_id3, account.user_id)
-
       Fixtures.assert_caught_up_to_event(queue, event_id)
 
-      {:ok, _event_id} = Room.set_name(room_id2, creator.user_id, "General Chat")
+      queue = {RadioBeam.Room.View.Timeline, room_id2}
+      Fixtures.listen_to_queue_messages(queue)
+
+      {:ok, event_id} = Room.set_name(room_id2, creator.user_id, "General Chat")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       filter = EventFilter.new(%{"room" => %{"rooms" => [room_id1, room_id2], "not_rooms" => [room_id1]}})
 
@@ -748,10 +811,15 @@ defmodule RadioBeam.SyncTest do
       {:ok, _event_id} = Room.join(room_id1, account2.user_id)
       {:ok, _event_id} = Room.join(room_id1, account3.user_id)
 
+      queue = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, _event_id} = Room.send_text_message(room_id1, creator.user_id, "welcome all")
       {:ok, _event_id} = Room.send_text_message(room_id1, account.user_id, "hello!")
       {:ok, _event_id} = Room.send_text_message(room_id1, account2.user_id, "hi")
-      {:ok, _event_id} = Room.send_text_message(room_id1, account3.user_id, "yo")
+      {:ok, event_id} = Room.send_text_message(room_id1, account3.user_id, "yo")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
       %{id: account3_device_id} = Fixtures.create_device(account3.user_id)
@@ -806,14 +874,17 @@ defmodule RadioBeam.SyncTest do
       account2 = Fixtures.create_account()
       account3 = Fixtures.create_account()
 
+      {:ok, room_id1} = Room.create(creator.user_id, name: "Introductions")
+
       queue1 = {RadioBeam.User.RoomMemberships, account.user_id}
       queue2 = {RadioBeam.User.RoomMemberships, account2.user_id}
       queue3 = {RadioBeam.User.RoomMemberships, account3.user_id}
+      queue4 = {RadioBeam.Room.View.Timeline, room_id1}
       Fixtures.listen_to_queue_messages(queue1)
       Fixtures.listen_to_queue_messages(queue2)
       Fixtures.listen_to_queue_messages(queue3)
+      Fixtures.listen_to_queue_messages(queue4)
 
-      {:ok, room_id1} = Room.create(creator.user_id, name: "Introductions")
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account2.user_id)
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account3.user_id)
@@ -828,7 +899,9 @@ defmodule RadioBeam.SyncTest do
       {:ok, _event_id} = Room.send_text_message(room_id1, creator.user_id, "welcome all")
       {:ok, _event_id} = Room.send_text_message(room_id1, account.user_id, "hello!")
       {:ok, _event_id} = Room.send_text_message(room_id1, account2.user_id, "hi")
-      {:ok, _event_id} = Room.send_text_message(room_id1, account3.user_id, "yo")
+      {:ok, event_id4} = Room.send_text_message(room_id1, account3.user_id, "yo")
+
+      Fixtures.assert_caught_up_to_event(queue4, event_id4)
 
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
       device = Fixtures.create_device(account3.user_id)
@@ -856,7 +929,9 @@ defmodule RadioBeam.SyncTest do
       # sent again (unless its the syncing user's membership)
 
       {:ok, _event_id} = Room.send_text_message(room_id1, account2.user_id, "so what is the plan")
-      {:ok, _event_id} = Room.send_text_message(room_id1, account.user_id, "brunch tomorrow @ 11")
+      {:ok, event_id} = Room.send_text_message(room_id1, account.user_id, "brunch tomorrow @ 11")
+
+      Fixtures.assert_caught_up_to_event(queue4, event_id)
 
       assert %{"rooms" => room_results} = Sync.perform_v2(account3.user_id, device.id, filter: filter)
 
@@ -930,14 +1005,18 @@ defmodule RadioBeam.SyncTest do
 
   describe "sync/4 with a timeout" do
     test "will wait for the next room event", %{creator: creator, account: account, device: device} do
-      queue = {RadioBeam.User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id} = Room.create(creator.user_id)
+
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])
@@ -975,7 +1054,11 @@ defmodule RadioBeam.SyncTest do
       sync_task = Task.async(fn -> Sync.perform_v2(account.user_id, device.id, timeout: timeout, since: next_batch) end)
 
       Process.sleep(wait_for)
-      Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello!!"})
+
+      {:ok, event_id} =
+        Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello!!"})
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{
                "rooms" => %{
@@ -996,14 +1079,19 @@ defmodule RadioBeam.SyncTest do
     end
 
     test "will wait for the next invite event", %{creator: creator, account: account, device: device} do
-      queue = {RadioBeam.User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
 
       {:ok, room_id} = Room.create(creator.user_id)
+
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])
@@ -1041,7 +1129,13 @@ defmodule RadioBeam.SyncTest do
       sync_task = Task.async(fn -> Sync.perform_v2(account.user_id, device.id, timeout: timeout, since: next_batch) end)
       Process.sleep(wait_for)
       {:ok, room_id2} = Room.create(creator.user_id)
-      {:ok, _event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
+
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id2}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
+      {:ok, event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{
                "rooms" => %{
@@ -1057,14 +1151,18 @@ defmodule RadioBeam.SyncTest do
       account: account,
       device: device
     } do
-      queue = {RadioBeam.User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id} = Room.create(creator.user_id)
+
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])
@@ -1094,13 +1192,19 @@ defmodule RadioBeam.SyncTest do
 
       Process.sleep(100)
 
-      Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+      {:ok, event_id} =
+        Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert is_nil(Task.yield(sync_task, 0))
 
       Process.sleep(100)
 
-      Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+      {:ok, event_id} =
+        Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{
                "rooms" => %{
@@ -1123,12 +1227,18 @@ defmodule RadioBeam.SyncTest do
     end
 
     test "will timeout", %{creator: creator, account: account, device: device} do
-      queue = {User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
       {:ok, room_id} = Room.create(creator.user_id)
+
+      memberships_queue = {User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, event_id} = Room.join(room_id, account.user_id)
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])

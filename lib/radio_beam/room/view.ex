@@ -6,53 +6,23 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.InviteStateEvents
-  alias RadioBeam.Room.View.Core.Timeline
+  alias RadioBeam.Room.View.Timeline
   alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Room.View.RelatedEvents
   alias RadioBeam.Room.View.Threads
   alias RadioBeam.User
 
   @type key() :: term()
-  @type t() :: InviteStateEvents.t() | RelatedEvents.t() | Timeline.t()
+  @type t() :: InviteStateEvents.t() | RelatedEvents.t()
 
   def handle_pdu(room_id, state_mapping_at_pdu, %PDU{} = pdu) do
     Core.handle_pdu(room_id, state_mapping_at_pdu, pdu, deps())
   end
 
-  def timeline_event_stream(room_id, user_id, from) do
-    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
-      {:ok, Timeline.topological_stream(timeline, user_id, from, &Room.Chronicle.fetch_pdu!(room.chronicle, &1))}
-    end
-  end
+  def timeline_event_stream(room_id, user_id, from), do: Timeline.stream_user_events(room_id, user_id, from: from)
 
-  def timeline_event_stream!(room_id, user_id, from) do
-    case timeline_event_stream(room_id, user_id, from) do
-      {:ok, stream} -> stream
-      {:error, error} -> raise error
-    end
-  end
-
-  def get_events(room_id, user_id, event_ids, bundle_aggregations? \\ true) do
-    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
-      fetch_pdu! = &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
-      {:ok, Timeline.get_visible_events(timeline, event_ids, user_id, fetch_pdu!, bundle_aggregations?)}
-    end
-  end
-
-  def get_events!(room_id, user_id, event_ids, bundle_aggregations? \\ true) do
-    case get_events(room_id, user_id, event_ids, bundle_aggregations?) do
-      {:ok, event_stream} -> event_stream
-      {:error, error} -> raise error
-    end
-  end
-
-  def nearest_events_stream(room_id, user_id, timestamp, direction) do
-    with {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
-      {:ok, Timeline.stream_event_ids_closest_to_ts(timeline, user_id, timestamp, direction)}
-    end
-  end
+  def get_events(room_id, user_id, event_ids, _bundle_aggregations? \\ true),
+    do: Timeline.map_filter_user_events(room_id, user_id, event_ids)
 
   @doc """
   Get the immediate child events of the given `event_id`s. Returns a map from
@@ -62,21 +32,14 @@ defmodule RadioBeam.Room.View do
   @spec get_child_events(Room.id(), User.id(), [Room.event_id()] | Room.event_id()) ::
           %{Room.event_id() => Enumerable.t(Event.t())} | {:ok, Enumerable.t(Event.t())} | {:error, :not_found}
   def get_child_events(room_id, user_id, event_ids) when is_list(event_ids) do
-    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
-      %RelatedEvents{} = relations = RelatedEvents.fetch!(room_id)
-      fetch_pdu! = &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
+    %RelatedEvents{} = relations = RelatedEvents.fetch!(room_id)
 
-      timeline
-      |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!)
-      |> Stream.map(&{&1.id, Map.get(relations.related_by_event_id, &1.id, MapSet.new())})
-      |> Map.new(fn {parent_event_id, child_event_ids} ->
-        visible_child_event_stream =
-          Timeline.get_visible_events(timeline, child_event_ids, user_id, fetch_pdu!)
-
-        {parent_event_id, visible_child_event_stream}
-      end)
-    end
+    room_id
+    |> Timeline.map_filter_user_events(user_id, event_ids)
+    |> Stream.map(&{&1.id, Map.get(relations.related_by_event_id, &1.id, MapSet.new())})
+    |> Map.new(fn {parent_event_id, child_event_ids} ->
+      {parent_event_id, Timeline.map_filter_user_events(room_id, user_id, child_event_ids)}
+    end)
   end
 
   def get_child_events(room_id, user_id, "$" <> _ = event_id) do
@@ -86,20 +49,14 @@ defmodule RadioBeam.Room.View do
     end
   end
 
-  def get_thread_event_ids(room_id, user_id, include, limit, from)
-      when is_integer(limit) and limit in 0..50 do
-    with {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, %Timeline{} = timeline} <- Database.fetch_view({Timeline, room_id}) do
-      fetch_pdu! = &Room.Chronicle.fetch_pdu!(room.chronicle, &1)
-      event_ids = room_id |> Threads.stream_event_ids() |> drop_until_from(from)
+  def get_thread_event_ids(room_id, user_id, include, limit, from) when is_integer(limit) and limit in 0..50 do
+    event_ids = room_id |> Threads.stream_event_ids() |> drop_until_from(from)
 
-      timeline
-      |> Timeline.get_visible_events(event_ids, user_id, fetch_pdu!, _bundle_aggregations? = true)
-      |> Stream.map(&Event.to_map/1)
-      |> filter_by_include(include)
-      |> Stream.take(limit)
-      |> then(&{:ok, Enum.to_list(&1)})
-    end
+    room_id
+    |> Timeline.map_filter_user_events(user_id, event_ids)
+    |> Stream.map(&Event.to_map/1)
+    |> filter_by_include(include)
+    |> Enum.take(limit)
   end
 
   defp drop_until_from(event_ids, :latest), do: event_ids

@@ -21,14 +21,8 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements do
     end
   end
 
-  defp validate_readable_event(room_id, user_id, event_id) do
-    with {:ok, event_stream} <- View.get_events(room_id, user_id, [event_id], _bundle_aggregates? = false),
-         [event] <- Enum.take(event_stream, 2) do
-      {:ok, event}
-    else
-      _ -> {:error, :not_found}
-    end
-  end
+  defp validate_readable_event(room_id, user_id, event_id),
+    do: View.Timeline.fetch_user_event(room_id, user_id, event_id)
 
   @max_children 100
   defp validate_thread_id_for_event(room_id, user_id, event, "$" <> _ = thread_id) do
@@ -55,7 +49,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements do
   def get_all_receipts(room_id, user_id, since_ts) do
     receipts = Server.get_all_receipts(room_id, user_id, since_ts)
 
-    event_stream = View.get_events!(room_id, user_id, Map.keys(receipts), false)
+    event_stream = View.get_events(room_id, user_id, Map.keys(receipts), false)
     visible_event_ids = Enum.map(event_stream, & &1.id)
 
     Map.take(receipts, visible_event_ids)

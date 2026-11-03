@@ -18,6 +18,8 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.ProcessableEvent
   import RadioBeam.Database.Mnesia.Tables.Room
   import RadioBeam.Database.Mnesia.Tables.RoomAlias
+  import RadioBeam.Database.Mnesia.Tables.RoomTimelineStreamPointer
+  import RadioBeam.Database.Mnesia.Tables.RoomTimestampPointer
   import RadioBeam.Database.Mnesia.Tables.RoomView
   import RadioBeam.Database.Mnesia.Tables.Upload
   import RadioBeam.Database.Mnesia.Tables.UserClientConfig
@@ -48,6 +50,8 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.ProcessableEvent,
     Tables.Room,
     Tables.RoomAlias,
+    Tables.RoomTimelineStreamPointer,
+    Tables.RoomTimestampPointer,
     Tables.RoomView,
     Tables.Upload,
     Tables.UserClientConfig,
@@ -243,6 +247,130 @@ defmodule RadioBeam.Database.Mnesia do
         [room_alias(room_id: room_id)] -> {:ok, room_id}
       end
     end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def upsert_room_timeline_stream_pointer(room_id, stream_number, "$" <> _ = event_id) do
+    transaction(fn ->
+      [room_id_and_stream_number: {room_id, stream_number}, event_id: event_id]
+      |> room_timeline_stream_pointer()
+      |> :mnesia.write()
+    end)
+  end
+
+  @default_chunk_size 50
+  @impl RadioBeam.Room.Database
+  def stream_room_timeline(room_id, opts) do
+    chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)
+    from = Keyword.get(opts, :from, :tip)
+
+    Stream.resource(
+      fn -> {room_id, from} end,
+      fn {room_id, from} ->
+        transactor = fn ->
+          case select_room_timeline_chunk(room_id, from, chunk_size) do
+            {stream_num_and_event_ids, _cont} ->
+              last_stream_num = stream_num_and_event_ids |> List.last() |> elem(0)
+
+              from =
+                case from do
+                  :tip -> {:backward, last_stream_num}
+                  {:backward, _} -> {:backward, last_stream_num}
+                  :root -> {:forward, last_stream_num}
+                  {:forward, _} -> {:forward, last_stream_num}
+                end
+
+              event_ids = Enum.map(stream_num_and_event_ids, fn {_stream_num, event_id} -> event_id end)
+              {event_ids, {room_id, from}}
+
+            :"$end_of_table" ->
+              {:halt, :done}
+          end
+        end
+
+        with {:error, error} <- transaction(transactor) do
+          raise "#{__MODULE__}.stream_room_timeline/2: #{inspect(error)}"
+        end
+      end,
+      fn _ -> :done end
+    )
+  end
+
+  defp select_room_timeline_chunk(room_id, :tip, chunk_size) do
+    match_spec = stream_room_timeline_match_spec(room_id, [])
+    :mnesia.select_reverse(Tables.RoomTimelineStreamPointer, match_spec, chunk_size, :read)
+  end
+
+  defp select_room_timeline_chunk(room_id, :root, chunk_size) do
+    match_spec = stream_room_timeline_match_spec(room_id, [])
+    :mnesia.select(Tables.RoomTimelineStreamPointer, match_spec, chunk_size, :read)
+  end
+
+  defp select_room_timeline_chunk(room_id, {:backward, stream_number}, chunk_size) do
+    match_spec = stream_room_timeline_match_spec(room_id, [{:<, :"$1", stream_number}])
+    :mnesia.select_reverse(Tables.RoomTimelineStreamPointer, match_spec, chunk_size, :read)
+  end
+
+  defp select_room_timeline_chunk(room_id, {:forward, stream_number}, chunk_size) do
+    match_spec = stream_room_timeline_match_spec(room_id, [{:>, :"$1", stream_number}])
+    :mnesia.select(Tables.RoomTimelineStreamPointer, match_spec, chunk_size, :read)
+  end
+
+  defp stream_room_timeline_match_spec(room_id, guards) do
+    match_head = room_timeline_stream_pointer(room_id_and_stream_number: {room_id, :"$1"}, event_id: :"$2")
+    [{match_head, guards, [{{:"$1", :"$2"}}]}]
+  end
+
+  @impl RadioBeam.Room.Database
+  def upsert_room_timestamp_pointer(room_id, timestamp, event_id) do
+    transaction(fn ->
+      [room_id_and_timestamp: {room_id, timestamp}, event_id: event_id]
+      |> room_timestamp_pointer()
+      |> :mnesia.write()
+    end)
+  end
+
+  @impl RadioBeam.Room.Database
+  def stream_room_event_ids_from_timestamp(room_id, timestamp, direction, opts \\ []) do
+    chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)
+
+    Stream.resource(
+      fn -> {room_id, timestamp} end,
+      fn {room_id, timestamp} ->
+        transactor = fn ->
+          case select_room_timestamp_chunk(room_id, timestamp, direction, chunk_size) do
+            {timestamps_and_event_ids, _cont} ->
+              last_timestamp = timestamps_and_event_ids |> List.last() |> elem(0)
+              event_ids = Enum.map(timestamps_and_event_ids, fn {_timestamp, event_id} -> event_id end)
+
+              {event_ids, {room_id, last_timestamp}}
+
+            :"$end_of_table" ->
+              {:halt, :done}
+          end
+        end
+
+        with {:error, error} <- transaction(transactor) do
+          raise "#{__MODULE__}.stream_room_event_ids_from_timestamp/3,4: #{inspect(error)}"
+        end
+      end,
+      fn _ -> :done end
+    )
+  end
+
+  defp select_room_timestamp_chunk(room_id, timestamp, :backward, chunk_size) do
+    guards = stream_room_timestamp_match_spec(room_id, [{:<, :"$1", timestamp}])
+    :mnesia.select_reverse(Tables.RoomTimestampPointer, guards, chunk_size, :read)
+  end
+
+  defp select_room_timestamp_chunk(room_id, timestamp, :forward, chunk_size) do
+    guards = stream_room_timestamp_match_spec(room_id, [{:>, :"$1", timestamp}])
+    :mnesia.select(Tables.RoomTimestampPointer, guards, chunk_size, :read)
+  end
+
+  defp stream_room_timestamp_match_spec(room_id, guards) do
+    match_head = room_timestamp_pointer(room_id_and_timestamp: {room_id, :"$1"}, event_id: :"$2")
+    [{match_head, guards, [{{:"$1", :"$2"}}]}]
   end
 
   @impl RadioBeam.ContentRepo.Database
@@ -548,15 +676,24 @@ defmodule RadioBeam.Database.Mnesia do
         [] ->
           {:error, :not_found}
 
-        [user_room_memberships(user_id: ^user_id, room_ids_to_membership: room_ids_to_membership)] ->
-          {:ok, %RoomMemberships{room_ids_to_membership: room_ids_to_membership}}
+        [user_room_memberships(user_id: ^user_id) = record] ->
+          {:ok,
+           %RoomMemberships{
+             room_ids_to_membership: user_room_memberships(record, :room_ids_to_membership),
+             room_ids_to_latest_stream_num: user_room_memberships(record, :room_ids_to_latest_stream_num)
+           }}
       end
     end)
   end
 
   @impl RadioBeam.User.Database
   def upsert_user_room_memberships(user_id, %RoomMemberships{} = memberships) do
-    record = user_room_memberships(user_id: user_id, room_ids_to_membership: memberships.room_ids_to_membership)
+    record =
+      user_room_memberships(
+        user_id: user_id,
+        room_ids_to_membership: memberships.room_ids_to_membership,
+        room_ids_to_latest_stream_num: memberships.room_ids_to_latest_stream_num
+      )
 
     transaction(fn -> :mnesia.write(Tables.UserRoomMemberships, record, :write) end)
   end

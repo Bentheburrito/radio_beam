@@ -49,7 +49,7 @@ defmodule RadioBeam.User.CrossSigningKeyRing do
              master: master_key,
              self: self_signing_key,
              user: user_signing_key,
-             last_cross_signing_change_at: System.os_time(:millisecond)
+             last_cross_signing_change_at: RadioBeam.Time.now()
            }}
       end
     end

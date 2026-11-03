@@ -4,7 +4,7 @@ defmodule RadioBeam.RoomTest do
   import ExUnit.CaptureLog, only: [capture_log: 1]
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.View.Timeline
   alias RadioBeam.RoomRegistry
 
   @room_versions_to_test Map.keys(RadioBeam.Config.supported_room_versions())
@@ -444,12 +444,17 @@ defmodule RadioBeam.RoomTest do
       content = %{"msgtype" => "m.text", "body" => "yoOOOOOOOOO"}
       {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, child_id} =
         Room.send(room_id, creator.user_id, "m.room.message", %{
           "msgtype" => "m.text",
           "body" => "Yoooooooo (in a thread)",
           "m.relates_to" => %{"event_id" => event_id, "rel_type" => "m.thread"}
         })
+
+      Fixtures.assert_caught_up_to_event(queue, child_id)
 
       assert {:ok, %{id: ^event_id, bundled_events: [%{id: ^child_id}]}} =
                Room.get_event(room_id, account.user_id, event_id)
@@ -493,6 +498,9 @@ defmodule RadioBeam.RoomTest do
       {:ok, room_id} = Room.create(creator.user_id, preset: :private_chat)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
 
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       content = %{"msgtype" => "m.text", "body" => "I hope my friend joins soon"}
       {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
 
@@ -502,7 +510,9 @@ defmodule RadioBeam.RoomTest do
 
       content = %{"msgtype" => "m.text", "body" => "yoooo I'm here now"}
       {:ok, _event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
-      {:ok, _event_id} = Room.leave(room_id, account.user_id, "nvm gtg")
+      {:ok, leave_event_id} = Room.leave(room_id, account.user_id, "nvm gtg")
+
+      Fixtures.assert_caught_up_to_event(queue, leave_event_id)
 
       assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
 
@@ -510,7 +520,9 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.join(room_id, account.user_id, "ok")
       content = %{"msgtype" => "m.text", "body" => "I'm back"}
       {:ok, event_id2} = Room.send(room_id, account.user_id, "m.room.message", content)
-      {:ok, _event_id} = Room.leave(room_id, account.user_id, "jk lmao")
+      {:ok, leave_event_id} = Room.leave(room_id, account.user_id, "jk lmao")
+
+      Fixtures.assert_caught_up_to_event(queue, leave_event_id)
 
       assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
       assert {:ok, %{id: ^event_id2}} = Room.get_event(room_id, account.user_id, event_id2)
@@ -762,8 +774,17 @@ defmodule RadioBeam.RoomTest do
       account2: account2
     } do
       {:ok, room_id} = Room.create(creator.user_id)
+
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+      memberships_queue = {RadioBeam.User.RoomMemberships, account2.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
-      {:ok, _event_id} = Room.join(room_id, account2.user_id)
+      {:ok, event_id} = Room.join(room_id, account2.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
 
       assert {:ok, state_event_stream} = Room.get_state(room_id, account2.user_id)
       assert 7 = Enum.count(state_event_stream)
@@ -826,8 +847,16 @@ defmodule RadioBeam.RoomTest do
     } do
       topic = "There are monsters on this world"
       {:ok, room_id} = Room.create(creator.user_id, topic: topic)
+      memberships_queue = {RadioBeam.User.RoomMemberships, account2.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
-      {:ok, _event_id} = Room.join(room_id, account2.user_id)
+      {:ok, event_id} = Room.join(room_id, account2.user_id)
+
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert {:ok, %{content: %{"topic" => ^topic}} = event} =
                Room.get_state(room_id, account2.user_id, "m.room.topic", "")
@@ -851,7 +880,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, room_id} = Room.create(creator_id, addl_state_events: [history_visibility_event("joined")])
       {:ok, parent_id} = Room.send_text_message(room_id, creator_id, "a new room!")
 
-      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+      Fixtures.listen_to_queue_messages({Timeline, room_id})
 
       {:ok, eid1} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello"))
       {:ok, eid2} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "hello?"))
@@ -860,7 +889,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, eid5} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "I'll just talk to myself"))
       {:ok, eid6} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "..."))
 
-      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, eid6)
+      Fixtures.assert_caught_up_to_event({Timeline, room_id}, eid6)
 
       %{
         creator_id: creator_id,
@@ -996,11 +1025,11 @@ defmodule RadioBeam.RoomTest do
       {:ok, _eid2_user_cant_see} =
         Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, "oh...bye...friend"))
 
-      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+      Fixtures.listen_to_queue_messages({Timeline, room_id})
 
       {:ok, eid3} = Room.send(room_id, creator_id, "m.room.message", relates_to(parent_id, ":("))
 
-      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, eid3)
+      Fixtures.assert_caught_up_to_event({Timeline, room_id}, eid3)
 
       assert {:ok, [%{id: ^eid1}], 1} =
                Room.get_children(room_id, user_id, parent_id, 3, from: eid3, order: :chronological)
@@ -1017,6 +1046,8 @@ defmodule RadioBeam.RoomTest do
 
       queue = {RadioBeam.Room.View.Threads, room_id}
       Fixtures.listen_to_queue_messages(queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id, account1.user_id, account2.user_id)
       {:ok, _event_id} = Room.invite(room_id, account1.user_id, account3.user_id)
@@ -1027,13 +1058,16 @@ defmodule RadioBeam.RoomTest do
       {:ok, _} = Room.send(room_id, user_id2, "m.room.message", relates_to(thread_id1, "I'll be down in a minute"))
       {:ok, _} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id1, "oki"))
       {:ok, event_id} = Room.send(room_id, user_id3, "m.room.message", relates_to(thread_id1, "omw now"))
+
       Fixtures.assert_caught_up_to_event(queue, event_id)
 
       {:ok, _non_thread} = Room.send_text_message(room_id, user_id2, "reminder to bring a jacket, it's cold")
 
       {:ok, thread_id2} = Room.send_text_message(room_id, user_id2, "let's plan to leave by midnight btw")
       {:ok, event_id} = Room.send(room_id, user_id, "m.room.message", relates_to(thread_id2, "sounds good"))
+
       Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       %{
         room_id: room_id,
@@ -1108,10 +1142,6 @@ defmodule RadioBeam.RoomTest do
       assert thread_id5 in thread_ids
 
       assert {:ok, [], :end} = Room.get_thread_event_ids(room_id, user_id, :all, 2, from3)
-    end
-
-    test "returns {:error, :not_found} when the room doesn't exist", %{account1: %{user_id: user_id}} do
-      assert {:error, :not_found} = Room.get_thread_event_ids("!asdfasdf123", user_id, :all, 4)
     end
   end
 

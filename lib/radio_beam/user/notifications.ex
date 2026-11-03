@@ -5,6 +5,8 @@ defmodule RadioBeam.User.Notifications do
   @behaviour RadioBeam.EventHandler
 
   alias RadioBeam.Room
+  alias RadioBeam.Room.PDU
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.Time
   alias RadioBeam.User
   alias RadioBeam.User.Database
@@ -74,13 +76,14 @@ defmodule RadioBeam.User.Notifications do
   end
 
   @impl RadioBeam.EventHandler
-  def handle_pdu(%{event: %{room_id: room_id, id: event_id, sender: sender_id}}, _) do
-    with {:ok, joined_member_events} <- Room.get_members(room_id, sender_id, event_id, &(&1 == "join")) do
-      for %{state_key: user_id} <- joined_member_events,
+  def handle_pdu(%PDU{event: %{room_id: room_id, id: event_id, sender: sender_id}} = pdu) do
+    with joined_members <- Room.all_joined_members(room_id, event_id) do
+      for user_id <- joined_members,
           # do not notify users of events their own events
           user_id != sender_id,
-          {:ok, %RuleSet{} = rule_set} <- [User.get_global_rule_set(user_id)],
-          {:ok, event} <- [Room.get_event(room_id, user_id, event_id, _bundle? = false)] do
+          {:ok, %RuleSet{} = rule_set} <- [User.get_global_rule_set(user_id)] do
+        event = Event.new!(pdu, [], user_id)
+
         rule_set
         |> RuleSet.evaluate_event(event)
         |> perform_actions(room_id, event, user_id)

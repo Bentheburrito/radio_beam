@@ -7,7 +7,7 @@ defmodule RadioBeam.Room.Timeline do
   alias RadioBeam.Room
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
@@ -27,14 +27,14 @@ defmodule RadioBeam.Room.Timeline do
   def get_messages(room_id, user_id, device_id, from, opts \\ []) do
     with :ok <- check_membership(room_id, user_id),
          {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, user_event_stream} <- Room.View.timeline_event_stream(room.id, user_id, from) do
+         {:ok, from} <- map_from(from, room_id) do
+      user_event_stream = Room.View.timeline_event_stream(room.id, user_id, from)
       direction = dir_of_from(from)
       %{filter: filter, ignored_user_ids: ignored_user_ids} = get_user_timeline_preferences(user_id, opts)
 
       maybe_to_event =
         with "$" <> _ = to_event_id <- Keyword.get(opts, :to, :none),
-             {:ok, to_event_stream} <- Room.View.get_events(room.id, user_id, [to_event_id]),
-             [to_event] <- Enum.take(to_event_stream, 1) do
+             {:ok, to_event} <- Room.View.Timeline.fetch_user_event(room.id, user_id, to_event_id) do
           to_event
         else
           _ -> :none
@@ -43,15 +43,15 @@ defmodule RadioBeam.Room.Timeline do
       not_passed_to =
         cond do
           maybe_to_event == :none -> fn _ -> true end
-          direction == :forward -> &(TopologicalID.compare(&1.order_id, maybe_to_event.order_id) != :gt)
-          direction == :backward -> &(TopologicalID.compare(&1.order_id, maybe_to_event.order_id) != :lt)
+          direction == :forward -> &(Event.compare(&1, maybe_to_event) != :gt)
+          direction == :backward -> &(Event.compare(&1, maybe_to_event) != :lt)
         end
 
-      num_to_drop = if from in ~w|tip root|a, do: 0, else: 1
+      # num_to_drop = if from in ~w|tip root|a, do: 0, else: 1
 
       {timeline_events, maybe_next_event_id} =
         user_event_stream
-        |> Stream.drop(num_to_drop)
+        # |> Stream.drop(num_to_drop)
         |> Stream.filter(&allow_event_for_user?(&1, filter, ignored_user_ids, maybe_to_event))
         |> Stream.take(filter.timeline.limit)
         |> Stream.take_while(not_passed_to)
@@ -74,6 +74,15 @@ defmodule RadioBeam.Room.Timeline do
     end
   end
 
+  defp map_from({dir, event_id}, room_id) do
+    case Room.fetch_pdu(room_id, event_id) do
+      {:ok, %{stream_number: stream_number}} -> {:ok, {dir, stream_number}}
+      _else -> {:error, :from_not_found}
+    end
+  end
+
+  defp map_from(from, _room_id) when from in ~w|root tip|a, do: {:ok, from}
+
   def allow_event_for_user?(event, filter, ignored_user_ids, %{id: to_event_id}),
     do: allow_event_for_user?(event, filter, ignored_user_ids, to_event_id)
 
@@ -90,7 +99,7 @@ defmodule RadioBeam.Room.Timeline do
 
   defp dir_of_from(:root), do: :forward
   defp dir_of_from(:tip), do: :backward
-  defp dir_of_from({_event_id, direction}), do: direction
+  defp dir_of_from({direction, _event_id}), do: direction
 
   defp get_user_timeline_preferences(user_id, opts) do
     maybe_filter_or_filter_id = Keyword.get(opts, :filter, :none)
@@ -117,14 +126,13 @@ defmodule RadioBeam.Room.Timeline do
         event_id
       end)
 
-    Room.View.get_events!(room.id, user_id, state_event_ids)
+    Room.View.get_events(room.id, user_id, state_event_ids)
   end
 
   def get_context(room_id, user_id, device_id, event_id, opts) do
-    with {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [event_id], true),
-         {:ok, prev_events, prev_end, _} <- get_messages(room_id, user_id, device_id, {event_id, :backward}, opts),
-         {:ok, next_events, next_end, _} <- get_messages(room_id, user_id, device_id, {event_id, :forward}, opts) do
-      [event] = Enum.take(event_stream, 1)
+    with {:ok, event} <- Room.View.Timeline.fetch_user_event(room_id, user_id, event_id),
+         {:ok, prev_events, prev_end, _} <- get_messages(room_id, user_id, device_id, {:backward, event_id}, opts),
+         {:ok, next_events, next_end, _} <- get_messages(room_id, user_id, device_id, {:forward, event_id}, opts) do
       {:ok, event, prev_events, prev_end, next_events, next_end}
     end
   end

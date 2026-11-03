@@ -67,9 +67,13 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
       add_device_keys(creator_id)
 
       [room_id] = creator_id |> RoomMemberships.joined() |> Enum.to_list()
-      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "yo")
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
 
-      next_batch = :millisecond |> System.os_time() |> Kernel.+(1) |> NextBatch.new!(%{room_id => event_id})
+      {:ok, event_id} = Room.send_text_message(room_id, creator_id, "yo")
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      next_batch = RadioBeam.Time.now() |> Kernel.+(1) |> NextBatch.new!(%{room_id => event_id})
 
       task =
         Task.async(fn ->
@@ -81,7 +85,8 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))
 
-      {:ok, _event_id} = Room.leave(room_id, creator_id)
+      {:ok, event_id} = Room.leave(room_id, creator_id)
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert {:ok, %{changed: [], left: [^creator_id]}, nil} = Task.await(task)
 
@@ -89,7 +94,7 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
       {:ok, event_id} = Room.invite(room_id, inputs.user_id, creator_id)
       {:ok, _event_id} = Room.join(room_id, creator_id)
 
-      next_batch = :millisecond |> System.os_time() |> Kernel.+(1) |> NextBatch.new!(%{room_id => event_id})
+      next_batch = RadioBeam.Time.now() |> Kernel.+(1) |> NextBatch.new!(%{room_id => event_id})
 
       task =
         Task.async(fn ->
@@ -105,6 +110,8 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
   defp add_to_new_room(user_id) do
     %{user_id: creator_id} = Fixtures.create_account()
 
+    creator_queue = {RadioBeam.User.RoomMemberships, creator_id}
+    Fixtures.listen_to_queue_messages(creator_queue)
     queue = {RadioBeam.User.RoomMemberships, user_id}
     Fixtures.listen_to_queue_messages(queue)
 
@@ -112,6 +119,7 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
     {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
     {:ok, event_id} = Room.join(room_id, user_id)
 
+    Fixtures.assert_processed_count(creator_queue, 1)
     Fixtures.assert_caught_up_to_event(queue, event_id)
 
     creator_id

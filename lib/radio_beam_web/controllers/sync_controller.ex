@@ -64,7 +64,7 @@ defmodule RadioBeamWeb.SyncController do
 
   defp parse_from_event_id({:ok, from}, room_id, dir) do
     case Sync.parse_event_id_at(from, room_id) do
-      {:ok, event_id} -> {event_id, dir}
+      {:ok, event_id} -> {dir, event_id}
       {:error, :not_found} -> if dir == :forward, do: :root, else: :tip
     end
   end

@@ -2,9 +2,13 @@ defmodule RadioBeam.EventHandler.State do
   @moduledoc """
   This module contains the logic of an EventHandler and its internal state.
   """
+  import IO.ANSI, only: [red: 0, yellow: 0]
+
   alias RadioBeam.Database
   alias RadioBeam.PubSub
   alias RadioBeam.Room.PDU
+
+  require Logger
 
   @attrs ~w|queue callback_mod latest_processed_event_number disposition|a
   @enforce_keys @attrs
@@ -23,13 +27,22 @@ defmodule RadioBeam.EventHandler.State do
   end
 
   defp handle_pdu(%__MODULE__{} = state, pdu) do
-    # TODO
-    get_state_at_pdu = fn -> %{} end
-
-    case state.callback_mod.handle_pdu(pdu, get_state_at_pdu) do
+    case state.callback_mod.handle_pdu(pdu) do
       :ok -> {:ok, put_in(state.disposition, :good)}
+      :error -> {:error, put_failing_disposition(state)}
       {:error, :retry} -> {:error, put_failing_disposition(state)}
+      {:error, error} -> fatal_error(state, pdu, error)
     end
+  end
+
+  defp fatal_error(state, pdu, error) do
+    Logger.error("""
+    FATAL #{inspect(__MODULE__)} ERROR (callback_mod: #{yellow()}#{inspect(state.callback_mod)}#{red()}, queue: #{yellow()}#{inspect(state.queue)}#{red()}):
+      Failed to handle %PDU{event: %{id: #{pdu.event.id}, room_id: #{pdu.event.room_id}}}
+      #{inspect(error)}
+    """)
+
+    {:error, put_failing_disposition(state)}
   end
 
   defp put_failing_disposition(%__MODULE__{} = state) do
@@ -75,7 +88,7 @@ defmodule RadioBeam.EventHandler.State do
   def validate_queue(queue_tuple) when is_tuple(queue_tuple), do: queue_tuple |> elem(0) |> validate_queue()
 
   def validate_queue(module) when is_atom(module) do
-    if Code.ensure_loaded?(module) and function_exported?(module, :handle_pdu, 2) and
+    if Code.ensure_loaded?(module) and function_exported?(module, :handle_pdu, 1) and
          function_exported?(module, :reset_to, 1),
        do: :ok,
        else: {:error, :invalid_queue}

@@ -46,14 +46,10 @@ defmodule RadioBeam.Sync do
 
   @default_dir :forward
   def new_batch_token_for(room_id, event_id, dir \\ @default_dir) do
-    :millisecond
-    |> System.os_time()
-    |> NextBatch.new!(%{room_id => event_id}, dir)
+    NextBatch.new!(RadioBeam.Time.now(), %{room_id => event_id}, dir)
   end
 
   def new_batch_token do
-    :millisecond
-    |> System.os_time()
-    |> NextBatch.new!(%{}, @default_dir)
+    NextBatch.new!(RadioBeam.Time.now(), %{}, @default_dir)
   end
 end

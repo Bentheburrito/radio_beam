@@ -162,8 +162,7 @@ defmodule RadioBeam.User.KeyStore do
       room_ids
       |> Stream.map(fn room_id ->
         with {:ok, "$" <> _ = since_event_id} <- fetch_last_seen_event_id.(room_id),
-             {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [since_event_id]),
-             [since_event] <- Enum.take(event_stream, 1) do
+             {:ok, since_event} <- Room.View.Timeline.fetch_user_event(room_id, user_id, since_event_id) do
           {room_id, since_event}
         else
           _ -> nil

@@ -4,7 +4,6 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
   alias RadioBeam.User.EventFilter
   alias RadioBeam.Room
   alias RadioBeam.Room.View.Core.Timeline.Event
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   defstruct ~w|
     room_id
@@ -71,7 +70,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
       timeline_events =
         if EventFilter.allow_timeline_in_room?(filter, room.id) do
           timeline_events
-          |> Enum.sort_by(& &1.order_id, {:asc, TopologicalID})
+          |> Enum.sort({:asc, Event})
           |> remove_bundled_from_timeline()
           |> Enum.to_list()
         else

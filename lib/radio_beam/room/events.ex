@@ -33,7 +33,7 @@ defmodule RadioBeam.Room.Events do
       "room_id" => room_id,
       "sender" => sender_id,
       "content" => content,
-      "origin_server_ts" => System.os_time(:millisecond)
+      "origin_server_ts" => RadioBeam.Time.now()
     }
   end
 

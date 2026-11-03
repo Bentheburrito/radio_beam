@@ -5,12 +5,8 @@ defmodule RadioBeam.Room.View.Core do
   """
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.View.Core.InviteStateEvents
-  alias RadioBeam.Room.View.Core.Timeline
 
-  @views [
-    InviteStateEvents,
-    Timeline
-  ]
+  @views [InviteStateEvents]
 
   def handle_pdu(room_id, state_mapping_at_pdu, %PDU{} = pdu, deps) do
     %{fetch_view: fetch_view, save_view!: save_view!, broadcast!: broadcast!} = deps

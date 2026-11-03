@@ -115,7 +115,12 @@ defmodule RadioBeam.AdminTest do
 
       Fixtures.assert_caught_up_to_event(queue, event_id)
 
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, event_id} = Room.send_text_message(room_id, creator_id, "pancakes > waffles")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert {:ok, %UserGeneratedReport{} = report} = Admin.report_room_event(room_id, event_id, reporter_id, "wrong")
       assert [^report] = Enum.filter(Admin.all_reports(), &(&1.target == {room_id, event_id}))

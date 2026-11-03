@@ -2,7 +2,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
   use RadioBeamWeb.ConnCase, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.View.Timeline
   alias RadioBeam.Sync.NextBatch
 
   describe "create/2" do
@@ -536,7 +536,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "hi hi hello")
 
       batch_token_string =
-        :millisecond |> System.os_time() |> NextBatch.new!(%{room_id => event_id}, :forward) |> to_string()
+        RadioBeam.Time.now() |> NextBatch.new!(%{room_id => event_id}, :forward) |> to_string()
 
       account2 = Fixtures.create_account()
       {:ok, _event_id} = Room.invite(room_id, account.user_id, account2.user_id)
@@ -754,9 +754,15 @@ defmodule RadioBeamWeb.RoomControllerTest do
   describe "get_nearest_event/2" do
     test "returns a temporally suitable event (200)", %{conn: conn, account: account} do
       {:ok, room_id} = Room.create(account.user_id)
+
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "heyo")
 
-      query_params = %{dir: "b", ts: System.os_time(:millisecond)}
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      query_params = %{dir: "b", ts: RadioBeam.Time.now()}
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/timestamp_to_event?#{query_params}", %{})
       assert %{"event_id" => ^event_id} = json_response(conn, 200)
@@ -770,7 +776,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
       Process.sleep(25)
 
-      query_params = %{dir: "f", ts: :os.system_time(:millisecond)}
+      query_params = %{dir: "f", ts: RadioBeam.Time.now()}
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/timestamp_to_event?#{query_params}", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
@@ -780,14 +786,14 @@ defmodule RadioBeamWeb.RoomControllerTest do
       account = Fixtures.create_account()
       {:ok, room_id} = Room.create(account.user_id)
 
-      query_params = %{dir: "f", ts: :os.system_time(:millisecond)}
+      query_params = %{dir: "f", ts: RadioBeam.Time.now()}
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/timestamp_to_event?#{query_params}", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
 
     test "returns an M_NOT_FOUND (404) error when the room doesn't exist", %{conn: conn} do
-      query_params = %{dir: "b", ts: :os.system_time(:millisecond)}
+      query_params = %{dir: "b", ts: RadioBeam.Time.now()}
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/!lmao:localhost/timestamp_to_event?#{query_params}", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
@@ -797,11 +803,17 @@ defmodule RadioBeamWeb.RoomControllerTest do
   describe "get_event_context/2" do
     test "returns event context", %{conn: conn, account: %{user_id: user_id}} do
       {:ok, room_id} = Room.create(user_id)
+
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, eid1} = Room.send_text_message(room_id, user_id, "testing 123")
       {:ok, eid2} = Room.send_text_message(room_id, user_id, "wow it works")
       {:ok, eid3} = Room.send_text_message(room_id, user_id, "I wonder if I should invite someone")
       {:ok, eid4} = Room.send_text_message(room_id, user_id, "...")
       {:ok, eid5} = Room.send_text_message(room_id, user_id, "nahhhhh")
+
+      Fixtures.assert_caught_up_to_event(queue, eid5)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/context/#{eid4}", %{})
 
@@ -822,11 +834,17 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
     test "returns event context, applying the limit in the given filter", %{conn: conn, account: %{user_id: user_id}} do
       {:ok, room_id} = Room.create(user_id)
+
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, eid1} = Room.send_text_message(room_id, user_id, "testing 123")
       {:ok, eid2} = Room.send_text_message(room_id, user_id, "wow it works")
       {:ok, eid3} = Room.send_text_message(room_id, user_id, "I wonder if I should invite someone")
       {:ok, eid4} = Room.send_text_message(room_id, user_id, "...")
       {:ok, eid5} = Room.send_text_message(room_id, user_id, "nahhhhh")
+
+      Fixtures.assert_caught_up_to_event(queue, eid5)
 
       filter = JSON.encode!(%{"limit" => 2})
 
@@ -926,7 +944,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
     test "returns an empty object (200) for a threaded reply", %{conn: conn, account: account} do
       {:ok, room_id} = Room.create(account.user_id)
-      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+      Fixtures.listen_to_queue_messages({Timeline, room_id})
 
       {:ok, thread_id} = Room.send_text_message(room_id, account.user_id, "helloo")
 
@@ -936,7 +954,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
           "m.relates_to" => %{"rel_type" => "m.thread", "event_id" => thread_id}
         })
 
-      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, event_id)
+      Fixtures.assert_caught_up_to_event({Timeline, room_id}, event_id)
 
       for type <- ~w|m.read m.read.private| do
         conn = post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/receipt/#{type}/#{event_id}", %{thread_id: thread_id})
@@ -985,12 +1003,12 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "returns M_BAD_JSON (400) when the thread_id does not point to a thread root", %{conn: conn, account: account} do
       {:ok, room_id} = Room.create(account.user_id)
 
-      Fixtures.listen_to_queue_messages({RelatedEvents, room_id})
+      Fixtures.listen_to_queue_messages({Timeline, room_id})
 
       {:ok, not_a_thread_id} = Room.send_text_message(room_id, account.user_id, "helloo")
       {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "helloo")
 
-      Fixtures.assert_caught_up_to_event({RelatedEvents, room_id}, event_id)
+      Fixtures.assert_caught_up_to_event({Timeline, room_id}, event_id)
 
       for type <- ~w|m.read m.read.private| do
         conn =

@@ -7,7 +7,7 @@ defmodule RadioBeam.User.RoomMemberships do
   alias RadioBeam.User.Database
   alias RadioBeam.Room.PDU
 
-  defstruct room_ids_to_membership: %{}
+  defstruct room_ids_to_membership: %{}, room_ids_to_latest_stream_num: %{}
   @type t() :: %__MODULE__{}
 
   def new!, do: %__MODULE__{}
@@ -33,6 +33,11 @@ defmodule RadioBeam.User.RoomMemberships do
     for {room_id, membership} when membership in ~w|join leave| <- memberships.room_ids_to_membership, do: room_id
   end
 
+  def latest_join_stream_number(room_id, user_id) do
+    %__MODULE__{} = memberships = fetch!(user_id)
+    Map.get(memberships.room_ids_to_latest_stream_num, room_id, 0)
+  end
+
   @doc """
   Returns `true` if the given user has any kind of `m.room.member` event in
   `room_id`.
@@ -54,16 +59,23 @@ defmodule RadioBeam.User.RoomMemberships do
   end
 
   @impl RadioBeam.EventHandler
-  def handle_pdu(%PDU{event: %{type: "m.room.member", state_key: "@" <> _}} = pdu, _) do
+  def handle_pdu(%PDU{event: %{type: "m.room.member", state_key: "@" <> _}} = pdu) do
     user_id = pdu.event.state_key
     memberships = fetch!(user_id)
 
     memberships = put_in(memberships.room_ids_to_membership[pdu.event.room_id], pdu.event.content["membership"])
 
+    memberships =
+      if pdu.event.content["membership"] == "join" do
+        put_in(memberships.room_ids_to_latest_stream_num[pdu.event.room_id], pdu.stream_number)
+      else
+        memberships
+      end
+
     Database.upsert_user_room_memberships(user_id, memberships)
   end
 
-  def handle_pdu(%PDU{}, _), do: :ok
+  def handle_pdu(%PDU{}), do: :ok
 
   @impl RadioBeam.EventHandler
   # depending on how far back the EventHandler is telling us to reset to, the

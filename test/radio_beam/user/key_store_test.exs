@@ -142,7 +142,7 @@ defmodule RadioBeam.User.KeyStoreTest do
     @empty MapSet.new()
     test "returns an empty changed/left lists if the user is in no/empty rooms" do
       account = Fixtures.create_account()
-      since_now = System.os_time(:millisecond)
+      since_now = RadioBeam.Time.now()
 
       assert %{changed: @empty, left: @empty} =
                KeyStore.all_changed_since(account.user_id, &always_not_found/1, since_now)
@@ -155,7 +155,7 @@ defmodule RadioBeam.User.KeyStoreTest do
     end
 
     test "does not include user's own key updates in changed" do
-      before_update = System.os_time(:millisecond)
+      before_update = RadioBeam.Time.now()
 
       account = Fixtures.create_account()
       device = Fixtures.create_device(account.user_id)
@@ -180,7 +180,7 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       Process.sleep(1)
 
-      before_account1_change = System.os_time(:millisecond)
+      before_account1_change = RadioBeam.Time.now()
       fetcher = fetcher(%{room_id => event_id})
 
       Process.sleep(1)
@@ -189,7 +189,7 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       Process.sleep(1)
 
-      after_account1_change = System.os_time(:millisecond)
+      after_account1_change = RadioBeam.Time.now()
 
       Process.sleep(1)
 
@@ -204,7 +204,7 @@ defmodule RadioBeam.User.KeyStoreTest do
       Process.sleep(1)
 
       Fixtures.create_and_put_device_keys(account2.user_id, account2_device.id)
-      after_account2_change = System.os_time(:millisecond)
+      after_account2_change = RadioBeam.Time.now()
 
       expected = MapSet.new([account1_id, account2_id])
 
@@ -232,12 +232,12 @@ defmodule RadioBeam.User.KeyStoreTest do
       Fixtures.create_and_put_device_keys(account1.user_id, account1_device.id)
       Fixtures.create_and_put_device_keys(account2.user_id, account2_device.id)
 
-      before_account1_join = System.os_time(:millisecond)
+      before_account1_join = RadioBeam.Time.now()
       before_account1_join_fetcher = fetcher(%{room_id => last_event_id})
 
       {:ok, event_id} = Room.join(room_id, account1.user_id)
 
-      after_account1_join = System.os_time(:millisecond)
+      after_account1_join = RadioBeam.Time.now()
       after_account1_join_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id])
@@ -250,7 +250,7 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       {:ok, event_id} = Room.join(room_id, account2.user_id)
 
-      after_account2_join = System.os_time(:millisecond)
+      after_account2_join = RadioBeam.Time.now()
       after_account2_join_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id, account2_id])
@@ -274,7 +274,7 @@ defmodule RadioBeam.User.KeyStoreTest do
       account2: account2,
       account1_device: account1_device
     } do
-      before_account1_change = System.os_time(:millisecond)
+      before_account1_change = RadioBeam.Time.now()
       before_account1_change_fetcher = fetcher(%{room_id => last_event_id})
 
       {:ok, _} = Room.join(room_id, account1.user_id)
@@ -306,12 +306,12 @@ defmodule RadioBeam.User.KeyStoreTest do
       {:ok, _} = Room.join(room_id, account1.user_id)
       {:ok, event_id} = Room.join(room_id, account2.user_id)
 
-      before_account1_leave = System.os_time(:millisecond)
+      before_account1_leave = RadioBeam.Time.now()
       before_account1_leave_fetcher = fetcher(%{room_id => event_id})
 
       {:ok, event_id} = Room.leave(room_id, account1.user_id)
 
-      after_account1_leave = System.os_time(:millisecond)
+      after_account1_leave = RadioBeam.Time.now()
       after_account1_leave_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id])
@@ -324,7 +324,7 @@ defmodule RadioBeam.User.KeyStoreTest do
 
       {:ok, event_id} = Room.leave(room_id, account2.user_id)
 
-      after_account2_leave = System.os_time(:millisecond)
+      after_account2_leave = RadioBeam.Time.now()
       after_account2_leave_fetcher = fetcher(%{room_id => event_id})
 
       expected = MapSet.new([account1_id, account2_id])
@@ -359,13 +359,13 @@ defmodule RadioBeam.User.KeyStoreTest do
       {:ok, _} = Room.invite(room_id2, creator.user_id, account1.user_id)
       {:ok, event_id2} = Room.join(room_id2, account1.user_id)
 
-      before_leave = System.os_time(:millisecond)
+      before_leave = RadioBeam.Time.now()
       before_leave_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
 
       {:ok, _} = Room.leave(room_id, account1.user_id)
       {:ok, event_id} = Room.leave(room_id, account2.user_id)
 
-      after_leave = System.os_time(:millisecond)
+      after_leave = RadioBeam.Time.now()
       after_leave_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
 
       expected = MapSet.new([account2_id])
@@ -376,7 +376,7 @@ defmodule RadioBeam.User.KeyStoreTest do
       assert %{changed: @empty, left: @empty} =
                KeyStore.all_changed_since(creator.user_id, after_leave_fetcher, after_leave)
 
-      before_leave2 = System.os_time(:millisecond)
+      before_leave2 = RadioBeam.Time.now()
       before_leave2_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
 
       {:ok, _event_id} = Room.leave(room_id2, account1.user_id)
@@ -399,11 +399,11 @@ defmodule RadioBeam.User.KeyStoreTest do
       {:ok, _} = Room.invite(room_id2, creator.user_id, account1.user_id)
       {:ok, _} = Room.join(room_id2, account1.user_id)
 
-      before_account1_join = System.os_time(:millisecond)
+      before_account1_join = RadioBeam.Time.now()
 
       {:ok, _} = Room.join(room_id, account1.user_id)
 
-      after_account1_join = System.os_time(:millisecond)
+      after_account1_join = RadioBeam.Time.now()
 
       assert %{changed: @empty, left: @empty} =
                KeyStore.all_changed_since(creator.user_id, &always_not_found/1, before_account1_join)

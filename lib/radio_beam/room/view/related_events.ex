@@ -3,8 +3,6 @@ defmodule RadioBeam.Room.View.RelatedEvents do
   Tracks related events as defined by `content.m.relates_to`
   """
 
-  @behaviour RadioBeam.EventHandler
-
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.PDU
 
@@ -20,8 +18,7 @@ defmodule RadioBeam.Room.View.RelatedEvents do
     end
   end
 
-  @impl RadioBeam.EventHandler
-  def handle_pdu(%PDU{} = pdu, _) do
+  def handle_pdu(%PDU{} = pdu) do
     %__MODULE__{} = relations = fetch!(pdu.event.room_id)
 
     related_by_event_id =
@@ -40,8 +37,4 @@ defmodule RadioBeam.Room.View.RelatedEvents do
 
     Database.upsert_view({__MODULE__, pdu.event.room_id}, struct!(relations, related_by_event_id: related_by_event_id))
   end
-
-  @impl RadioBeam.EventHandler
-  # handle_pdu is idempotent - can just reapply events
-  def reset_to(event_number), do: {:ok, event_number}
 end

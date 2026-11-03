@@ -20,6 +20,9 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.join(room_id, account.user_id)
 
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       Room.send_text_message(room_id, creator.user_id, "sup")
       Room.send_text_message(room_id, account.user_id, "yo")
       Room.send_text_message(room_id, account.user_id, "what is this room about")
@@ -33,9 +36,11 @@ defmodule RadioBeam.Room.TimelineTest do
       Room.send_text_message(room_id, creator.user_id, "?")
       Room.send_text_message(room_id, account.user_id, "I thought I was more than that to you")
 
-      Room.leave(room_id, account.user_id, "you can't trust anyone in this industry")
+      {:ok, event_id} = Room.leave(room_id, account.user_id, "you can't trust anyone in this industry")
 
-      %{room_id: room_id}
+      Fixtures.assert_caught_up_to_event(queue, event_id)
+
+      %{room_id: room_id, queue: queue}
     end
 
     test "can successfully paginate backwards through events in a room using the given event ID", %{
@@ -47,7 +52,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
+      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :tip) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
@@ -60,12 +65,12 @@ defmodule RadioBeam.Room.TimelineTest do
       assert [
                %{type: "m.room.member"},
                %{type: "m.room.message", content: %{"body" => "I thought I was more than that to you"}},
-               %{type: "m.room.message"}
+               %{type: "m.room.message", content: %{"body" => "?"}, id: ^end_id}
              ] =
                events
 
       assert {:ok, events, end_id2, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id}, filter: filter)
 
       refute match?(%{id: ^end_id}, hd(events))
 
@@ -79,7 +84,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, end_id3, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id2}, filter: filter)
 
       refute match?(%{id: ^end_id2}, hd(events))
 
@@ -94,7 +99,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 30}}})
 
       assert {:ok, events, :no_more_events, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id3}, filter: filter)
 
       refute match?(%{id: ^end_id3}, hd(events))
 
@@ -105,12 +110,13 @@ defmodule RadioBeam.Room.TimelineTest do
     test "can successfully paginate forward events in a room", %{
       room_id: room_id,
       creator: %{user_id: creator_id} = creator,
-      account: %{user_id: user_id}
+      account: %{user_id: user_id},
+      queue: queue
     } do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
+      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :tip) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
@@ -127,7 +133,7 @@ defmodule RadioBeam.Room.TimelineTest do
                Enum.sort(state, Event)
 
       assert {:ok, events, _end_id2, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :forward})
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id})
 
       refute match?(%{id: ^end_id}, hd(events))
 
@@ -138,10 +144,13 @@ defmodule RadioBeam.Room.TimelineTest do
                %{type: "m.room.member"}
              ] = events
 
-      Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
+      {:ok, event_id} =
+        Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "welp"})
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert {:ok, events, end_id3, _state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :forward})
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id})
 
       refute match?(%{id: ^end_id}, hd(events))
 
@@ -152,7 +161,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, [], :no_more_events, _state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward})
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id3})
     end
 
     test "can successfully paginate forward from the beginning of a room", %{
@@ -163,7 +172,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: root_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :root) |> Enum.take(1)
+      [%{id: root_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :root) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :root, filter: filter)
@@ -186,7 +195,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, end_id2, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id}, filter: filter)
 
       refute match?(%{id: ^end_id}, hd(events))
 
@@ -206,7 +215,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, _end_id3, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id2}, filter: filter)
 
       refute match?(%{id: ^end_id2}, hd(events))
 
@@ -222,7 +231,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream!(user_id, :tip) |> Enum.take(1)
+      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :tip) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
@@ -245,7 +254,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, end_id2, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id}, filter: filter)
 
       refute match?(%{id: ^end_id2}, hd(events))
 
@@ -265,7 +274,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, :no_more_events, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id2}, filter: filter)
 
       assert 1 = Enum.count(state)
       [%{type: "m.room.create"}] = events
@@ -279,7 +288,7 @@ defmodule RadioBeam.Room.TimelineTest do
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
       assert {:ok, events, end_id2, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id}, filter: filter)
 
       refute match?(%{id: ^end_id}, hd(events))
 
@@ -295,7 +304,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, end_id3, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id2}, filter: filter)
 
       refute match?(%{id: ^end_id2}, hd(events))
 
@@ -308,7 +317,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, ^expected_end_id4, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id3}, filter: filter)
 
       refute match?(%{id: ^end_id3}, hd(events))
 
@@ -321,7 +330,7 @@ defmodule RadioBeam.Room.TimelineTest do
              ] = events
 
       assert {:ok, events, end_id5, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id2}, filter: filter)
 
       refute match?(%{id: ^end_id2}, hd(events))
 
@@ -345,7 +354,7 @@ defmodule RadioBeam.Room.TimelineTest do
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
 
       assert {:ok, events, end_id2, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id}, filter: filter)
 
       refute match?(%{id: ^end_id}, hd(events))
 
@@ -353,40 +362,40 @@ defmodule RadioBeam.Room.TimelineTest do
       expected_state = Enum.take(state, 2)
 
       assert {:ok, ^expected_events, :no_more_events, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id, :backward}, to: end_id2)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id}, to: end_id2)
 
       assert ^expected_state = Enum.take(state, 2)
 
       assert {:ok, events, end_id3, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id2}, filter: filter)
 
       expected_events = Enum.take(events, 2)
       expected_state = Enum.take(state, 2)
 
       assert {:ok, ^expected_events, :no_more_events, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :backward}, to: end_id3)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:backward, end_id2}, to: end_id3)
 
       assert ^expected_state = Enum.take(state, 2)
 
       assert {:ok, events, end_id4, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id3}, filter: filter)
 
       expected_events = Enum.take(events, 2)
       expected_state = Enum.filter(state, &Enum.any?(expected_events, fn event -> event.sender == &1.state_key end))
 
       assert {:ok, ^expected_events, :no_more_events, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id3, :forward}, to: end_id4)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id3}, to: end_id4)
 
       assert ^expected_state = Enum.take(state, 2)
 
       assert {:ok, events, end_id5, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, filter: filter)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id2}, filter: filter)
 
       expected_events = Enum.take(events, 2)
       expected_state = Enum.take(state, 2)
 
       assert {:ok, ^expected_events, :no_more_events, state} =
-               Timeline.get_messages(room_id, creator.user_id, device.id, {end_id2, :forward}, to: end_id5)
+               Timeline.get_messages(room_id, creator.user_id, device.id, {:forward, end_id2}, to: end_id5)
 
       assert ^expected_state = Enum.take(state, 2)
     end
@@ -397,6 +406,10 @@ defmodule RadioBeam.Room.TimelineTest do
     } do
       account2 = Fixtures.create_account()
       {:ok, room_id} = Room.create(creator.user_id)
+
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
       {:ok, _event_id} = Room.join(room_id, account.user_id)
@@ -405,7 +418,9 @@ defmodule RadioBeam.Room.TimelineTest do
       Room.send_text_message(room_id, creator.user_id, "sup")
       Room.send_text_message(room_id, account.user_id, "hi")
       Room.send_text_message(room_id, account.user_id, "creator shouldn't show up in the response")
-      Room.send_text_message(room_id, account2.user_id, "true")
+      {:ok, event_id} = Room.send_text_message(room_id, account2.user_id, "true")
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       filter = EventFilter.new(%{"room" => %{"state" => %{"lazy_load_members" => true}, "timeline" => %{"limit" => 2}}})
 
@@ -431,7 +446,12 @@ defmodule RadioBeam.Room.TimelineTest do
         "m.relates_to" => %{"event_id" => parent_id, "rel_type" => "m.thread"}
       }
 
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, child_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
+
+      Fixtures.assert_caught_up_to_event(queue, child_id)
 
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 2}}})
 
@@ -456,6 +476,9 @@ defmodule RadioBeam.Room.TimelineTest do
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, eid1} = Room.join(room_id, account.user_id)
 
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, eid2} = Room.send_text_message(room_id, creator.user_id, "sup")
       {:ok, eid3} = Room.send_text_message(room_id, account.user_id, "yo")
       {:ok, eid4} = Room.send_text_message(room_id, account.user_id, "what is this room about")
@@ -472,6 +495,8 @@ defmodule RadioBeam.Room.TimelineTest do
       Room.leave(room_id, account.user_id, "you can't trust anyone in this industry")
 
       {:ok, not_visible_eid} = Room.send_text_message(room_id, creator.user_id, "so dramatic 🙄")
+
+      Fixtures.assert_caught_up_to_event(queue, not_visible_eid)
 
       %{
         room_id: room_id,

@@ -148,6 +148,7 @@ defmodule RadioBeam.Room.Core do
   defdelegate can_send_event?(room, user_id, event_type, state_key), to: PowerLevels
   defdelegate can_send_event?(room, user_id, event_type), to: PowerLevels
 
+  def fetch_pdu!(room, event_id), do: Chronicle.fetch_pdu!(room.chronicle, event_id)
   def room_id(room), do: Chronicle.room_id(room.chronicle)
   def room_version(room), do: Chronicle.room_version(room.chronicle)
   def room_type(room), do: Chronicle.get_create_event(room.chronicle).content["type"]

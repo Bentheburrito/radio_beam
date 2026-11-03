@@ -38,8 +38,8 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
 
     inputs =
       put_in(inputs, [:functions], %{
-        event_stream: &View.timeline_event_stream!(&1, inputs.user_id, :tip),
-        get_events_for_user: &View.get_events!(&1, inputs.user_id, &2),
+        event_stream: &View.timeline_event_stream(&1, inputs.user_id, :tip),
+        get_events_for_user: &View.get_events(&1, inputs.user_id, &2),
         get_invite_state_for_user: &RadioBeam.Room.get_invite_state_events(&1, inputs.user_id),
         typing_user_ids: &RadioBeam.Room.EphemeralState.all_typing(&1, inputs.user_id),
         read_receipts: &RadioBeam.Room.Timeline.Acknowledgements.get_all_receipts(&1, inputs.user_id, since_ts),

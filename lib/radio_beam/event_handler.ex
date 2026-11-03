@@ -56,7 +56,7 @@ defmodule RadioBeam.EventHandler do
   bottleneck!), the entry should be just `HandlerMod` - note this is not
   wrapped in a tuple at all.
   """
-  @callback handle_pdu(PDU.t(), get_state_at_pdu :: function()) :: :ok | {:error, :retry | :discard}
+  @callback handle_pdu(PDU.t()) :: :ok | {:error, :retry | :discard}
 
   @doc """
   A server admin, or the event processing system, is indicating to the event

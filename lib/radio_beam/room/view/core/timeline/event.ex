@@ -3,26 +3,25 @@ defmodule RadioBeam.Room.View.Core.Timeline.Event do
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.Room.EventRelationships
   alias RadioBeam.Room.PDU
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   defstruct [:order_id, :bundled_events, :bundled_for] ++ AuthorizedEvent.keys()
 
-  def new!(id, %PDU{event: event}, bundled_events, bundled_for) when is_struct(id, TopologicalID) or id == :unknown do
+  def new!(%PDU{event: event, stream_number: stream_number}, bundled_events, bundled_for) do
     struct!(
       __MODULE__,
       event
       |> Map.from_struct()
-      |> Map.put(:order_id, id)
+      |> Map.put(:order_id, stream_number)
       |> Map.put(:bundled_events, bundled_events)
       |> Map.put(:bundled_for, bundled_for)
     )
   end
 
-  def compare(%__MODULE__{order_id: %TopologicalID{} = order_id1}, %__MODULE__{order_id: %TopologicalID{} = order_id2}) do
-    TopologicalID.compare(order_id1, order_id2)
-  end
+  def compare(%__MODULE__{order_id: order_id}, %__MODULE__{order_id: order_id}), do: :eq
 
-  def compare(%__MODULE__{order_id: :unknown}, %__MODULE__{order_id: maybe_order_id2}), do: maybe_order_id2 > :unknown
+  def compare(%__MODULE__{order_id: order_id1}, %__MODULE__{order_id: order_id2}) do
+    if order_id1 > order_id2, do: :gt, else: :lt
+  end
 
   # TOIMPL: choose client or federation format based on filter
   @cs_event_keys [:content, :origin_server_ts, :room_id, :sender, :state_key, :type, :unsigned]

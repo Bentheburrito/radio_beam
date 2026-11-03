@@ -1,9 +1,6 @@
 defmodule RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBox do
   @moduledoc """
   Tracks user-submitted event read receipts.
-
-  should this be a View.Core mod? think I need to track events "ahead" of each
-  other - though maybe we can build off of View.Core.Timeline
   """
 
   alias RadioBeam.Room

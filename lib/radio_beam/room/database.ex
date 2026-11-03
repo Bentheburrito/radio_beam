@@ -16,6 +16,11 @@ defmodule RadioBeam.Room.Database do
               :ok | {:error, :alias_in_use | :room_does_not_exist}
   @callback rebind_aliases(Room.id(), Room.id()) :: :ok
   @callback fetch_room_id_by_alias(Room.Alias.t()) :: {:ok, Room.t()} | {:error, :not_found}
+  @callback upsert_room_timeline_stream_pointer(Room.id(), integer(), Room.event_id()) :: :ok
+  @callback stream_room_timeline(Room.id(), Keyword.t()) :: Enumerable.t(Room.event_id())
+  @callback upsert_room_timestamp_pointer(Room.id(), non_neg_integer(), Room.event_id()) :: :ok
+  @callback stream_room_event_ids_from_timestamp(Room.id(), non_neg_integer(), :backward | :forward, Keyword.t()) ::
+              Enumerable.t(Room.event_id())
 
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.Room.Database, :backend])
   defdelegate upsert_room(room), to: @database_backend
@@ -24,6 +29,11 @@ defmodule RadioBeam.Room.Database do
   defdelegate fetch_view(view_key), to: @database_backend
   defdelegate fetch_room_id_by_alias(alias), to: @database_backend
   defdelegate rebind_aliases(from_room_id, to_room_id), to: @database_backend
+  defdelegate upsert_room_timeline_stream_pointer(room_id, stream_number, event_id), to: @database_backend
+  defdelegate stream_room_timeline(room_id, opts), to: @database_backend
+  defdelegate upsert_room_timestamp_pointer(room_id, timestamp, event_id), to: @database_backend
+  defdelegate stream_room_event_ids_from_timestamp(room_id, timestamp, direction), to: @database_backend
+  defdelegate stream_room_event_ids_from_timestamp(room_id, timestamp, direction, opts), to: @database_backend
 
   def create_alias(alias, room_id, ensure_room_exists?) do
     if alias.server_name != RadioBeam.Config.server_name() do

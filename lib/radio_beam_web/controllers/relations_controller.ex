@@ -81,16 +81,6 @@ defmodule RadioBeamWeb.RelationsController do
     case Room.get_thread_event_ids(room_id, user_id, include, limit, from) do
       {:ok, events, :end} -> json(conn, %{chunk: events})
       {:ok, events, "$" <> _ = from} -> json(conn, %{chunk: events, next_batch: from})
-      # return 200 + empty chunk to avoid straight forward room enumeration...
-      {:error, error} -> conn |> json(%{chunk: []}) |> log_thread_error(room_id, user_id, error)
     end
-  end
-
-  defp log_thread_error(response, room_id, user_id, error) do
-    Logger.warning(
-      "RelationsController.get_threads/2 got error for room ID #{inspect(room_id)} + user ID #{inspect(user_id)}: #{inspect(error)}"
-    )
-
-    response
   end
 end

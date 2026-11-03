@@ -54,13 +54,17 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       # ---
 
-      queue = {RadioBeam.User.RoomMemberships, account.user_id}
-      Fixtures.listen_to_queue_messages(queue)
-
       {:ok, room_id1} = Room.create(creator.user_id, name: "name one")
+
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      Fixtures.listen_to_queue_messages(tl_queue)
+
       {:ok, event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       :ok = User.put_account_data(account.user_id, :global, "m.some_config", %{"hello" => "world"})
       :ok = User.put_account_data(account.user_id, room_id1, "m.some_config", %{"hello" => "room"})
@@ -101,10 +105,11 @@ defmodule RadioBeamWeb.SyncControllerTest do
       creator_device = Fixtures.create_device(creator.user_id)
       Fixtures.create_and_put_device_keys(creator.user_id, creator_device.id)
 
-      {:ok, event_id} = Room.join(room_id1, account.user_id)
-      {:ok, _event_id} = Room.set_name(room_id1, creator.user_id, "yo")
+      {:ok, event_id1} = Room.join(room_id1, account.user_id)
+      {:ok, event_id2} = Room.set_name(room_id1, creator.user_id, "yo")
 
-      Fixtures.assert_caught_up_to_event(queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id1)
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id2)
 
       User.send_to_devices(
         %{account.user_id => %{device_id => %{"hello" => "world"}}},
@@ -177,11 +182,16 @@ defmodule RadioBeamWeb.SyncControllerTest do
     test "successfully fetches events when user is a member of the room", %{conn: conn, account: creator} do
       {:ok, room_id} = Room.create(creator.user_id, name: "This is a cool room")
 
-      {:ok, _event_id} =
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
+      {:ok, event_id} =
         Room.send(room_id, creator.user_id, "m.room.message", %{
           "msgtype" => "m.text",
           "body" => "this place is so cool"
         })
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       query_params = %{
         filter: %{"limit" => 3},

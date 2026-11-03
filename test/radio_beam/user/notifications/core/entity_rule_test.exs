@@ -2,7 +2,7 @@ defmodule RadioBeam.User.Notifications.Core.EntityRuleTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User.Notifications.Core.EntityRule
 
   describe "new/3,4" do
@@ -13,11 +13,7 @@ defmodule RadioBeam.User.Notifications.Core.EntityRuleTest do
 
       {:sent, room, message_id, _} = "12" |> Fixtures.room(user_id) |> Fixtures.send_room_msg(user_id, "yooo")
 
-      timeline = Fixtures.make_room_view(Timeline, room)
-
-      [event] =
-        Timeline.get_visible_events(timeline, [message_id], user_id, &Room.Chronicle.fetch_pdu!(room.chronicle, &1))
-        |> Enum.to_list()
+      event = room.chronicle |> Room.Chronicle.fetch_pdu!(message_id) |> Event.new!([], user_id)
 
       actions = [%{"set_tweak" => "sound", "value" => "default"}, "notify"]
 

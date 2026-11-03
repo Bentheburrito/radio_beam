@@ -11,7 +11,7 @@ defmodule RadioBeam.Room do
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.Upgrades
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
+  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User
 
   @attrs ~w|id chronicle redactions relationships|a
@@ -183,7 +183,7 @@ defmodule RadioBeam.Room do
          {:ok, membership_event} <- expect_one_event(room.id, user_id, membership_event_id, false),
          {:ok, state_mapping} <- get_mapping_based_on_membership(room, membership_event) do
       state_event_id_stream = Stream.map(state_mapping, fn {_key, event_id} -> event_id end)
-      {:ok, Room.View.get_events!(room.id, user_id, state_event_id_stream, false)}
+      {:ok, Room.View.get_events(room.id, user_id, state_event_id_stream, false)}
     end
   end
 
@@ -195,7 +195,7 @@ defmodule RadioBeam.Room do
       state_event_id_stream =
         room |> Room.Core.get_state_mapping_at(at_event_id) |> Stream.map(fn {_key, event_id} -> event_id end)
 
-      {:ok, Room.View.get_events!(room.id, user_id, state_event_id_stream, false)}
+      {:ok, Room.View.get_events(room.id, user_id, state_event_id_stream, false)}
     end
   end
 
@@ -233,7 +233,7 @@ defmodule RadioBeam.Room do
 
       state_event_ids = Stream.map(state_mapping, fn {_key, event_id} -> event_id end)
 
-      Room.View.get_events(room_id, user_id, state_event_ids)
+      {:ok, Room.View.get_events(room_id, user_id, state_event_ids)}
     else
       _ -> {:error, :unauthorized}
     end
@@ -268,20 +268,43 @@ defmodule RadioBeam.Room do
   end
 
   defp expect_one_event(room_id, user_id, event_id, bundle_aggregations?) do
-    with {:ok, event_stream} <- Room.View.get_events(room_id, user_id, [event_id], bundle_aggregations?),
-         [event] <- Enum.take(event_stream, 1) do
-      {:ok, event}
-    else
+    case Room.View.get_events(room_id, user_id, [event_id], bundle_aggregations?) do
+      [event] -> {:ok, event}
       _ -> {:error, :unauthorized}
     end
   end
 
+  def fetch_state_pdu_at(room_id, at_event_id, type, state_key) do
+    with {:ok, %__MODULE__{} = room} <- get(room_id),
+         {:ok, event_id} <- Room.Core.get_state_mapping_at(room, at_event_id, type, state_key, false),
+         %RadioBeam.Room.PDU{} = pdu <- Room.Core.fetch_pdu!(room, event_id) do
+      {:ok, pdu}
+    end
+  end
+
+  def fetch_pdu(room_id, event_id) do
+    with {:ok, %__MODULE__{} = room} <- get(room_id),
+         %RadioBeam.Room.PDU{} = pdu <- Room.Core.fetch_pdu!(room, event_id) do
+      {:ok, pdu}
+    end
+  rescue
+    _ -> {:error, :not_found}
+  end
+
+  def all_joined_members(room_id, event_id) do
+    with {:ok, %__MODULE__{} = room} <- get(room_id) do
+      %{} = mapping = Room.Core.get_state_mapping_at(room, event_id, true)
+
+      for {{"m.room.member", _}, event_id} <- mapping,
+          pdu <- [Room.Core.fetch_pdu!(room, event_id)],
+          pdu.event.content["membership"] == "join",
+          do: pdu.event.state_key
+    end
+  end
+
   def get_nearest_event(room_id, user_id, dir, timestamp) when dir in ~w|forward backward|a do
-    with {:ok, event_stream} <- Room.View.nearest_events_stream(room_id, user_id, timestamp, dir) do
-      case Enum.take(event_stream, 1) do
-        [] -> {:error, :not_found}
-        [{"$" <> _ = event_id, origin_server_ts}] -> {:ok, event_id, origin_server_ts}
-      end
+    with {:ok, event} <- Room.View.Timeline.nearest_user_event_to_timestamp(room_id, user_id, timestamp, dir) do
+      {:ok, event.id, event.origin_server_ts}
     end
   end
 
@@ -294,9 +317,8 @@ defmodule RadioBeam.Room do
 
   def get_thread_event_ids(room_id, user_id, include, limit, from \\ :latest) do
     case Room.View.get_thread_event_ids(room_id, user_id, include, limit, from) do
-      {:ok, []} -> {:ok, [], :end}
-      {:ok, thread_event_maps} -> {:ok, thread_event_maps, List.last(thread_event_maps).event_id}
-      {:error, _} = error -> error
+      [] -> {:ok, [], :end}
+      thread_event_maps -> {:ok, thread_event_maps, List.last(thread_event_maps).event_id}
     end
   end
 
@@ -305,10 +327,10 @@ defmodule RadioBeam.Room do
       rel_type = Keyword.get(opts, :rel_type)
       event_type = Keyword.get(opts, :event_type)
 
-      comparator = &(TopologicalID.compare(&1, &2.order_id) in [:gt, :eq])
+      comparator = &(&1 >= &2.order_id)
       before_start? = maybe_event_comparator(room_id, user_id, Keyword.fetch(opts, :to), comparator, fn _ -> false end)
 
-      comparator = &(TopologicalID.compare(&2.order_id, &1) == :lt)
+      comparator = &(&2.order_id < &1)
       before_end? = maybe_event_comparator(room_id, user_id, Keyword.fetch(opts, :from), comparator, fn _ -> true end)
 
       # note: we take(limit) *after* sorting, since child_event_stream does
@@ -351,10 +373,9 @@ defmodule RadioBeam.Room do
   defp filter_event_type(%{type: event_type}, event_type), do: true
   defp filter_event_type(_pdu, _event_type), do: false
 
-  defp apply_order(event_stream, :chronological), do: Enum.sort_by(event_stream, & &1.order_id, {:asc, TopologicalID})
+  defp apply_order(event_stream, :chronological), do: Enum.sort(event_stream, {:asc, Event})
 
-  defp apply_order(event_stream, :reverse_chronological),
-    do: Enum.sort_by(event_stream, & &1.order_id, {:desc, TopologicalID})
+  defp apply_order(event_stream, :reverse_chronological), do: Enum.sort(event_stream, {:desc, Event})
 
   def get_hierarchy(room_id, user_id, already_seen \\ MapSet.new()) do
     with {:ok, state_events} <- get_state(room_id, user_id) do

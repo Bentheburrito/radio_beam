@@ -99,7 +99,7 @@ defmodule RadioBeam.EventHandler.ServerTest do
     @behaviour RadioBeam.EventHandler
 
     @impl RadioBeam.EventHandler
-    def handle_pdu(_, _), do: :ok
+    def handle_pdu(_), do: :ok
 
     @impl RadioBeam.EventHandler
     def reset_to(event_number), do: {:ok, event_number}
@@ -109,7 +109,7 @@ defmodule RadioBeam.EventHandler.ServerTest do
     @behaviour RadioBeam.EventHandler
 
     @impl RadioBeam.EventHandler
-    def handle_pdu(_, _) do
+    def handle_pdu(_) do
       if Enum.random([1, 2]) == 1, do: :ok, else: {:error, :retry}
     end
 

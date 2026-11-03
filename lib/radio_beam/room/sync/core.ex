@@ -5,7 +5,6 @@ defmodule RadioBeam.Room.Sync.Core do
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Timeline
   alias RadioBeam.Room.View.Core.Timeline.Event
-  alias RadioBeam.Room.View.Core.Timeline.TopologicalID
 
   def perform(%{} = inputs, %Room{} = room) do
     {:ok, user_membership_event_id} = Room.Core.get_state_mapping(room, "m.room.member", inputs.user_id)
@@ -81,10 +80,7 @@ defmodule RadioBeam.Room.Sync.Core do
         _ -> :none
       end
 
-    not_passed_to =
-      if maybe_to_event == :none,
-        do: fn _ -> true end,
-        else: &(TopologicalID.compare(&1.order_id, maybe_to_event.order_id) != :lt)
+    not_passed_to = if maybe_to_event == :none, do: fn _ -> true end, else: &(Event.compare(&1, maybe_to_event) != :lt)
 
     [%Event{} = first_event] = Enum.take(event_stream, 1)
 

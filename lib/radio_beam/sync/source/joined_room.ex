@@ -37,7 +37,7 @@ defmodule RadioBeam.Sync.Source.JoinedRoom do
             user_id,
             inputs.account_data,
             [membership_event],
-            &View.get_events!(&1, inputs.user_id, &2),
+            &View.get_events(&1, inputs.user_id, &2),
             "join",
             filter: inputs.event_filter,
             known_memberships: inputs.known_memberships

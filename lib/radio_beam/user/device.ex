@@ -32,7 +32,7 @@ defmodule RadioBeam.User.Device do
       identity_keys: nil,
       identity_keys_last_updated_at: 0,
       last_issued_token_ids: %{access: nil, refresh: nil},
-      last_seen_at: Keyword.get(opts, :last_seen_at, System.os_time(:millisecond)),
+      last_seen_at: Keyword.get(opts, :last_seen_at, RadioBeam.Time.now()),
       last_seen_from_ip: nil,
       messages: %{},
       one_time_key_ring: OneTimeKeyRing.new(),
@@ -42,7 +42,7 @@ defmodule RadioBeam.User.Device do
     }
   end
 
-  def put_last_seen_at(%__MODULE__{} = device, device_ip_tuple, last_seen_at \\ System.os_time(:millisecond)),
+  def put_last_seen_at(%__MODULE__{} = device, device_ip_tuple, last_seen_at \\ RadioBeam.Time.now()),
     do: struct!(device, last_seen_from_ip: device_ip_tuple, last_seen_at: last_seen_at)
 
   def put_display_name!(%__MODULE__{} = device, "" <> _ = display_name), do: put_in(device.display_name, display_name)
@@ -54,7 +54,7 @@ defmodule RadioBeam.User.Device do
 
     id_keys_last_updated_at =
       if identity_keys != device.identity_keys,
-        do: System.os_time(:millisecond),
+        do: RadioBeam.Time.now(),
         else: device.identity_keys_last_updated_at
 
     if valid_identity_keys?(identity_keys, user_id, device.id) do
