@@ -12,7 +12,7 @@ defmodule RadioBeam.Room.View.RelatedEvents do
   def new!, do: %__MODULE__{}
 
   def fetch!(room_id) do
-    case Database.fetch_view({__MODULE__, room_id}) do
+    case Database.fetch_related_events( room_id) do
       {:ok, %__MODULE__{} = relations} -> relations
       {:error, :not_found} -> new!()
     end
@@ -35,6 +35,6 @@ defmodule RadioBeam.Room.View.RelatedEvents do
           relations.related_by_event_id
       end
 
-    Database.upsert_view({__MODULE__, pdu.event.room_id}, struct!(relations, related_by_event_id: related_by_event_id))
+    Database.upsert_related_events( pdu.event.room_id, struct!(relations, related_by_event_id: related_by_event_id))
   end
 end

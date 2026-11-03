@@ -21,7 +21,7 @@ defmodule RadioBeam.Database.Mnesia do
   import RadioBeam.Database.Mnesia.Tables.RoomThreadParent
   import RadioBeam.Database.Mnesia.Tables.RoomTimelineStreamPointer
   import RadioBeam.Database.Mnesia.Tables.RoomTimestampPointer
-  import RadioBeam.Database.Mnesia.Tables.RoomView
+  import RadioBeam.Database.Mnesia.Tables.RoomRelatedEvents
   import RadioBeam.Database.Mnesia.Tables.Upload
   import RadioBeam.Database.Mnesia.Tables.UserClientConfig
   import RadioBeam.Database.Mnesia.Tables.UserGeneratedReport
@@ -54,7 +54,7 @@ defmodule RadioBeam.Database.Mnesia do
     Tables.RoomThreadParent,
     Tables.RoomTimelineStreamPointer,
     Tables.RoomTimestampPointer,
-    Tables.RoomView,
+    Tables.RoomRelatedEvents,
     Tables.Upload,
     Tables.UserClientConfig,
     Tables.UserGeneratedReport,
@@ -191,20 +191,18 @@ defmodule RadioBeam.Database.Mnesia do
   end
 
   @impl RadioBeam.Room.Database
-  def upsert_view(key, view) do
-    room_view_record = room_view(id: key, room_view: view)
+  def upsert_related_events(room_id, related_events) do
+    record = room_related_events(room_id: room_id, related_events: related_events)
 
-    transaction(fn ->
-      :mnesia.write(Tables.RoomView, room_view_record, :write)
-    end)
+    transaction(fn -> :mnesia.write(Tables.RoomRelatedEvents, record, :write) end)
   end
 
   @impl RadioBeam.Room.Database
-  def fetch_view(key) do
+  def fetch_related_events(key) do
     transaction(fn ->
-      case :mnesia.read(Tables.RoomView, key, :read) do
+      case :mnesia.read(Tables.RoomRelatedEvents, key, :read) do
         [] -> {:error, :not_found}
-        [record] -> {:ok, record_to_domain_struct(record)}
+        [room_related_events(related_events: related_events)] -> {:ok, related_events}
       end
     end)
   end
@@ -773,7 +771,6 @@ defmodule RadioBeam.Database.Mnesia do
   defp record_to_domain_struct(room(room: %Room{} = room)), do: room
   defp record_to_domain_struct(room_alias(alias_struct: %Room.Alias{} = room_alias)), do: room_alias
   defp record_to_domain_struct(upload() = upload_record), do: struct!(Upload, upload(upload_record))
-  defp record_to_domain_struct(room_view(room_view: view_state)), do: view_state
   defp record_to_domain_struct(event_handler_state(state: state)), do: state
 
   defp record_to_domain_struct(
