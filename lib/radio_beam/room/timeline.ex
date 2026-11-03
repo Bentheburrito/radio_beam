@@ -5,7 +5,6 @@ defmodule RadioBeam.Room.Timeline do
   """
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.Database
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
@@ -45,9 +44,8 @@ defmodule RadioBeam.Room.Timeline do
   # credo:disable-for-lines:62 Credo.Check.Refactor.CyclomaticComplexity
   def get_messages(room_id, user_id, device_id, from, opts \\ []) do
     with :ok <- check_membership(room_id, user_id),
-         {:ok, %Room{} = room} <- Database.fetch_room(room_id),
          {:ok, from} <- map_from_event_id_to_stream_number(from, room_id) do
-      user_event_stream = Room.View.timeline_event_stream(room.id, user_id, from)
+      user_event_stream = Room.View.timeline_event_stream(room_id, user_id, from)
       direction = dir_of_from(from)
       %{filter: filter, ignored_user_ids: ignored_user_ids} = get_user_timeline_preferences(user_id, opts)
 
@@ -69,9 +67,9 @@ defmodule RadioBeam.Room.Timeline do
       # TODO: need to detect when we have reached the end of a chunk, and
       #       initiate a backfill over federation
 
-      relevant_state_event_stream = get_state_events(room, user_id, timeline_events, device_id, filter)
+      relevant_memberships = relevant_membership_events(room_id, user_id, timeline_events, device_id, filter)
 
-      {:ok, timeline_events, next_page, relevant_state_event_stream}
+      {:ok, timeline_events, next_page, relevant_memberships}
     end
   end
 
@@ -119,26 +117,24 @@ defmodule RadioBeam.Room.Timeline do
     User.get_timeline_preferences(user_id, maybe_filter_or_filter_id)
   end
 
-  defp get_state_events(room, user_id, timeline_events, device_id, filter) do
+  defp relevant_membership_events(room_id, user_id, timeline_events, device_id, filter) do
     ignore_memberships_from =
       if filter.state.memberships == :lazy do
-        known_membership_map = LazyLoadMembersCache.get([room.id], device_id)
-        Map.get(known_membership_map, room.id, [])
+        known_membership_map = LazyLoadMembersCache.get([room_id], device_id)
+        Map.get(known_membership_map, room_id, [])
       else
         []
       end
 
-    state_event_ids =
+    with {:ok, memberships_events} <- Room.get_members(room_id, user_id, :latest_visible) do
+      membership_events_by_state_key =
+        Map.new(memberships_events, fn event -> {event.state_key, event} end)
+
       timeline_events
       |> Stream.reject(&(&1.sender in ignore_memberships_from))
       |> Stream.uniq_by(& &1.sender)
-      |> Enum.map(fn pdu ->
-        # TODO: use Room.get_members instead of accessing state directly...
-        {:ok, event_id} = Room.Core.get_state_mapping(room, "m.room.member", pdu.sender)
-        event_id
-      end)
-
-    Room.View.get_events(room.id, user_id, state_event_ids)
+      |> Enum.map(fn event -> Map.fetch!(membership_events_by_state_key, event.sender) end)
+    end
   end
 
   def get_context(room_id, user_id, device_id, event_id, opts) do

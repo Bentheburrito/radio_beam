@@ -54,9 +54,6 @@ defmodule RadioBeamWeb.SyncController do
           |> maybe_put_end(maybe_next_event_id, room_id)
         )
 
-      {:error, :not_found} ->
-        handle_common_error(conn, :unauthorized)
-
       {:error, error} ->
         handle_common_error(conn, error)
     end

@@ -498,8 +498,10 @@ defmodule RadioBeam.RoomTest do
       {:ok, room_id} = Room.create(creator.user_id, preset: :private_chat)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
 
-      queue = {RadioBeam.Room.View.Timeline, room_id}
-      Fixtures.listen_to_queue_messages(queue)
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(tl_queue)
 
       content = %{"msgtype" => "m.text", "body" => "I hope my friend joins soon"}
       {:ok, event_id} = Room.send(room_id, creator.user_id, "m.room.message", content)
@@ -512,7 +514,8 @@ defmodule RadioBeam.RoomTest do
       {:ok, _event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
       {:ok, leave_event_id} = Room.leave(room_id, account.user_id, "nvm gtg")
 
-      Fixtures.assert_caught_up_to_event(queue, leave_event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, leave_event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, leave_event_id)
 
       assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
 
@@ -522,7 +525,7 @@ defmodule RadioBeam.RoomTest do
       {:ok, event_id2} = Room.send(room_id, account.user_id, "m.room.message", content)
       {:ok, leave_event_id} = Room.leave(room_id, account.user_id, "jk lmao")
 
-      Fixtures.assert_caught_up_to_event(queue, leave_event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, leave_event_id)
 
       assert {:ok, %{id: ^event_id}} = Room.get_event(room_id, account.user_id, event_id)
       assert {:ok, %{id: ^event_id2}} = Room.get_event(room_id, account.user_id, event_id2)
@@ -631,10 +634,16 @@ defmodule RadioBeam.RoomTest do
       account3: account3
     } do
       {:ok, room_id} = Room.create(creator.user_id)
+
+      queue = {RadioBeam.Room.View.Timeline, room_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account3.user_id)
       {:ok, _event_id} = Room.join(room_id, account2.user_id)
-      {:ok, _event_id} = Room.join(room_id, account3.user_id)
+      {:ok, event_id} = Room.join(room_id, account3.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert {:ok, members} = Room.get_members(room_id, account2.user_id)
       assert 3 = Enum.count(members)
@@ -751,9 +760,12 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "returns cur room state when the requester is in the room", %{account1: creator} do
+      memberships_queue = {RadioBeam.User.RoomMemberships, creator.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
+
       {:ok, room_id} = Room.create(creator.user_id)
 
-      :pong = Room.Server.ping(room_id)
+      Fixtures.assert_processed_count(memberships_queue, 1)
 
       assert {:ok, state_event_stream} = Room.get_state(room_id, creator.user_id)
       assert 6 = Enum.count(state_event_stream)
