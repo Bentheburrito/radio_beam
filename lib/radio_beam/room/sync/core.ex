@@ -86,9 +86,7 @@ defmodule RadioBeam.Room.Sync.Core do
 
     {timeline_events, maybe_next_event_id} =
       event_stream
-      |> Stream.filter(
-        &Timeline.allow_event_for_user?(&1, inputs.event_filter, inputs.ignored_user_ids, maybe_to_event)
-      )
+      |> Stream.filter(&Timeline.allow_event_for_user?(&1, inputs.event_filter, inputs.ignored_user_ids))
       |> Stream.take(inputs.event_filter.timeline.limit)
       |> Stream.take_while(not_passed_to)
       |> Enum.flat_map_reduce(first_event.id, fn event, _last_event_id ->

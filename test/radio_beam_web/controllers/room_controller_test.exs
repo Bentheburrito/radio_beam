@@ -713,20 +713,30 @@ defmodule RadioBeamWeb.RoomControllerTest do
   end
 
   describe "get_state_event/2" do
-    test "returns the state event content (200) when the requester is in the room", %{conn: conn, account: account} do
+    setup %{account: account} do
+      queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+      %{queue: queue}
+    end
+
+    test "returns the state event content (200) when the requester is in the room", %{
+      conn: conn,
+      account: account,
+      queue: queue
+    } do
       {:ok, room_id} = Room.create(account.user_id)
 
-      :pong = Room.Server.ping(room_id)
+      Fixtures.assert_processed_count(queue, 1)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.member/#{account.user_id}", %{})
       assert %{"membership" => "join"} = json_response(conn, 200)
     end
 
-    test "returns a state event content (200) with an empty state_key", %{conn: conn, account: account} do
+    test "returns a state event content (200) with an empty state_key", %{conn: conn, account: account, queue: queue} do
       rv = "10"
       {:ok, room_id} = Room.create(account.user_id, version: rv)
 
-      :pong = Room.Server.ping(room_id)
+      Fixtures.assert_processed_count(queue, 1)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.create/", %{})
       assert %{"room_version" => ^rv} = json_response(conn, 200)
@@ -735,7 +745,12 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "returns an M_FORBIDDEN (403) error when requester is not in the room", %{conn: conn} do
       creator = Fixtures.create_account()
 
+      queue = {RadioBeam.User.RoomMemberships, creator.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, room_id} = Room.create(creator.user_id)
+
+      Fixtures.assert_processed_count(queue, 1)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/state/m.room.member/#{creator.user_id}", %{})
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)

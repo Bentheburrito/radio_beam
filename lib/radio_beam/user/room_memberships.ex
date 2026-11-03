@@ -26,7 +26,11 @@ defmodule RadioBeam.User.RoomMemberships do
     for {room_id, "invite"} <- memberships.room_ids_to_membership, do: room_id
   end
 
-  @doc "Returns all room IDs that `user_id` is or was joined to"
+  @doc """
+  Returns all room IDs that `user_id` is or was joined to, although it does not
+  return rooms where the user was removed by a moderator (`membership in ~w|ban
+  kick|`)
+  """
   @spec joined_now_or_previously(RadioBeam.User.id()) :: [String.t()]
   def joined_now_or_previously(user_id) do
     %__MODULE__{} = memberships = fetch!(user_id)

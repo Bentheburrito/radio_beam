@@ -7,7 +7,6 @@ defmodule RadioBeam.Room.Timeline do
   alias RadioBeam.Room
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
-  alias RadioBeam.Room.View.Core.Timeline.Event
   alias RadioBeam.User
   alias RadioBeam.User.EventFilter
 
@@ -22,79 +21,92 @@ defmodule RadioBeam.Room.Timeline do
   - `filter`: A `User.EventFilter` to apply to returned events.
   - `limit`: If `filter` is not supplied, this will apply a maximum limit of
     events returned. Otherwise the `EventFilter`'s limits will be applied.
+
+  ### A note on event ordering
+
+  This function follows the precedent set by Conduit to use stream ordering,
+  despite the spec declaring "topological" ordering. This will almost certainly
+  not be the case forever, considering it leads to a pretty horrible UX in
+  network partitions/late events (confusing timeline ordering). It will
+  especially be desirable to change the ordering of events here if the spec
+  ever actually defines what topological ordering *means*…see **Relevant
+  Links** below for more information (notice how all of this information has to
+  be scoured from the Internet, and is not documented in the spec at all - the
+  best you get are some GH issues from 5-10+ *years* ago).
+
+  #### Relevant Links
+
+  - https://news.ycombinator.com/item?id=42324114
+  - https://artificialworlds.net/blog/2024/12/04/message-order-in-matrix/
+  - https://matrix-org.github.io/synapse/v1.98/development/room-dag-concepts.html
+  - https://github.com/matrix-org/matrix-spec/issues/852
+  - https://github.com/matrix-org/matrix-spec/issues/125
   """
   # credo:disable-for-lines:62 Credo.Check.Refactor.CyclomaticComplexity
   def get_messages(room_id, user_id, device_id, from, opts \\ []) do
     with :ok <- check_membership(room_id, user_id),
          {:ok, %Room{} = room} <- Database.fetch_room(room_id),
-         {:ok, from} <- map_from(from, room_id) do
+         {:ok, from} <- map_from_event_id_to_stream_number(from, room_id) do
       user_event_stream = Room.View.timeline_event_stream(room.id, user_id, from)
       direction = dir_of_from(from)
       %{filter: filter, ignored_user_ids: ignored_user_ids} = get_user_timeline_preferences(user_id, opts)
 
-      maybe_to_event =
-        with "$" <> _ = to_event_id <- Keyword.get(opts, :to, :none),
-             {:ok, to_event} <- Room.View.Timeline.fetch_user_event(room.id, user_id, to_event_id) do
-          to_event
-        else
-          _ -> :none
-        end
-
-      not_passed_to =
-        cond do
-          maybe_to_event == :none -> fn _ -> true end
-          direction == :forward -> &(Event.compare(&1, maybe_to_event) != :gt)
-          direction == :backward -> &(Event.compare(&1, maybe_to_event) != :lt)
-        end
-
-      # num_to_drop = if from in ~w|tip root|a, do: 0, else: 1
-
-      {timeline_events, maybe_next_event_id} =
+      {timeline_events, {count, last_event_id}} =
         user_event_stream
-        # |> Stream.drop(num_to_drop)
-        |> Stream.filter(&allow_event_for_user?(&1, filter, ignored_user_ids, maybe_to_event))
-        |> Stream.take(filter.timeline.limit)
-        |> Stream.take_while(not_passed_to)
-        |> Enum.flat_map_reduce(:no_more_events, fn event, _last_event_id ->
-          cond do
-            maybe_to_event != :none and event.id == maybe_to_event.id -> {[], :no_more_events}
-            event.type == "m.room.create" and direction == :backward -> {[event], :no_more_events}
-            :else -> {[event], event.id}
-          end
-        end)
+        |> Stream.filter(&allow_event_for_user?(&1, filter, ignored_user_ids))
+        |> take_until_to_or_limit(room_id, user_id, Keyword.get(opts, :to, :none), filter.timeline.limit)
+        |> Enum.flat_map_reduce({_count = 0, :no_more_events}, fn e, {count, _} -> {[e], {count + 1, e.id}} end)
+
+      # we don't consider the latest events "the end" of the timeline - there
+      # will be more events accessible eventually
+      to_specified? = is_binary(Keyword.get(opts, :to, :none))
+
+      next_page =
+        if count < filter.timeline.limit and (direction == :backward or to_specified?),
+          do: :no_more_events,
+          else: last_event_id
 
       # TODO: need to detect when we have reached the end of a chunk, and
       #       initiate a backfill over federation
 
-      get_known_memberships_fxn = fn -> LazyLoadMembersCache.get([room.id], device_id) end
+      relevant_state_event_stream = get_state_events(room, user_id, timeline_events, device_id, filter)
 
-      relevant_state_event_stream = get_state_events(room, user_id, timeline_events, get_known_memberships_fxn, filter)
-
-      {:ok, timeline_events, maybe_next_event_id, relevant_state_event_stream}
+      {:ok, timeline_events, next_page, relevant_state_event_stream}
     end
   end
 
-  defp map_from({dir, event_id}, room_id) do
+  defp take_until_to_or_limit(event_stream, _room_id, _user_id, to, limit) when to in ~w|none limit|a,
+    do: Stream.take(event_stream, limit)
+
+  defp take_until_to_or_limit(event_stream, room_id, user_id, "$" <> _ = to_event_id, limit) do
+    to_take =
+      with {:ok, to_event} <- Room.View.Timeline.fetch_user_event(room_id, user_id, to_event_id),
+           [%{order_id: order_id}] <- Enum.take(event_stream, 1) do
+        min(limit, abs(order_id - to_event.order_id))
+      else
+        _invalid_to_event_id_or_empty_stream -> limit
+      end
+
+    Stream.take(event_stream, to_take)
+  end
+
+  defp map_from_event_id_to_stream_number({dir, event_id}, room_id) do
     case Room.fetch_pdu(room_id, event_id) do
       {:ok, %{stream_number: stream_number}} -> {:ok, {dir, stream_number}}
       _else -> {:error, :from_not_found}
     end
   end
 
-  defp map_from(from, _room_id) when from in ~w|root tip|a, do: {:ok, from}
+  defp map_from_event_id_to_stream_number(from, _room_id) when from in ~w|root tip|a, do: {:ok, from}
 
-  def allow_event_for_user?(event, filter, ignored_user_ids, %{id: to_event_id}),
-    do: allow_event_for_user?(event, filter, ignored_user_ids, to_event_id)
-
-  def allow_event_for_user?(event, filter, ignored_user_ids, maybe_to_event_id) do
-    event.id == maybe_to_event_id or
-      (not from_ignored_user?(event, ignored_user_ids) and EventFilter.allow_timeline_event?(filter, event))
+  def allow_event_for_user?(event, filter, ignored_user_ids) do
+    not from_ignored_user?(event, ignored_user_ids) and EventFilter.allow_timeline_event?(filter, event)
   end
 
   defp from_ignored_user?(event, ignored_user_ids), do: is_nil(event.state_key) and event.sender in ignored_user_ids
 
   defp check_membership(room_id, user_id) do
-    if User.RoomMemberships.has?(user_id, room_id), do: :ok, else: {:error, :unauthorized}
+    if room_id in User.RoomMemberships.joined_now_or_previously(user_id), do: :ok, else: {:error, :unauthorized}
   end
 
   defp dir_of_from(:root), do: :forward
@@ -107,10 +119,10 @@ defmodule RadioBeam.Room.Timeline do
     User.get_timeline_preferences(user_id, maybe_filter_or_filter_id)
   end
 
-  defp get_state_events(room, user_id, timeline_events, get_known_memberships_fxn, filter) do
+  defp get_state_events(room, user_id, timeline_events, device_id, filter) do
     ignore_memberships_from =
       if filter.state.memberships == :lazy do
-        known_membership_map = get_known_memberships_fxn.()
+        known_membership_map = LazyLoadMembersCache.get([room.id], device_id)
         Map.get(known_membership_map, room.id, [])
       else
         []
