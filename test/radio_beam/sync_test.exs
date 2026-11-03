@@ -275,7 +275,9 @@ defmodule RadioBeam.SyncTest do
       Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       Room.send_text_message(room_id, annoying_account.user_id, "blah blah blah")
-      Room.send_text_message(room_id, annoying_account.user_id, "you shouldn't see this")
+      {:ok, event_id} = Room.send_text_message(room_id, annoying_account.user_id, "you shouldn't see this")
+
+      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
 
       assert %{"rooms" => room_results, "next_batch" => %NextBatch{} = next_batch} =
                Sync.perform_v2(account.user_id, device.id, [])

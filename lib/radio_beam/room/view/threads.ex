@@ -39,19 +39,17 @@ defmodule RadioBeam.Room.View.Threads do
 
   @impl RadioBeam.EventHandler
   def handle_pdu(%PDU{} = pdu) do
-    %__MODULE__{} = thread_roots = fetch!(pdu.event.room_id)
+    case pdu.event.content do
+      %{"m.relates_to" => %{"rel_type" => "m.thread", "event_id" => thread_root_id}} ->
+        %__MODULE__{} = thread_roots = fetch!(pdu.event.room_id)
+        event_ids = :gb_sets.add({pdu.stream_number, thread_root_id}, thread_roots.event_ids)
 
-    event_ids =
-      case pdu.event.content do
-        %{"m.relates_to" => %{"rel_type" => "m.thread", "event_id" => thread_root_id}} ->
-          :gb_sets.add({pdu.stream_number, thread_root_id}, thread_roots.event_ids)
+        thread_roots = struct!(thread_roots, event_ids: event_ids)
+        Database.upsert_view(key(pdu.event.room_id), thread_roots)
 
-        _else ->
-          thread_roots.event_ids
-      end
-
-    thread_roots = struct!(thread_roots, event_ids: event_ids)
-    Database.upsert_view(key(pdu.event.room_id), thread_roots)
+      _else ->
+        :ok
+    end
   end
 
   @impl RadioBeam.EventHandler
