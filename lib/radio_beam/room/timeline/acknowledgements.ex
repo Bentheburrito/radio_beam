@@ -4,7 +4,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements do
   """
   alias RadioBeam.Room
   alias RadioBeam.Room.Timeline.Acknowledgements.Server
-  alias RadioBeam.Room.View
+  alias RadioBeam.Room.UserTimeline
   alias RadioBeam.User
 
   def put_read_receipt(room_id, user_id, event_id, "m.fully_read", :unthreaded) do
@@ -22,7 +22,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements do
   end
 
   defp validate_readable_event(room_id, user_id, event_id),
-    do: Room.UserTimeline.fetch_user_event(room_id, user_id, event_id)
+    do: UserTimeline.fetch_user_event(room_id, user_id, event_id)
 
   @max_children 100
   defp validate_thread_id_for_event(room_id, user_id, event, "$" <> _ = thread_id) do
@@ -49,7 +49,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements do
   def get_all_receipts(room_id, user_id, since_ts) do
     receipts = Server.get_all_receipts(room_id, user_id, since_ts)
 
-    event_stream = View.get_events(room_id, user_id, Map.keys(receipts), false)
+    event_stream = UserTimeline.map_filter_user_events(room_id, user_id, Map.keys(receipts), false)
     visible_event_ids = Enum.map(event_stream, & &1.id)
 
     Map.take(receipts, visible_event_ids)

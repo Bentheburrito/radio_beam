@@ -1,4 +1,4 @@
-defmodule RadioBeam.Room.ViewTest do
+defmodule RadioBeam.Room.RelationsTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
@@ -8,7 +8,12 @@ defmodule RadioBeam.Room.ViewTest do
   describe "get_child_events/3" do
     setup do
       account = Fixtures.create_account()
+
+      Fixtures.listen_to_queue_messages({RadioBeam.User.RoomMemberships, account.user_id})
+
       {:ok, room_id} = Room.create(account.user_id)
+
+      Fixtures.assert_processed_count({RadioBeam.User.RoomMemberships, account.user_id}, 1)
 
       Fixtures.listen_to_queue_messages({RadioBeam.Room.UserTimeline, room_id})
 
@@ -25,7 +30,10 @@ defmodule RadioBeam.Room.ViewTest do
       parent_event_id: parent_event_id
     } do
       assert room_id in RoomMemberships.joined(user_id)
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
+
+      assert {:ok, child_event_stream} =
+               Room.Relations.get_child_events(room_id, user_id, parent_event_id)
+
       assert Enum.empty?(child_event_stream)
     end
 
@@ -43,7 +51,9 @@ defmodule RadioBeam.Room.ViewTest do
 
       assert room_id in RoomMemberships.joined(user_id)
 
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
+      assert {:ok, child_event_stream} =
+               Room.Relations.get_child_events(room_id, user_id, parent_event_id)
+
       assert [%{id: ^child_event_id}] = Enum.to_list(child_event_stream)
     end
 
@@ -64,7 +74,9 @@ defmodule RadioBeam.Room.ViewTest do
 
       assert room_id in RoomMemberships.joined(user_id)
 
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, user_id, parent_event_id)
+      assert {:ok, child_event_stream} =
+               Room.Relations.get_child_events(room_id, user_id, parent_event_id)
+
       assert Enum.sort([child_event_id1, child_event_id2]) == child_event_stream |> Stream.map(& &1.id) |> Enum.sort()
     end
 
@@ -95,7 +107,8 @@ defmodule RadioBeam.Room.ViewTest do
 
       assert room_id in RoomMemberships.joined(account.user_id)
 
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
+      assert {:ok, child_event_stream} =
+               Room.Relations.get_child_events(room_id, account.user_id, parent_event_id)
 
       assert Enum.sort([child_event_id, grandchild_event_id]) ==
                child_event_stream |> Stream.map(& &1.id) |> Enum.sort()
@@ -128,7 +141,9 @@ defmodule RadioBeam.Room.ViewTest do
 
       assert room_id in RoomMemberships.joined(account.user_id)
 
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
+      assert {:ok, child_event_stream} =
+               Room.Relations.get_child_events(room_id, account.user_id, parent_event_id)
+
       actual_ids = Enum.map(child_event_stream, & &1.id)
       assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
     end
@@ -188,7 +203,9 @@ defmodule RadioBeam.Room.ViewTest do
 
       assert room_id in RoomMemberships.joined(account.user_id)
 
-      assert {:ok, child_event_stream} = Room.View.get_child_events(room_id, account.user_id, parent_event_id)
+      assert {:ok, child_event_stream} =
+               Room.Relations.get_child_events(room_id, account.user_id, parent_event_id)
+
       actual_ids = Enum.map(child_event_stream, & &1.id)
       assert Enum.sort(actual_ids) == Enum.sort(expected_ids)
     end

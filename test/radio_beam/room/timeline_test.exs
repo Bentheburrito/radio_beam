@@ -52,7 +52,7 @@ defmodule RadioBeam.Room.TimelineTest do
 
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :tip) |> Enum.take(1)
+      [%{id: tip_event_id}] = room_id |> Room.UserTimeline.stream_user_events(user_id, from: :tip) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
@@ -116,7 +116,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 3}}})
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :tip) |> Enum.take(1)
+      [%{id: tip_event_id}] = room_id |> Room.UserTimeline.stream_user_events(user_id, from: :tip) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)
@@ -172,7 +172,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: root_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :root) |> Enum.take(1)
+      [%{id: root_event_id}] = room_id |> Room.UserTimeline.stream_user_events(user_id, from: :root) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :root, filter: filter)
@@ -231,7 +231,7 @@ defmodule RadioBeam.Room.TimelineTest do
       filter = EventFilter.new(%{"room" => %{"timeline" => %{"limit" => 10}}})
       device = Fixtures.create_device(creator.user_id)
 
-      [%{id: tip_event_id}] = room_id |> Room.View.timeline_event_stream(user_id, :tip) |> Enum.take(1)
+      [%{id: tip_event_id}] = room_id |> Room.UserTimeline.stream_user_events(user_id, from: :tip) |> Enum.take(1)
 
       assert {:ok, events, end_id, state} =
                Timeline.get_messages(room_id, creator.user_id, device.id, :tip, filter: filter)

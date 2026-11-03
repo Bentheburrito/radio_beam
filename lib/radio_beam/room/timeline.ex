@@ -45,7 +45,7 @@ defmodule RadioBeam.Room.Timeline do
   def get_messages(room_id, user_id, device_id, from, opts \\ []) do
     with :ok <- check_membership(room_id, user_id),
          {:ok, from} <- map_from_event_id_to_stream_number(from, room_id) do
-      user_event_stream = Room.View.timeline_event_stream(room_id, user_id, from)
+      user_event_stream = Room.UserTimeline.stream_user_events(room_id, user_id, from: from)
       direction = dir_of_from(from)
       %{filter: filter, ignored_user_ids: ignored_user_ids} = get_user_timeline_preferences(user_id, opts)
 

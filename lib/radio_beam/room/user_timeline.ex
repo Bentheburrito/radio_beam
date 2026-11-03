@@ -39,7 +39,7 @@ defmodule RadioBeam.Room.UserTimeline do
     room_id
     |> Database.stream_room_timeline(opts)
     |> filter_visible(room_id, user_id, latest_join_stream_num)
-    |> Enum.map(&pdu_to_event(&1, user_id))
+    |> Enum.map(&pdu_to_event(&1, user_id, Keyword.get(opts, :bundle_events?, true)))
   end
 
   def fetch_user_event(room_id, user_id, "$" <> _ = event_id) do
@@ -54,12 +54,12 @@ defmodule RadioBeam.Room.UserTimeline do
   are not visible to the given `user_id` according to the room's membership
   and visibility settings.
   """
-  def map_filter_user_events(room_id, user_id, event_ids) do
+  def map_filter_user_events(room_id, user_id, event_ids, bundle_events? \\ true) do
     latest_join_stream_num = RoomMemberships.latest_join_stream_number(room_id, user_id)
 
     event_ids
     |> filter_visible(room_id, user_id, latest_join_stream_num)
-    |> Enum.map(&pdu_to_event(&1, user_id))
+    |> Enum.map(&pdu_to_event(&1, user_id, bundle_events?))
   end
 
   def nearest_user_event_to_timestamp(room_id, user_id, timestamp, direction) do
@@ -70,7 +70,7 @@ defmodule RadioBeam.Room.UserTimeline do
       |> Database.stream_room_event_ids_from_timestamp(timestamp, direction)
       |> filter_visible(room_id, user_id, latest_join_stream_num)
       |> Stream.take(1)
-      |> Enum.map(&pdu_to_event(&1, user_id))
+      |> Enum.map(&pdu_to_event(&1, user_id, true))
 
     case maybe_wrapped_event do
       [] -> {:error, :not_found}
@@ -127,13 +127,17 @@ defmodule RadioBeam.Room.UserTimeline do
 
   defp user_joined_after_event?(%PDU{stream_number: stream_num}, latest_stream_num), do: latest_stream_num > stream_num
 
-  defp pdu_to_event(%PDU{} = pdu, user_id) do
+  defp pdu_to_event(%PDU{} = pdu, user_id, bundle_events?) do
     %RelatedEvents{related_by_event_id: related_by_event_id} = RelatedEvents.fetch!(pdu.event.room_id)
 
     bundled_events =
-      pdu.event.room_id
-      |> map_filter_user_events(user_id, Map.get(related_by_event_id, pdu.event.id, []))
-      |> Enum.sort({:desc, Event})
+      if bundle_events? do
+        pdu.event.room_id
+        |> map_filter_user_events(user_id, Map.get(related_by_event_id, pdu.event.id, []))
+        |> Enum.sort({:desc, Event})
+      else
+        []
+      end
 
     Event.new!(pdu, bundled_events, user_id)
   end

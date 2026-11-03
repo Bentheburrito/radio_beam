@@ -51,7 +51,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream(account.user_id, :tip) |> Enum.take(1)
+               room_id1 |> Room.UserTimeline.stream_user_events(account.user_id, from: :tip) |> Enum.take(1)
 
       user_id = account.user_id
 
@@ -132,7 +132,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream(account.user_id, :tip) |> Enum.take(1)
+               room_id1 |> Room.UserTimeline.stream_user_events(account.user_id, from: :tip) |> Enum.take(1)
 
       assert %{
                "join" => %{
@@ -206,7 +206,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, join_next_batch_event_id} = NextBatch.fetch(next_batch, room_id1)
 
       assert [%{id: ^join_next_batch_event_id}] =
-               room_id1 |> Room.View.timeline_event_stream(account.user_id, :tip) |> Enum.take(1)
+               room_id1 |> Room.UserTimeline.stream_user_events(account.user_id, from: :tip) |> Enum.take(1)
 
       assert %{
                "invite" => %{

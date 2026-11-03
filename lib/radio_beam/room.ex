@@ -12,6 +12,7 @@ defmodule RadioBeam.Room do
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.Upgrades
   alias RadioBeam.Room.UserTimeline.Event
+  alias RadioBeam.Room.Relations
   alias RadioBeam.User
 
   @attrs ~w|id chronicle redactions relationships|a
@@ -173,10 +174,6 @@ defmodule RadioBeam.Room do
   returns memberships as of that event. Defaults to the current room state.
   The requesting user must have been a member of the room at the point in
   which these events are requested.
-
-  Note: this fxn is an unfortunate though rare situation where we'd like to
-  read from the write model directly - it doesn't seem worth it to set up a
-  `Room.View` just to hold the state that already exists in the Chronicle.
   """
   def get_members(room_id, user_id, at_event_id \\ :latest_visible, membership_filter \\ fn _ -> true end)
 
@@ -195,7 +192,7 @@ defmodule RadioBeam.Room do
          {:ok, membership_event} <- expect_one_event(room.id, user_id, membership_event_id, false),
          {:ok, state_mapping} <- get_mapping_based_on_membership(room, membership_event) do
       state_event_id_stream = Stream.map(state_mapping, fn {_key, event_id} -> event_id end)
-      {:ok, Room.View.get_events(room.id, user_id, state_event_id_stream, false)}
+      {:ok, Room.UserTimeline.map_filter_user_events(room.id, user_id, state_event_id_stream, false)}
     end
   end
 
@@ -207,7 +204,7 @@ defmodule RadioBeam.Room do
       state_event_id_stream =
         room |> Room.Core.get_state_mapping_at(at_event_id) |> Stream.map(fn {_key, event_id} -> event_id end)
 
-      {:ok, Room.View.get_events(room.id, user_id, state_event_id_stream, false)}
+      {:ok, Room.UserTimeline.map_filter_user_events(room.id, user_id, state_event_id_stream, false)}
     end
   end
 
@@ -229,10 +226,6 @@ defmodule RadioBeam.Room do
   @doc """
   Gets state events in the given room. The requesting user must have been a
   member of the room at some point.
-
-  Note: this fxn is an unfortunate though rare situation where we'd like to
-  read from the write model directly - it doesn't seem worth it to set up a
-  `Room.View` just to hold the state that already exists in the Chronicle.
   """
   def get_state(room_id, user_id) do
     with {:ok, room} <- get(room_id),
@@ -245,7 +238,7 @@ defmodule RadioBeam.Room do
 
       state_event_ids = Stream.map(state_mapping, fn {_key, event_id} -> event_id end)
 
-      {:ok, Room.View.get_events(room_id, user_id, state_event_ids)}
+      {:ok, Room.UserTimeline.map_filter_user_events(room_id, user_id, state_event_ids)}
     else
       _ -> {:error, :unauthorized}
     end
@@ -280,7 +273,7 @@ defmodule RadioBeam.Room do
   end
 
   defp expect_one_event(room_id, user_id, event_id, bundle_aggregations?) do
-    case Room.View.get_events(room_id, user_id, [event_id], bundle_aggregations?) do
+    case Room.UserTimeline.map_filter_user_events(room_id, user_id, [event_id], bundle_aggregations?) do
       [event] -> {:ok, event}
       _ -> {:error, :unauthorized}
     end
@@ -347,59 +340,8 @@ defmodule RadioBeam.Room do
   end
 
   def get_children(room_id, user_id, event_id, limit, opts) do
-    with {:ok, child_event_stream} <- Room.View.get_child_events(room_id, user_id, event_id) do
-      rel_type = Keyword.get(opts, :rel_type)
-      event_type = Keyword.get(opts, :event_type)
-
-      comparator = &(&1 >= &2.order_id)
-      before_start? = maybe_event_comparator(room_id, user_id, Keyword.fetch(opts, :to), comparator, fn _ -> false end)
-
-      comparator = &(&2.order_id < &1)
-      before_end? = maybe_event_comparator(room_id, user_id, Keyword.fetch(opts, :from), comparator, fn _ -> true end)
-
-      # note: we take(limit) *after* sorting, since child_event_stream does
-      # not traverse child events in topological order (as of writing,
-      # RelatedEvents maps child event IDs in a MapSet (which is unordered).
-      #
-      # same reasoning for using the filter/reject instead of drop_/take_while
-      child_events =
-        child_event_stream
-        # |> Stream.drop_while(before_start?)
-        # |> Stream.take_while(before_end?)
-        |> Stream.reject(before_start?)
-        |> Stream.filter(before_end?)
-        |> Stream.filter(&(filter_rel_type(&1, rel_type) and filter_event_type(&1, event_type)))
-        |> apply_order(Keyword.get(opts, :order, :reverse_chronological))
-        |> Enum.take(limit)
-
-      # TOIMPL: support for `recurse?` option
-      {:ok, child_events, _recurse_depth = 1}
-    end
+    Relations.get_children(room_id, user_id, event_id, limit, Keyword.put(opts, :get_event, &get_event/4))
   end
-
-  defp maybe_event_comparator(room_id, user_id, {:ok, event_id}, comparator, default) do
-    case get_event(room_id, user_id, event_id, false) do
-      {:ok, event} ->
-        &comparator.(event.order_id, &1)
-
-      {:error, :unauthorized} ->
-        default
-    end
-  end
-
-  defp maybe_event_comparator(_room_id, _user_id, :error, _comparator, default), do: default
-
-  defp filter_rel_type(_pdu, nil), do: true
-  defp filter_rel_type(%{content: %{"m.relates_to" => %{"rel_type" => rel_type}}}, rel_type), do: true
-  defp filter_rel_type(_pdu, _rel_type), do: false
-
-  defp filter_event_type(_pdu, nil), do: true
-  defp filter_event_type(%{type: event_type}, event_type), do: true
-  defp filter_event_type(_pdu, _event_type), do: false
-
-  defp apply_order(event_stream, :chronological), do: Enum.sort(event_stream, {:asc, Event})
-
-  defp apply_order(event_stream, :reverse_chronological), do: Enum.sort(event_stream, {:desc, Event})
 
   def get_hierarchy(room_id, user_id, already_seen \\ MapSet.new()) do
     with {:ok, state_events} <- get_state(room_id, user_id) do
@@ -409,7 +351,7 @@ defmodule RadioBeam.Room do
         # sort per level of depth - spec doesn't define an order here, but it
         # helps test the DFS constraint, since `get_state/2` returns events in
         # no particular order
-        |> apply_order(:chronological)
+        |> Enum.sort({:asc, Event})
         |> Enum.flat_map(fn m_child_space_event ->
           child_room_id = m_child_space_event.state_key
 
