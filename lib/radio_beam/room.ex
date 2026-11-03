@@ -317,7 +317,7 @@ defmodule RadioBeam.Room do
 
   def get_thread_event_ids(room_id, user_id, include, limit, from \\ :latest) do
     with {:ok, from} <- map_from_event_id_to_stream_number(room_id, from) do
-      case Room.View.Threads.get_thread_event_ids(room_id, user_id, include, limit, from) do
+      case Room.Threads.get_thread_event_ids(room_id, user_id, include, limit, from) do
         [] -> {:ok, [], :end}
         thread_event_maps -> {:ok, thread_event_maps, List.last(thread_event_maps).event_id}
       end

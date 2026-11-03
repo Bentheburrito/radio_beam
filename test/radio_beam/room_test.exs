@@ -1055,7 +1055,7 @@ defmodule RadioBeam.RoomTest do
 
       {:ok, room_id} = Room.create(account1.user_id)
 
-      queue = {RadioBeam.Room.View.Threads, room_id}
+      queue = {RadioBeam.Room.Threads, room_id}
       Fixtures.listen_to_queue_messages(queue)
       tl_queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(tl_queue)

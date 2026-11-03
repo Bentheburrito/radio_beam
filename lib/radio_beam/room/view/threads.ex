@@ -1,4 +1,4 @@
-defmodule RadioBeam.Room.View.Threads do
+defmodule RadioBeam.Room.Threads do
   @moduledoc """
   Tracks m.thread root events in a room via `content.m.relates_to`
   """

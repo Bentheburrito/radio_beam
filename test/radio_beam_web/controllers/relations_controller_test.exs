@@ -3,7 +3,7 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.UserTimeline
-  alias RadioBeam.Room.View.Threads
+  alias RadioBeam.Room.Threads
 
   defp relates_to(parent_id, msg) do
     %{

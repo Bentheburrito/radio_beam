@@ -22,7 +22,7 @@ defmodule RadioBeam.Room.Database do
   @callback stream_room_event_ids_from_timestamp(Room.id(), non_neg_integer(), :backward | :forward, Keyword.t()) ::
               Enumerable.t(Room.event_id())
   @callback upsert_room_thread_parent(Room.id(), non_neg_integer(), Room.event_id()) :: :ok
-  @callback get_room_thread_parents(Room.id(), Keyword.t()) :: View.Threads.t()
+  @callback get_room_thread_parents(Room.id(), Keyword.t()) :: [Room.event_id()]
 
   @database_backend Application.compile_env!(:radio_beam, [RadioBeam.Room.Database, :backend])
   defdelegate upsert_room(room), to: @database_backend
