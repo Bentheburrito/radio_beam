@@ -9,7 +9,7 @@ defmodule RadioBeam.Room.UserTimeline do
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.PDU
   alias RadioBeam.Room.UserTimeline.Event
-  alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.RelatedEvents
   alias RadioBeam.User.RoomMemberships
 
   ### API ###

@@ -4,7 +4,7 @@ defmodule RadioBeam.Room.Relations do
   """
   alias RadioBeam.Room
   alias RadioBeam.Room.UserTimeline.Event
-  alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.RelatedEvents
 
   def get_children(room_id, user_id, event_id, limit, opts) do
     with {:ok, child_event_stream} <- get_child_events(room_id, user_id, event_id) do

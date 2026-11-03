@@ -1,8 +1,8 @@
-defmodule RadioBeam.Room.View.RelatedEventsTest do
+defmodule RadioBeam.Room.RelatedEventsTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.RelatedEvents
+  alias RadioBeam.Room.RelatedEvents
   alias RadioBeam.Room.UserTimeline
 
   describe "handle_pdu/2" do

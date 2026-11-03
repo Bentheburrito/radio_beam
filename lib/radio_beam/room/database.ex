@@ -4,14 +4,13 @@ defmodule RadioBeam.Room.Database do
   bounded context.
   """
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.RelatedEvents
 
   @type ensure_room_exists?() :: boolean()
 
   @callback upsert_room(Room.t()) :: :ok
   @callback fetch_room(Room.id()) :: {:ok, Room.t()} | {:error, :not_found}
-  @callback upsert_related_events(Room.id(), RelatedEvents.t()) :: :ok
-  @callback fetch_related_events(Room.id()) :: {:ok, RelatedEvents.t()} | {:error, :not_found}
+  @callback upsert_related_events(Room.id(), Room.RelatedEvents.t()) :: :ok
+  @callback fetch_related_events(Room.id()) :: {:ok, Room.RelatedEvents.t()} | {:error, :not_found}
   @callback create_alias(Room.Alias.t(), Room.id(), ensure_room_exists?()) ::
               :ok | {:error, :alias_in_use | :room_does_not_exist}
   @callback rebind_aliases(Room.id(), Room.id()) :: :ok

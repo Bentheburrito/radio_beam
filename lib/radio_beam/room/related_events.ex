@@ -1,4 +1,4 @@
-defmodule RadioBeam.Room.View.RelatedEvents do
+defmodule RadioBeam.Room.RelatedEvents do
   @moduledoc """
   Tracks related events as defined by `content.m.relates_to`
   """
