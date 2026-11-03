@@ -1,22 +1,13 @@
 defmodule RadioBeam.Room.View do
   @moduledoc false
-  alias RadioBeam.PubSub
   alias RadioBeam.Room
-  alias RadioBeam.Room.Database
-  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.UserTimeline
-  alias RadioBeam.Room.View.Core
-  alias RadioBeam.Room.View.Core.InviteStateEvents
   alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.Room.View.RelatedEvents
   alias RadioBeam.User
 
   @type key() :: term()
-  @type t() :: InviteStateEvents.t() | RelatedEvents.t()
-
-  def handle_pdu(room_id, state_mapping_at_pdu, %PDU{} = pdu) do
-    Core.handle_pdu(room_id, state_mapping_at_pdu, pdu, deps())
-  end
+  @type t() :: RelatedEvents.t()
 
   def timeline_event_stream(room_id, user_id, from), do: UserTimeline.stream_user_events(room_id, user_id, from: from)
 
@@ -47,30 +38,4 @@ defmodule RadioBeam.Room.View do
       %{} -> {:error, :not_found}
     end
   end
-
-  @stripped_state_event_keys ~w|content sender state_key type|a
-  def get_invite_state(room_id, user_id) do
-    with {:ok, %InviteStateEvents{} = invite_state} <- Database.fetch_view({InviteStateEvents, room_id}) do
-      state_events =
-        InviteStateEvents.stripped_state_types()
-        |> Stream.reject(&(&1 == "m.room.member"))
-        |> Stream.map(&{&1, ""})
-        |> Stream.concat([{"m.room.member", user_id}])
-        |> Stream.filter(&is_map_key(invite_state.mapping, &1))
-        |> Stream.map(&Map.fetch!(invite_state.mapping, &1))
-        |> Enum.map(&Map.take(&1.event, @stripped_state_event_keys))
-
-      {:ok, state_events}
-    end
-  end
-
-  defp deps do
-    %{
-      fetch_view: &Database.fetch_view/1,
-      save_view!: &save_view!/2,
-      broadcast!: &PubSub.broadcast/2
-    }
-  end
-
-  defp save_view!(view_state, key), do: Database.upsert_view(key, view_state)
 end

@@ -73,8 +73,8 @@ config :radio_beam, RadioBeam.EventHandler.Server, max_retry_timeout_ms: :timer.
 
 config :radio_beam, RadioBeam.EventHandler,
   room_id_keyed_handlers: [
-    RadioBeam.Room.UserTimeline,
     RadioBeam.Room.Threads,
+    RadioBeam.Room.UserTimeline,
     RadioBeam.User.Notifications
   ],
   state_key_keyed_handlers: [RadioBeam.User.RoomMemberships]

@@ -555,7 +555,13 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, room_id} = Room.create(account.user_id)
 
       account2 = Fixtures.create_account()
-      {:ok, _event_id} = Room.invite(room_id, account.user_id, account2.user_id)
+
+      queue = {RadioBeam.User.RoomMemberships, account2.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
+      {:ok, event_id} = Room.invite(room_id, account.user_id, account2.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/members", %{"membership" => "join"})
 

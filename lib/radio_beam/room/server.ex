@@ -73,7 +73,6 @@ defmodule RadioBeam.Room.Server do
       end)
 
     for pdu <- pdu_stream do
-      Room.View.handle_pdu(room.id, fn -> Room.Core.get_state_mapping_at(room, pdu.event.id) end, pdu)
       :ok = RadioBeam.EventHandler.queue_event(pdu)
     end
 
@@ -87,8 +86,6 @@ defmodule RadioBeam.Room.Server do
         Database.upsert_room(room)
 
         Enum.each(visible_pdus, fn %PDU{event: event} = pdu ->
-          Room.View.handle_pdu(room.id, fn -> Room.Core.get_state_mapping_at(room, event.id) end, pdu)
-
           :ok = RadioBeam.EventHandler.queue_event(pdu)
 
           if event.type == "m.room.member" and event.content["membership"] == "invite" do

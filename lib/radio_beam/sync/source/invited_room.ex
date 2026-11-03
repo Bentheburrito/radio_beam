@@ -41,7 +41,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoom do
               if sender_id in inputs.ignored_user_ids do
                 {:no_update, nil}
               else
-                {:ok, invite_state_events} = Room.get_invite_state_events(room.id, inputs.user_id)
+                invite_state_events = Room.get_invite_state_events(room.id, inputs.user_id)
                 {:ok, InvitedRoomResult.new!(room.id, invite_state_events), "sent"}
               end
 

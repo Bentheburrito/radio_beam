@@ -49,7 +49,19 @@ defmodule RadioBeam.Room do
     end
   end
 
-  def get_invite_state_events(room_id, user_id), do: Room.View.get_invite_state(room_id, user_id)
+  @stripped_state_types Enum.map(~w|create name avatar topic join_rules canonical_alias encryption|, &"m.room.#{&1}")
+  @stripped_state_event_fields ~w|content sender state_key type|a
+  def get_invite_state_events(room_id, user_id) do
+    @stripped_state_types
+    |> Stream.map(&{&1, ""})
+    |> Stream.concat([{"m.room.member", user_id}])
+    |> Enum.flat_map(fn {type, state_key} ->
+      case fetch_state_pdu_at(room_id, :current_state, type, state_key, true) do
+        {:ok, %RadioBeam.Room.PDU{} = pdu} -> [Map.take(pdu.event, @stripped_state_event_fields)]
+        {:error, :not_found} -> []
+      end
+    end)
+  end
 
   @doc "Tries to invite the invitee to the given room, if the inviter has perms"
   @spec invite(room_id :: String.t(), inviter_id :: String.t(), invitee_id :: String.t(), reason :: String.t() | nil) ::
@@ -274,12 +286,14 @@ defmodule RadioBeam.Room do
     end
   end
 
-  def fetch_state_pdu_at(room_id, at_event_id, type, state_key) do
+  def fetch_state_pdu_at(room_id, at_event_id, type, state_key, apply_at_event? \\ false) do
     with {:ok, %__MODULE__{} = room} <- get(room_id),
-         {:ok, event_id} <- Room.Core.get_state_mapping_at(room, at_event_id, type, state_key, false),
+         {:ok, event_id} <- Room.Core.get_state_mapping_at(room, at_event_id, type, state_key, apply_at_event?),
          %RadioBeam.Room.PDU{} = pdu <- Room.Core.fetch_pdu!(room, event_id) do
       {:ok, pdu}
     end
+  rescue
+    _ -> {:error, :not_found}
   end
 
   def fetch_pdu(room_id, event_id) do
