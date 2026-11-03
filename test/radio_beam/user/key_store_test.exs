@@ -235,7 +235,12 @@ defmodule RadioBeam.User.KeyStoreTest do
       before_account1_join = RadioBeam.Time.now()
       before_account1_join_fetcher = fetcher(%{room_id => last_event_id})
 
+      queue = {RadioBeam.User.RoomMemberships, account1.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, event_id} = Room.join(room_id, account1.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       after_account1_join = RadioBeam.Time.now()
       after_account1_join_fetcher = fetcher(%{room_id => event_id})
