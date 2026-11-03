@@ -22,7 +22,7 @@ defmodule RadioBeam.Room.Timeline.Acknowledgements do
   end
 
   defp validate_readable_event(room_id, user_id, event_id),
-    do: View.Timeline.fetch_user_event(room_id, user_id, event_id)
+    do: Room.UserTimeline.fetch_user_event(room_id, user_id, event_id)
 
   @max_children 100
   defp validate_thread_id_for_event(room_id, user_id, event, "$" <> _ = thread_id) do

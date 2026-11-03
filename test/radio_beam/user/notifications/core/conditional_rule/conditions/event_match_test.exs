@@ -2,7 +2,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatch
 
   setup do

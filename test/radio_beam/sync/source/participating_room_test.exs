@@ -13,7 +13,7 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoomTest do
 
     {:ok, room_id} = Room.create(account.user_id)
 
-    queue = {RadioBeam.Room.View.Timeline, room_id}
+    queue = {RadioBeam.Room.UserTimeline, room_id}
     Fixtures.listen_to_queue_messages(queue)
 
     {:ok, event_id} = Room.send_text_message(room_id, account.user_id, "ah, a new room.")

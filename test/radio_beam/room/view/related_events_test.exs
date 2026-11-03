@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.View.RelatedEventsTest do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.View.RelatedEvents
-  alias RadioBeam.Room.View.Timeline
+  alias RadioBeam.Room.UserTimeline
 
   describe "handle_pdu/2" do
     setup do
@@ -15,7 +15,7 @@ defmodule RadioBeam.Room.View.RelatedEventsTest do
       {:ok, _event_id} = Room.invite(room_id, creator_id, user_id)
       {:ok, _event_id} = Room.join(room_id, user_id)
 
-      Fixtures.listen_to_queue_messages({Timeline, room_id})
+      Fixtures.listen_to_queue_messages({UserTimeline, room_id})
 
       %{room_id: room_id, creator_id: creator_id, user_id: user_id}
     end
@@ -25,7 +25,7 @@ defmodule RadioBeam.Room.View.RelatedEventsTest do
 
       {:ok, event_id} = Room.send_text_message(room_id, creator_id, "hello")
 
-      Fixtures.assert_caught_up_to_event({Timeline, room_id}, event_id)
+      Fixtures.assert_caught_up_to_event({UserTimeline, room_id}, event_id)
 
       ^related_events = RelatedEvents.fetch!(room_id)
     end
@@ -51,7 +51,7 @@ defmodule RadioBeam.Room.View.RelatedEventsTest do
 
       {:ok, thread_event2_id} = Room.send(room_id, creator_id, "m.room.message", thread_message_content)
 
-      Fixtures.assert_caught_up_to_event({Timeline, room_id}, thread_event2_id)
+      Fixtures.assert_caught_up_to_event({UserTimeline, room_id}, thread_event2_id)
 
       assert %RelatedEvents{related_by_event_id: %{^thread_root_event_id => related_mapset}} =
                RelatedEvents.fetch!(room_id)

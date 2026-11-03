@@ -13,7 +13,7 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
   alias RadioBeam.Room.Timeline.Acknowledgements.Core.ReceiptBox
   alias RadioBeam.Room.Timeline.LazyLoadMembersCache
   alias RadioBeam.Room.View
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.Sync.NextBatch
   alias RadioBeam.Sync.Source
 

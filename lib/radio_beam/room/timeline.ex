@@ -78,7 +78,7 @@ defmodule RadioBeam.Room.Timeline do
 
   defp take_until_to_or_limit(event_stream, room_id, user_id, "$" <> _ = to_event_id, limit) do
     to_take =
-      with {:ok, to_event} <- Room.View.Timeline.fetch_user_event(room_id, user_id, to_event_id),
+      with {:ok, to_event} <- Room.UserTimeline.fetch_user_event(room_id, user_id, to_event_id),
            [%{order_id: order_id}] <- Enum.take(event_stream, 1) do
         min(limit, abs(order_id - to_event.order_id))
       else
@@ -138,7 +138,7 @@ defmodule RadioBeam.Room.Timeline do
   end
 
   def get_context(room_id, user_id, device_id, event_id, opts) do
-    with {:ok, event} <- Room.View.Timeline.fetch_user_event(room_id, user_id, event_id),
+    with {:ok, event} <- Room.UserTimeline.fetch_user_event(room_id, user_id, event_id),
          {:ok, prev_events, prev_end, _} <- get_messages(room_id, user_id, device_id, {:backward, event_id}, opts),
          {:ok, next_events, next_end, _} <- get_messages(room_id, user_id, device_id, {:forward, event_id}, opts) do
       {:ok, event, prev_events, prev_end, next_events, next_end}

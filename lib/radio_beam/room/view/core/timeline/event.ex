@@ -1,4 +1,4 @@
-defmodule RadioBeam.Room.View.Core.Timeline.Event do
+defmodule RadioBeam.Room.UserTimeline.Event do
   @moduledoc false
   alias RadioBeam.Room.AuthorizedEvent
   alias RadioBeam.Room.EventRelationships
@@ -43,7 +43,7 @@ defmodule RadioBeam.Room.View.Core.Timeline.Event do
   defp adjust_redacts_key(event), do: event
 
   defimpl JSON.Encoder do
-    alias RadioBeam.Room.View.Core.Timeline.Event
+    alias RadioBeam.Room.UserTimeline.Event
 
     def encode(event, encoder), do: event |> Event.to_map() |> JSON.Encoder.Map.encode(encoder)
   end

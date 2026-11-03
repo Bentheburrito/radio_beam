@@ -6,7 +6,7 @@ defmodule RadioBeam.User.Notifications do
 
   alias RadioBeam.Room
   alias RadioBeam.Room.PDU
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.Time
   alias RadioBeam.User
   alias RadioBeam.User.Database

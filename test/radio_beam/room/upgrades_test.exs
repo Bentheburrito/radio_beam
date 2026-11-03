@@ -15,7 +15,7 @@ defmodule RadioBeam.Room.UpgradesTest do
         alias_localpart = "room-upgrade-#{from_version}-to-#{to_version}-#{RadioBeam.Time.now()}"
         {:ok, room_id} = Room.create(user_id, version: from_version, alias: alias_localpart)
 
-        queue = {RadioBeam.Room.View.Timeline, room_id}
+        queue = {RadioBeam.Room.UserTimeline, room_id}
         Fixtures.listen_to_queue_messages(queue)
 
         {:ok, event_id} = Room.send_text_message(room_id, user_id, "yo")
@@ -29,7 +29,7 @@ defmodule RadioBeam.Room.UpgradesTest do
 
         Fixtures.assert_processed_count(memberships_queue, 1)
 
-        queue = {RadioBeam.Room.View.Timeline, upgraded_room_id}
+        queue = {RadioBeam.Room.UserTimeline, upgraded_room_id}
         Fixtures.listen_to_queue_messages(queue)
 
         {:ok, event_id} = Room.send_text_message(upgraded_room_id, user_id, "yo (in the new room)")

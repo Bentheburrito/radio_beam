@@ -5,7 +5,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
   https://spec.matrix.org/latest/client-server-api/#conditions-1
   """
 
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.AccessExtras
 
   # The match is performed exactly and only supports non-compound canonical
@@ -18,7 +18,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
 
   @doc """
   Returns an ok tuple with an arity-1 function or an error tuple. The function
-  will return `true` when given an `t:RadioBeam.Room.View.Core.Timeline.Event`
+  will return `true` when given an `t:RadioBeam.Room.UserTimeline.Event`
   whose value under the `event_property_string` matches the given value.
   """
   def new(event_property_string, value, compare \\ :exact)

@@ -3,7 +3,7 @@ defmodule RadioBeam.Room.Sync.JoinedRoomResult do
 
   alias RadioBeam.User.EventFilter
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
 
   defstruct ~w|
     room_id

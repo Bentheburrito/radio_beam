@@ -3,7 +3,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule do
   A parsed override or underride PushRule defined by [the spec](https://spec.matrix.org/v1.18/client-server-api/#get_matrixclientv3pushrulesglobalkindruleid)
   """
 
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User.Notifications.Core.ConditionalRule.Conditions
 
   # TODO: make conditions a struct with a predicate, rather than the predicate

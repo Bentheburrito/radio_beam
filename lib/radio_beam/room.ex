@@ -11,7 +11,7 @@ defmodule RadioBeam.Room do
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.Upgrades
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User
 
   @attrs ~w|id chronicle redactions relationships|a
@@ -303,7 +303,7 @@ defmodule RadioBeam.Room do
   end
 
   def get_nearest_event(room_id, user_id, dir, timestamp) when dir in ~w|forward backward|a do
-    with {:ok, event} <- Room.View.Timeline.nearest_user_event_to_timestamp(room_id, user_id, timestamp, dir) do
+    with {:ok, event} <- Room.UserTimeline.nearest_user_event_to_timestamp(room_id, user_id, timestamp, dir) do
       {:ok, event.id, event.origin_server_ts}
     end
   end

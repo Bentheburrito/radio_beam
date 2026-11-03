@@ -2,7 +2,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRuleTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User.Notifications.Core.ConditionalRule
 
   describe "new/3,4" do

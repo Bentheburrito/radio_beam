@@ -4,10 +4,10 @@ defmodule RadioBeam.Room.View do
   alias RadioBeam.Room
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.PDU
+  alias RadioBeam.Room.UserTimeline
   alias RadioBeam.Room.View.Core
   alias RadioBeam.Room.View.Core.InviteStateEvents
-  alias RadioBeam.Room.View.Timeline
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.Room.View.RelatedEvents
   alias RadioBeam.Room.View.Threads
   alias RadioBeam.User
@@ -19,10 +19,10 @@ defmodule RadioBeam.Room.View do
     Core.handle_pdu(room_id, state_mapping_at_pdu, pdu, deps())
   end
 
-  def timeline_event_stream(room_id, user_id, from), do: Timeline.stream_user_events(room_id, user_id, from: from)
+  def timeline_event_stream(room_id, user_id, from), do: UserTimeline.stream_user_events(room_id, user_id, from: from)
 
   def get_events(room_id, user_id, event_ids, _bundle_aggregations? \\ true),
-    do: Timeline.map_filter_user_events(room_id, user_id, event_ids)
+    do: UserTimeline.map_filter_user_events(room_id, user_id, event_ids)
 
   @doc """
   Get the immediate child events of the given `event_id`s. Returns a map from
@@ -35,10 +35,10 @@ defmodule RadioBeam.Room.View do
     %RelatedEvents{} = relations = RelatedEvents.fetch!(room_id)
 
     room_id
-    |> Timeline.map_filter_user_events(user_id, event_ids)
+    |> UserTimeline.map_filter_user_events(user_id, event_ids)
     |> Stream.map(&{&1.id, Map.get(relations.related_by_event_id, &1.id, MapSet.new())})
     |> Map.new(fn {parent_event_id, child_event_ids} ->
-      {parent_event_id, Timeline.map_filter_user_events(room_id, user_id, child_event_ids)}
+      {parent_event_id, UserTimeline.map_filter_user_events(room_id, user_id, child_event_ids)}
     end)
   end
 
@@ -53,7 +53,7 @@ defmodule RadioBeam.Room.View do
     event_ids = room_id |> Threads.stream_event_ids() |> drop_until_from(from)
 
     room_id
-    |> Timeline.map_filter_user_events(user_id, event_ids)
+    |> UserTimeline.map_filter_user_events(user_id, event_ids)
     |> Stream.map(&Event.to_map/1)
     |> filter_by_include(include)
     |> Enum.take(limit)

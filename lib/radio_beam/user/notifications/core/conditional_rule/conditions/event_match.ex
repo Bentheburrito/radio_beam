@@ -5,12 +5,12 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventMatc
   https://spec.matrix.org/latest/client-server-api/#conditions-1
   """
 
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.AccessExtras
 
   @doc """
   Returns an ok tuple with an arity-1 function or an error tuple. The function
-  will return `true` when given an `t:RadioBeam.Room.View.Core.Timeline.Event`
+  will return `true` when given an `t:RadioBeam.Room.UserTimeline.Event`
   whose value under the `event_property_string` matches the given pattern.
   """
   def new(event_property_string, pattern) do

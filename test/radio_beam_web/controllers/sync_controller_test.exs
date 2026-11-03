@@ -58,7 +58,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
 
       memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
@@ -182,7 +182,7 @@ defmodule RadioBeamWeb.SyncControllerTest do
     test "successfully fetches events when user is a member of the room", %{conn: conn, account: creator} do
       {:ok, room_id} = Room.create(creator.user_id, name: "This is a cool room")
 
-      queue = {RadioBeam.Room.View.Timeline, room_id}
+      queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(queue)
 
       {:ok, event_id} =

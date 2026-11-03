@@ -29,9 +29,9 @@ defmodule RadioBeam.SyncTest do
       memberships_queue = {User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
 
-      tl_queue1 = {RadioBeam.Room.View.Timeline, room_id1}
+      tl_queue1 = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(tl_queue1)
-      tl_queue2 = {RadioBeam.Room.View.Timeline, room_id2}
+      tl_queue2 = {RadioBeam.Room.UserTimeline, room_id2}
       Fixtures.listen_to_queue_messages(tl_queue2)
 
       {:ok, event_id1} = Room.invite(room_id1, creator.user_id, account.user_id)
@@ -117,7 +117,7 @@ defmodule RadioBeam.SyncTest do
 
       Room.send(room_id1, account.user_id, "m.room.message", content)
 
-      queue = {RadioBeam.Room.View.Timeline, room_id1}
+      queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(queue)
 
       {:ok, latest_event_id} =
@@ -175,9 +175,9 @@ defmodule RadioBeam.SyncTest do
 
       memberships_queue = {User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue1 = {RadioBeam.Room.View.Timeline, room_id1}
+      tl_queue1 = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(tl_queue1)
-      tl_queue2 = {RadioBeam.Room.View.Timeline, room_id2}
+      tl_queue2 = {RadioBeam.Room.UserTimeline, room_id2}
       Fixtures.listen_to_queue_messages(tl_queue2)
 
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
@@ -263,7 +263,7 @@ defmodule RadioBeam.SyncTest do
 
       memberships_queue = {RadioBeam.User.RoomMemberships, annoying_account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
@@ -341,7 +341,7 @@ defmodule RadioBeam.SyncTest do
 
       {:ok, room_id1} = Room.create(creator_id)
 
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id1, creator_id, user_id)
@@ -424,7 +424,7 @@ defmodule RadioBeam.SyncTest do
 
       notif_queue = {RadioBeam.User.Notifications, room_id1}
       membership_queue = {RadioBeam.User.RoomMemberships, account.user_id}
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(notif_queue)
       Fixtures.listen_to_queue_messages(membership_queue)
       Fixtures.listen_to_queue_messages(tl_queue)
@@ -465,7 +465,7 @@ defmodule RadioBeam.SyncTest do
 
       memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
@@ -508,7 +508,7 @@ defmodule RadioBeam.SyncTest do
 
       {:ok, room_id2} = Room.create(creator.user_id, name: "Notes")
 
-      tl_queue2 = {RadioBeam.Room.View.Timeline, room_id2}
+      tl_queue2 = {RadioBeam.Room.UserTimeline, room_id2}
       Fixtures.listen_to_queue_messages(tl_queue2)
 
       {:ok, event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
@@ -616,7 +616,7 @@ defmodule RadioBeam.SyncTest do
 
       memberships_queue = {User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id1}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
@@ -769,7 +769,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, event_id} = Room.join(room_id3, account.user_id)
       Fixtures.assert_caught_up_to_event(queue, event_id)
 
-      queue = {RadioBeam.Room.View.Timeline, room_id2}
+      queue = {RadioBeam.Room.UserTimeline, room_id2}
       Fixtures.listen_to_queue_messages(queue)
 
       {:ok, event_id} = Room.set_name(room_id2, creator.user_id, "General Chat")
@@ -811,7 +811,7 @@ defmodule RadioBeam.SyncTest do
       {:ok, _event_id} = Room.join(room_id1, account2.user_id)
       {:ok, _event_id} = Room.join(room_id1, account3.user_id)
 
-      queue = {RadioBeam.Room.View.Timeline, room_id1}
+      queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(queue)
 
       {:ok, _event_id} = Room.send_text_message(room_id1, creator.user_id, "welcome all")
@@ -879,7 +879,7 @@ defmodule RadioBeam.SyncTest do
       queue1 = {RadioBeam.User.RoomMemberships, account.user_id}
       queue2 = {RadioBeam.User.RoomMemberships, account2.user_id}
       queue3 = {RadioBeam.User.RoomMemberships, account3.user_id}
-      queue4 = {RadioBeam.Room.View.Timeline, room_id1}
+      queue4 = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(queue1)
       Fixtures.listen_to_queue_messages(queue2)
       Fixtures.listen_to_queue_messages(queue3)
@@ -1009,7 +1009,7 @@ defmodule RadioBeam.SyncTest do
 
       memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
@@ -1084,7 +1084,7 @@ defmodule RadioBeam.SyncTest do
 
       {:ok, room_id} = Room.create(creator.user_id)
 
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
@@ -1130,7 +1130,7 @@ defmodule RadioBeam.SyncTest do
       Process.sleep(wait_for)
       {:ok, room_id2} = Room.create(creator.user_id)
 
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id2}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id2}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, event_id} = Room.invite(room_id2, creator.user_id, account.user_id)
@@ -1155,7 +1155,7 @@ defmodule RadioBeam.SyncTest do
 
       memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
@@ -1231,7 +1231,7 @@ defmodule RadioBeam.SyncTest do
 
       memberships_queue = {User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
-      tl_queue = {RadioBeam.Room.View.Timeline, room_id}
+      tl_queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)

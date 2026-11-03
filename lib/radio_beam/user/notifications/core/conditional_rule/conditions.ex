@@ -7,7 +7,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions do
 
   @doc """
   Returns `{:ok, fun/1}` or `:error`, where `fun/1` is a predicate
-  function that takes a `t:RadioBeam.Room.View.Core.Timeline.Event` and returns
+  function that takes a `t:RadioBeam.Room.UserTimeline.Event` and returns
   a `boolean()`. `true` indicates the event matched the condition, possibly
   triggering a notification (if other corresponding conditions match too).
   """

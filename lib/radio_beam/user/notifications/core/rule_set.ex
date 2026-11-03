@@ -6,7 +6,7 @@ defmodule RadioBeam.User.Notifications.Core.RuleSet do
   server-defined default override rule. Furthermore, `override_default` and
   `underride_default` contain the server-defined default rules.
   """
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User.Notifications.Core.EntityRule
   alias RadioBeam.User.Notifications.Core.ConditionalRule
 

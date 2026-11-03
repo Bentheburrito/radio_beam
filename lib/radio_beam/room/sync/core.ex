@@ -4,7 +4,7 @@ defmodule RadioBeam.Room.Sync.Core do
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.Timeline
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
 
   def perform(%{} = inputs, %Room{} = room) do
     {:ok, user_membership_event_id} = Room.Core.get_state_mapping(room, "m.room.member", inputs.user_id)

@@ -67,7 +67,7 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
       add_device_keys(creator_id)
 
       [room_id] = creator_id |> RoomMemberships.joined() |> Enum.to_list()
-      queue = {RadioBeam.Room.View.Timeline, room_id}
+      queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(queue)
 
       {:ok, event_id} = Room.send_text_message(room_id, creator_id, "yo")

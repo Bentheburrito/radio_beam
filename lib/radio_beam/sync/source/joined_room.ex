@@ -7,7 +7,7 @@ defmodule RadioBeam.Sync.Source.JoinedRoom do
   alias RadioBeam.PubSub
   alias RadioBeam.Room.Sync.JoinedRoomResult
   alias RadioBeam.Room.View
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.Sync.Source
 
   @impl Source

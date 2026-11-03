@@ -2,7 +2,7 @@ defmodule RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventProp
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User.Notifications.Core.ConditionalRule.Conditions.EventPropertyIs
 
   @message "Hello world, this is a message."

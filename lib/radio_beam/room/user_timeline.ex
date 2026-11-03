@@ -1,4 +1,4 @@
-defmodule RadioBeam.Room.View.Timeline do
+defmodule RadioBeam.Room.UserTimeline do
   @moduledoc """
   API and EventHandler for user-specific views of room events.
   """
@@ -8,8 +8,7 @@ defmodule RadioBeam.Room.View.Timeline do
   alias RadioBeam.Room
   alias RadioBeam.Room.Database
   alias RadioBeam.Room.PDU
-  # TODO: move namespaces
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.Room.View.RelatedEvents
   alias RadioBeam.User.RoomMemberships
 
@@ -151,7 +150,7 @@ defmodule RadioBeam.Room.View.Timeline do
   end
 
   defp pubsub_messages(pdu) do
-    event = RadioBeam.Room.View.Core.Timeline.Event.new!(pdu, [], nil)
+    event = Event.new!(pdu, [], nil)
     new_event_message = {PubSub.all_room_events(pdu.event.room_id), {:room_event, pdu.event.room_id, event}}
 
     if pdu.event.type == "m.room.member" do

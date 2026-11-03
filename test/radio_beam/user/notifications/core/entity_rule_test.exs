@@ -2,7 +2,7 @@ defmodule RadioBeam.User.Notifications.Core.EntityRuleTest do
   use ExUnit.Case, async: true
 
   alias RadioBeam.Room
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User.Notifications.Core.EntityRule
 
   describe "new/3,4" do

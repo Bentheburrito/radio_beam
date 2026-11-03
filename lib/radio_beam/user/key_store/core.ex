@@ -2,7 +2,7 @@ defmodule RadioBeam.User.KeyStore.Core do
   @moduledoc """
   Functional core for key store operations
   """
-  alias RadioBeam.Room.View.Core.Timeline.Event
+  alias RadioBeam.Room.UserTimeline.Event
   alias RadioBeam.User.CrossSigningKey
   alias RadioBeam.User.CrossSigningKeyRing
   alias RadioBeam.User.Device
