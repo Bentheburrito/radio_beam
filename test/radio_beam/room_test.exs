@@ -665,12 +665,17 @@ defmodule RadioBeam.RoomTest do
       account2: account2,
       account3: account3
     } do
+      queue = {RadioBeam.User.RoomMemberships, account2.user_id}
+      Fixtures.listen_to_queue_messages(queue)
+
       {:ok, room_id} = Room.create(creator.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account3.user_id)
       {:ok, _event_id} = Room.join(room_id, account2.user_id)
       {:ok, _event_id} = Room.join(room_id, account3.user_id)
-      {:ok, _event_id} = Room.leave(room_id, account2.user_id)
+      {:ok, event_id} = Room.leave(room_id, account2.user_id)
+
+      Fixtures.assert_caught_up_to_event(queue, event_id)
 
       assert {:ok, expected} = Room.get_members(room_id, account2.user_id)
 

@@ -4,9 +4,8 @@ jobs:
   test_and_lint:
     runs-on: ubuntu-latest
     env:
-      SERVER_NAME: localhost
+      LOCAL_HOMESERVERS_CONFIG_PATH: ${{ vars.LOCAL_HOMESERVERS_CONFIG_PATH }}
       ENABLE_REGISTRATION: true
-      ADMIN_LOCALPARTS: test
       GUARDIAN_TOKEN_SECRET_KEY: ${{ secrets.GUARDIAN_TOKEN_SECRET_KEY }}
     strategy:
       matrix:

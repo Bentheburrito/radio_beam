@@ -563,7 +563,12 @@ defmodule RadioBeamWeb.RoomControllerTest do
       conn: conn,
       account: account
     } do
+      creator_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(creator_queue)
+
       {:ok, room_id} = Room.create(account.user_id)
+
+      Fixtures.assert_processed_count(creator_queue, 1)
 
       account2 = Fixtures.create_account()
 
