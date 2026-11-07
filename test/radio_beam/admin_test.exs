@@ -6,6 +6,8 @@ defmodule RadioBeam.AdminTest do
   alias RadioBeam.Room
   alias RadioBeam.User.LocalAccount
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "report_user/3" do
     test "inserts a new UserGeneratedReport" do
       %{user_id: spammer_id} = Fixtures.create_account()
@@ -174,7 +176,7 @@ defmodule RadioBeam.AdminTest do
   describe "lock_account/2,3" do
     test "locks the given account, optionally specifying a DateTime to automatically unlock it" do
       account = Fixtures.create_account()
-      [admin_id | _] = RadioBeam.Config.admins()
+      [admin_id | _] = RadioBeam.Config.admins(@server_name)
 
       refute LocalAccount.locked?(account)
 
@@ -195,7 +197,7 @@ defmodule RadioBeam.AdminTest do
   describe "suspend_account/2,3" do
     test "suspends the given account, optionally specifying a DateTime to automatically unsuspend it" do
       account = Fixtures.create_account()
-      [admin_id | _] = RadioBeam.Config.admins()
+      [admin_id | _] = RadioBeam.Config.admins(@server_name)
 
       refute LocalAccount.suspended?(account)
 
@@ -216,7 +218,7 @@ defmodule RadioBeam.AdminTest do
   describe "remove_account_restrictions/2" do
     test "unlocks/unsuspends the given account" do
       account = Fixtures.create_account()
-      [admin_id | _] = RadioBeam.Config.admins()
+      [admin_id | _] = RadioBeam.Config.admins(@server_name)
 
       refute LocalAccount.locked?(account)
       refute LocalAccount.suspended?(account)

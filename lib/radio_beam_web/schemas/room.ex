@@ -40,7 +40,7 @@ defmodule RadioBeamWeb.Schemas.Room do
             "trusted_private_chat" => :trusted_private_chat
           })
         ),
-      "room_alias_name" => optional(&room_localpart/1),
+      "room_alias_name" => optional(:string),
       "room_version" => [Schema.enum(Map.keys(available_room_versions)), default: default_room_version],
       "topic" => optional(:string),
       "visibility" => [Schema.enum(%{"private" => :private, "public" => :public}), default: :private]
@@ -94,11 +94,6 @@ defmodule RadioBeamWeb.Schemas.Room do
     #   {version_num, ""} when version_num in 1..10 -> Map.put(schema, "creator", &Schema.user_id/1)
     #   _ -> schema
     # end
-  end
-
-  # TODO: validate localpart grammar
-  defp room_localpart(localpart) do
-    Schema.room_alias("##{localpart}:#{RadioBeam.server_name()}")
   end
 
   defp optional(type), do: [type, :optional]

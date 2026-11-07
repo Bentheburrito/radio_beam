@@ -4,8 +4,10 @@ defmodule RadioBeam.User.EventFilterTest do
 
   alias RadioBeam.User.EventFilter
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "new/1" do
-    @room_ids Enum.map(1..6, fn _ -> RadioBeam.Room.generate_legacy_id() end)
+    @room_ids Enum.map(1..6, fn _ -> RadioBeam.Room.generate_legacy_id(@server_name) end)
               |> Enum.chunk_every(2)
               |> List.duplicate(2)
               |> Enum.flat_map(& &1)

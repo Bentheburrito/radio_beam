@@ -5,6 +5,8 @@ defmodule RadioBeamWeb.AdminControllerTest do
 
   alias RadioBeam.Room
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "report_room/2" do
     test "saves the report and returns an empty JSON object (200)", %{conn: conn} do
       %{user_id: creator_id} = Fixtures.create_account()
@@ -142,8 +144,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+      put_admin(admin_id)
 
       account = Fixtures.create_account()
 
@@ -156,9 +157,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       account = Fixtures.create_account()
 
       conn = put(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{locked: false})
@@ -175,13 +174,11 @@ defmodule RadioBeamWeb.AdminControllerTest do
           assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
         end)
 
-      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an administrative action|
     end
 
     test "errors (404) when the requested account does not exist locally", %{conn: conn, account: %{user_id: admin_id}} do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       conn = put(conn, ~p"/_matrix/client/v1/admin/lock/@idontfreakinexistman:localhost", %{locked: true})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
@@ -192,9 +189,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       account = Fixtures.create_account()
 
       conn = get(conn, ~p"/_matrix/client/v1/admin/lock/#{account.user_id}", %{})
@@ -219,16 +214,14 @@ defmodule RadioBeamWeb.AdminControllerTest do
           assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
         end)
 
-      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an administrative action|
     end
 
     test "errors (404) when the requested account doesn't exist locally", %{
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       conn = get(conn, ~p"/_matrix/client/v1/admin/lock/@broareyouhigh:localhost", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
@@ -239,9 +232,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       account = Fixtures.create_account()
 
       conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{suspended: true})
@@ -253,9 +244,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       account = Fixtures.create_account()
 
       conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{suspended: false})
@@ -272,13 +261,11 @@ defmodule RadioBeamWeb.AdminControllerTest do
           assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
         end)
 
-      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an administrative action|
     end
 
     test "errors (404) when the requested account does not exist locally", %{conn: conn, account: %{user_id: admin_id}} do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       conn = put(conn, ~p"/_matrix/client/v1/admin/suspend/@idontfreakinexistman:localhost", %{suspended: true})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
@@ -289,9 +276,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       account = Fixtures.create_account()
 
       conn = get(conn, ~p"/_matrix/client/v1/admin/suspend/#{account.user_id}", %{})
@@ -316,16 +301,14 @@ defmodule RadioBeamWeb.AdminControllerTest do
           assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
         end)
 
-      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an action|
+      assert logs =~ ~s|non-admin "#{non_admin_id}" tried to take an administrative action|
     end
 
     test "errors (404) when the requested account doesn't exist locally", %{
       conn: conn,
       account: %{user_id: admin_id}
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       conn = get(conn, ~p"/_matrix/client/v1/admin/suspend/@broareyouhigh:localhost", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
@@ -352,9 +335,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
       device_display_name: device_display_name,
       random_id: random_id
     } do
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
-
+      put_admin(admin_id)
       conn = get(conn, ~p"/_matrix/client/v3/admin/whois/#{random_id}", %{})
 
       assert %{"user_id" => ^random_id, "devices" => devices} = json_response(conn, 200)
@@ -374,8 +355,7 @@ defmodule RadioBeamWeb.AdminControllerTest do
     } do
       non_existing_user_id = Fixtures.user_id()
 
-      current_admins = RadioBeam.admins()
-      Application.put_env(:radio_beam, :admins, [admin_id | current_admins])
+      put_admin(admin_id)
 
       conn = get(conn, ~p"/_matrix/client/v3/admin/whois/#{non_existing_user_id}", %{})
 
@@ -389,5 +369,15 @@ defmodule RadioBeamWeb.AdminControllerTest do
       assert %{"errcode" => "M_NOT_FOUND", "error" => error} = json_response(conn, 404)
       assert error =~ "user not found, or you don't have permission"
     end
+  end
+
+  defp put_admin(admin_id) do
+    amended_admins =
+      Enum.map(RadioBeam.local_homeservers(), fn
+        %{server_display_name: @server_name} = config -> put_in(config.admins, [admin_id | config.admins])
+        config -> config
+      end)
+
+    Application.put_env(:radio_beam, :local_homeservers, amended_admins)
   end
 end

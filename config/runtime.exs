@@ -6,20 +6,35 @@ if Config.config_env() in [:dev, :test] and File.exists?(envfile) do
   DotenvParser.load_file(envfile)
 end
 
-# config/runtime.exs is executed for all environments, including
-# during releases. It is executed after compilation and before the
-# system starts, so it is typically used to load production configuration
-# and secrets from environment variables or elsewhere. Do not define
-# any compile-time configuration in here, as it won't be applied.
-# The block below contains prod specific runtime configuration.
+local_homeservers =
+  "LOCAL_HOMESERVERS_CONFIG_PATH"
+  |> System.fetch_env!()
+  |> File.read!()
+  |> JSON.decode!()
+  |> Enum.map(fn attrs ->
+    case RadioBeam.LocalHomeserver.new_config(attrs) do
+      {:ok, config} ->
+        config
 
-server_name = System.fetch_env!("SERVER_NAME")
+      error ->
+        raise """
+        Invalid local homeserver configuration: #{inspect(attrs)}
+        Error: #{inspect(error)}
+        """
+    end
+  end)
+
+if Enum.empty?(local_homeservers), do: raise("Missing local homeserver config")
+
+if local_homeservers |> Enum.frequencies_by(& &1.delegated_host) |> Enum.any?(&(elem(&1, 1) > 1)) do
+  raise "Duplicate delegated_host! Please ensure your local homeserver config has a unique `delegated_host` per entry"
+end
+
 oauth2_module = RadioBeam.User.Authentication.OAuth2.Builtin
 
 config :radio_beam,
   registration_enabled: System.get_env("ENABLE_REGISTRATION", "false") == "true",
-  server_name: server_name,
-  admins: "ADMIN_LOCALPARTS" |> System.fetch_env!() |> String.split(",") |> Enum.map(&"@#{&1}:#{server_name}"),
+  local_homeservers: local_homeservers,
   oauth2_module: oauth2_module
 
 case System.get_env("AUTHORIZATION_MODULE", "builtin") do
@@ -105,7 +120,7 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || server_name
+  host = System.fetch_env!("PHX_HOST")
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :radio_beam, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

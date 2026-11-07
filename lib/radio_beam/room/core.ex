@@ -64,8 +64,10 @@ defmodule RadioBeam.Room.Core do
   end
 
   defp new_chronicle(dag_backend, chronicle_backend, creator_id, version, opts) do
+    {:ok, server_name} = RadioBeam.User.ID.server_name(creator_id)
+
     maybe_chroncile =
-      (&Room.generate_legacy_id/0)
+      fn -> Room.generate_legacy_id(server_name) end
       |> Events.create(creator_id, version, Keyword.get(opts, :content, %{}))
       |> chronicle_backend.new!(dag_backend)
 

@@ -19,6 +19,8 @@ defmodule RadioBeam.Room.CoreTest do
   alias RadioBeam.Room.Core
   alias RadioBeam.Room.Events
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "new/1" do
     test "successfully creates a new simple %Room{}", %{
       room_version: version,
@@ -41,8 +43,6 @@ defmodule RadioBeam.Room.CoreTest do
       chronicle_backend: chronicle_backend,
       dag_backend: dag_backend
     } do
-      server_name = RadioBeam.server_name()
-
       creator_id = Fixtures.user_id()
       invitee_id = Fixtures.user_id()
       maybe_deprecated_string_pl = if version in ~w|1 2 3 4 5 6 7 8 9|, do: "60", else: 60
@@ -60,11 +60,11 @@ defmodule RadioBeam.Room.CoreTest do
         end
 
       alias_localpart = "computer-rv-#{version}"
-      alias = "##{alias_localpart}:#{server_name}"
+      alias = "##{alias_localpart}:#{@server_name}"
 
       deps =
         Map.put(default_deps(), :register_room_alias, fn
-          %Room.Alias{localpart: ^alias_localpart, server_name: ^server_name}, _ -> :ok
+          %Room.Alias{localpart: ^alias_localpart, server_name: @server_name}, _ -> :ok
           other_alias, _ -> raise "room creation checking for alias #{other_alias}"
         end)
 
@@ -426,8 +426,8 @@ defmodule RadioBeam.Room.CoreTest do
   defp default_deps do
     %{
       register_room_alias: fn
-        %Room.Alias{localpart: "invalid", server_name: "localhost"}, _ -> {:error, :invalid_alias}
-        %Room.Alias{localpart: "not_mapped", server_name: "localhost"}, _ -> :ok
+        %Room.Alias{localpart: "invalid", server_name: @server_name}, _ -> {:error, :invalid_alias}
+        %Room.Alias{localpart: "not_mapped", server_name: @server_name}, _ -> :ok
         _alias, _ -> {:error, :alias_in_use}
       end,
       fetch_room: fn _room_id -> {:error, :not_found} end

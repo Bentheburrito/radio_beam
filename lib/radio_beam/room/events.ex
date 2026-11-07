@@ -54,13 +54,14 @@ defmodule RadioBeam.Room.Events do
   """
   def initial_state_stream(%AuthorizedEvent{type: "m.room.create"} = create_event, opts \\ []) do
     %{room_id: room_id, sender: creator_id} = create_event
+    {:ok, server_name} = RadioBeam.User.ID.server_name(creator_id)
 
     event_from_optional_string = fn opt_name, event_fxn ->
       with str_value when is_binary(str_value) <- Keyword.get(opts, opt_name), do: event_fxn.(str_value)
     end
 
     maybe_canonical_alias_event =
-      event_from_optional_string.(:alias, &canonical_alias(room_id, creator_id, &1, RadioBeam.Config.server_name()))
+      event_from_optional_string.(:alias, &canonical_alias(room_id, creator_id, &1, server_name))
 
     maybe_name_event = event_from_optional_string.(:name, &name(room_id, creator_id, &1))
     maybe_topic_event = event_from_optional_string.(:topic, &topic(room_id, creator_id, &1))

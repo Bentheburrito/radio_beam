@@ -14,9 +14,7 @@ import Config
 #   pool_size: System.schedulers_online() * 2
 
 config :radio_beam,
-  access_token_lifetime: {2, :second},
-  server_name: "localhost",
-  admins: ["@admin:localhost"]
+  access_token_lifetime: {2, :second}
 
 config :radio_beam, RadioBeam.ContentRepo,
   allowed_mimes:

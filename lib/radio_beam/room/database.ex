@@ -39,10 +39,10 @@ defmodule RadioBeam.Room.Database do
   defdelegate get_room_thread_parents(room_id, opts), to: @database_backend
 
   def create_alias(alias, room_id, ensure_room_exists?) do
-    if alias.server_name != RadioBeam.Config.server_name() do
-      {:error, :invalid_or_unknown_server_name}
-    else
+    if Enum.any?(RadioBeam.local_homeservers(), &(&1.server_display_name == alias.server_name)) do
       @database_backend.create_alias(alias, room_id, ensure_room_exists?)
+    else
+      {:error, :invalid_or_unknown_server_name}
     end
   end
 end

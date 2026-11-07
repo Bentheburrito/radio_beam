@@ -3,6 +3,8 @@ defmodule RadioBeam.ContentRepo.MatrixContentURITest do
 
   alias RadioBeam.ContentRepo.MatrixContentURI
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "new/2" do
     test "creates a mxc struct from valid input" do
       assert {:ok, %MatrixContentURI{id: "abcd_-123", server_name: "local-host"}} =
@@ -29,15 +31,15 @@ defmodule RadioBeam.ContentRepo.MatrixContentURITest do
     end
 
     test "errors when given an invalid id" do
-      assert {:error, :invalid_media_id} = MatrixContentURI.new("localhost", "@abcde")
-      assert {:error, :invalid_media_id} = MatrixContentURI.new("localhost", ".././whoa_there")
-      assert {:error, :invalid_media_id} = MatrixContentURI.new("localhost", "~/sus")
+      assert {:error, :invalid_media_id} = MatrixContentURI.new(@server_name, "@abcde")
+      assert {:error, :invalid_media_id} = MatrixContentURI.new(@server_name, ".././whoa_there")
+      assert {:error, :invalid_media_id} = MatrixContentURI.new(@server_name, "~/sus")
     end
   end
 
   describe "parse/1" do
     test "parses a valid MXC URI" do
-      assert {:ok, %MatrixContentURI{id: "abcd", server_name: "localhost"}} =
+      assert {:ok, %MatrixContentURI{id: "abcd", server_name: @server_name}} =
                MatrixContentURI.parse("mxc://localhost/abcd")
     end
 
@@ -50,7 +52,7 @@ defmodule RadioBeam.ContentRepo.MatrixContentURITest do
 
   describe "to_string/1" do
     test "converts a MatrixContentURI struct to its string representation" do
-      {:ok, mxc} = MatrixContentURI.new("localhost", "helloworld")
+      {:ok, mxc} = MatrixContentURI.new(@server_name, "helloworld")
       assert "mxc://localhost/helloworld" = to_string(mxc)
     end
   end

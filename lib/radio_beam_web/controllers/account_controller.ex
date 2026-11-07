@@ -77,11 +77,12 @@ defmodule RadioBeamWeb.AccountController do
   def login(conn, _params) do
     base_url = "https://#{conn.host}:#{conn.port}"
     redirect_uri = "#{base_url}/account/callback"
+    {:ok, server_name} = RadioBeam.lookup_server_name(conn.host)
 
     {:ok, client} =
       OAuth2.register_client(%{
         "application_type" => "web",
-        "client_name" => "RadioBeam Local Account Management on #{RadioBeam.server_name()}",
+        "client_name" => "RadioBeam Local Account Management on #{server_name}",
         "client_uri" => base_url,
         "grant_types" => ["authorization_code", "refresh_token"],
         "redirect_uris" => [redirect_uri],
@@ -114,8 +115,10 @@ defmodule RadioBeamWeb.AccountController do
   end
 
   def home(conn, _params) do
+    {:ok, server_name} = User.ID.server_name(conn.assigns.user_id)
+
     conn
-    |> assign(:server_name, RadioBeam.server_name())
+    |> assign(:server_name, server_name)
     |> assign(:user_id, conn.assigns.user_id)
     |> assign(:device_id, conn.assigns.device_id)
     |> assign(:devices, User.get_all_device_info(conn.assigns.user_id))

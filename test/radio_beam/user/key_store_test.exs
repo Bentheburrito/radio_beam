@@ -362,6 +362,9 @@ defmodule RadioBeam.User.KeyStoreTest do
       Fixtures.create_and_put_device_keys(account1.user_id, account1_device.id)
       Fixtures.create_and_put_device_keys(account2.user_id, account2_device.id)
 
+      membership_queue0 = {RadioBeam.User.RoomMemberships, creator.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue0)
+
       {:ok, _} = Room.join(room_id, account1.user_id)
       {:ok, event_id} = Room.join(room_id, account2.user_id)
 
@@ -369,14 +372,24 @@ defmodule RadioBeam.User.KeyStoreTest do
       {:ok, _} = Room.invite(room_id2, creator.user_id, account1.user_id)
       {:ok, event_id2} = Room.join(room_id2, account1.user_id)
 
+      Fixtures.assert_processed_count(membership_queue0, 1)
+
       before_leave = RadioBeam.Time.now()
       before_leave_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
 
-      {:ok, _} = Room.leave(room_id, account1.user_id)
+      membership_queue1 = {RadioBeam.User.RoomMemberships, account1.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue1)
+      membership_queue2 = {RadioBeam.User.RoomMemberships, account2.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue2)
+
+      {:ok, leave_event_id} = Room.leave(room_id, account1.user_id)
       {:ok, event_id} = Room.leave(room_id, account2.user_id)
 
-      after_leave = RadioBeam.Time.now()
+      Fixtures.assert_caught_up_to_event(membership_queue1, leave_event_id)
+      Fixtures.assert_caught_up_to_event(membership_queue2, event_id)
+
       after_leave_fetcher = fetcher(%{room_id => event_id, room_id2 => event_id2})
+      after_leave = RadioBeam.Time.now()
 
       expected = MapSet.new([account2_id])
 

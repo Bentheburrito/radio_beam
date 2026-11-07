@@ -20,7 +20,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIController do
   def register(conn, _params) do
     %{"username" => {_version, localpart}, "password" => pwd, "inhibit_login" => inhibit_login?} = conn.assigns.request
 
-    case LegacyAPI.register(localpart, pwd) do
+    case LegacyAPI.register(localpart, conn.host, pwd) do
       {:ok, user_id} ->
         if inhibit_login? do
           json(conn, %{user_id: user_id})
@@ -71,27 +71,36 @@ defmodule RadioBeamWeb.LegacyAuthAPIController do
   end
 
   def login(conn, _params) do
-    user_id =
-      case conn.assigns.request["identifier"]["user"] do
-        {_version, localpart} -> "@#{localpart}:#{RadioBeam.server_name()}"
-        "@" <> _ = user_id -> user_id
+    with {:ok, user_id} <- fully_form_user_id(conn) do
+      %{"initial_device_display_name" => display_name, "password" => pwd} = conn.assigns.request
+      device_id = Map.get_lazy(conn.assigns.request, "device_id", &LegacyAPI.generate_device_id/0)
+
+      case LegacyAPI.password_login(user_id, pwd, device_id, display_name) do
+        {:ok, access_token, refresh_token, _scope, expires_in} ->
+          json(conn, %{
+            device_id: device_id,
+            user_id: user_id,
+            access_token: access_token,
+            refresh_token: refresh_token,
+            expires_in_ms: expires_in
+          })
+
+        {:error, :unknown_user_or_pwd} ->
+          conn |> put_status(403) |> json(Errors.forbidden("Unknown username or password"))
       end
+    end
+  end
 
-    %{"initial_device_display_name" => display_name, "password" => pwd} = conn.assigns.request
-    device_id = Map.get_lazy(conn.assigns.request, "device_id", &LegacyAPI.generate_device_id/0)
+  defp fully_form_user_id(conn) do
+    case conn.assigns.request["identifier"]["user"] do
+      {_version, localpart} ->
+        case RadioBeam.lookup_server_name(conn.host) do
+          {:ok, server_name} -> {:ok, "@#{localpart}:#{server_name}"}
+          {:error, :not_found} -> conn |> put_status(403) |> json(Errors.forbidden("Unknown username or password"))
+        end
 
-    case LegacyAPI.password_login(user_id, pwd, device_id, display_name) do
-      {:ok, access_token, refresh_token, _scope, expires_in} ->
-        json(conn, %{
-          device_id: device_id,
-          user_id: user_id,
-          access_token: access_token,
-          refresh_token: refresh_token,
-          expires_in_ms: expires_in
-        })
-
-      {:error, :unknown_user_or_pwd} ->
-        conn |> put_status(403) |> json(Errors.forbidden("Unknown username or password"))
+      "@" <> _ = user_id ->
+        {:ok, user_id}
     end
   end
 

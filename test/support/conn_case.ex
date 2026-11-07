@@ -38,6 +38,7 @@ defmodule RadioBeamWeb.ConnCase do
   end
 
   def setup_authenticated_user(conn, tags) do
+    conn = put_in(conn.host, "localhost")
     account = Fixtures.create_account()
 
     code_verifier = 24 |> :crypto.strong_rand_bytes() |> Base.encode64()
@@ -74,7 +75,9 @@ defmodule RadioBeamWeb.ConnCase do
         code_verifier,
         client_id,
         redirect_uri,
-        device_opts
+        device_opts,
+        :https,
+        "localhost"
       )
 
     {:ok, _user_id, device_id} =

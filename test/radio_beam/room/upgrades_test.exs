@@ -3,6 +3,8 @@ defmodule RadioBeam.Room.UpgradesTest do
 
   alias RadioBeam.Room
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "perform/5 (via Room.upgrade/4)" do
     test "upgrades a room from arbitrary versions, as long as they're supported" do
       supported_versions = Map.keys(RadioBeam.Config.supported_room_versions())
@@ -42,7 +44,7 @@ defmodule RadioBeam.Room.UpgradesTest do
         assert {:ok, tombstone_event} = Room.get_state(room_id, user_id, "m.room.tombstone", "")
         assert %{content: %{"replacement_room" => ^upgraded_room_id}} = tombstone_event
 
-        {:ok, alias} = Room.Alias.new("##{alias_localpart}:#{RadioBeam.server_name()}")
+        {:ok, alias} = Room.Alias.new("##{alias_localpart}:#{@server_name}")
         assert {:ok, ^upgraded_room_id} = Room.lookup_id_by_alias(alias)
       end
     end

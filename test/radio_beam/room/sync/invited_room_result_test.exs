@@ -11,7 +11,7 @@ defmodule RadioBeam.Room.Sync.InvitedRoomResultTest do
     events =
       Enum.map(
         [
-          Events.create(&Room.generate_legacy_id/0, account.user_id, "11", %{}),
+          Events.create(fn -> Room.generate_legacy_id("localhost") end, account.user_id, "11", %{}),
           Events.state("!abcde", "m.room.join_rules", account.user_id, %{"join_rule" => "invite"}),
           Events.name("!abcde", account.user_id, "A Room"),
           Events.membership("!abcde", account.user_id, account.user_id, :invite)

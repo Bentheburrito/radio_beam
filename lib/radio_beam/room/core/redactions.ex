@@ -60,8 +60,10 @@ defmodule RadioBeam.Room.Core.Redactions do
     state_mapping = Chronicle.get_state_event_mapping(room.chronicle, redaction_id, false)
     room_version = Chronicle.room_version(room.chronicle)
 
-    # TOOD: explicitly pass down dependency fxn to check admins
-    redactor in RadioBeam.Config.admins() or
+    {:ok, server_name} = RadioBeam.User.ID.server_name(redactor)
+
+    # TODO: explicitly pass down dependency fxn to check admins
+    redactor in RadioBeam.Config.admins(server_name) or
       PowerLevels.user_has_power?(room_version, state_mapping, ["redact"], redactor, _state_event? = false) or
       original_sender == redactor
   end

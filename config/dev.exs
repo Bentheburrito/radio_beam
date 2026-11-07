@@ -36,8 +36,6 @@ config :radio_beam, RadioBeamWeb.Endpoint,
     keyfile: "priv/cert/selfsigned_key.pem"
   ]
 
-config :radio_beam, server_name: "localhost"
-
 # ## SSL Support
 #
 # In order to use HTTPS in development, a self-signed

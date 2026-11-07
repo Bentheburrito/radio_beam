@@ -407,13 +407,19 @@ defmodule RadioBeam.Room.TimelineTest do
       account2 = Fixtures.create_account()
       {:ok, room_id} = Room.create(creator.user_id)
 
+      membership_queue1 = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue1)
+      membership_queue2 = {RadioBeam.User.RoomMemberships, account2.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue2)
       queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(queue)
 
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account2.user_id)
-      {:ok, _event_id} = Room.join(room_id, account.user_id)
-      {:ok, _event_id} = Room.join(room_id, account2.user_id)
+      {:ok, join_event_id1} = Room.join(room_id, account.user_id)
+      {:ok, join_event_id2} = Room.join(room_id, account2.user_id)
+      Fixtures.assert_caught_up_to_event(membership_queue1, join_event_id1)
+      Fixtures.assert_caught_up_to_event(membership_queue2, join_event_id2)
 
       Room.send_text_message(room_id, creator.user_id, "sup")
       Room.send_text_message(room_id, account.user_id, "hi")
@@ -472,9 +478,14 @@ defmodule RadioBeam.Room.TimelineTest do
 
   describe "get_context/4,5" do
     setup %{creator: creator, account: account} do
+      membership_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue)
+
       {:ok, room_id} = Room.create(creator.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
       {:ok, eid1} = Room.join(room_id, account.user_id)
+
+      Fixtures.assert_caught_up_to_event(membership_queue, eid1)
 
       queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(queue)

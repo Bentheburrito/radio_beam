@@ -16,11 +16,11 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
 
   @spec register(user_localpart :: String.t(), server_name :: String.t(), password :: String.t()) ::
           {:ok, User.t()} | {:error, :registration_disabled | :already_exists | Ecto.Changeset.t()}
-  def register(localpart, server_name \\ RadioBeam.Config.server_name(), password) do
+  def register(localpart, host, password) do
     if Application.get_env(:radio_beam, :registration_enabled, false) do
-      user_id = "@#{localpart}:#{server_name}"
-
-      with {:ok, %LocalAccount{} = user_account} <- LocalAccount.new(user_id, password),
+      with {:ok, server_name} <- RadioBeam.lookup_server_name(host),
+           user_id = "@#{localpart}:#{server_name}",
+           {:ok, %LocalAccount{} = user_account} <- LocalAccount.new(user_id, password),
            :ok <- Database.insert_new_key_store(user_id, User.KeyStore.new!()),
            :ok <- Database.insert_new_user_account(user_account) do
         {:ok, user_account.user_id}
@@ -54,12 +54,13 @@ defmodule RadioBeam.User.Authentication.LegacyAPI do
       prompt: :login
     }
 
-    case OAuth2.authenticate_user_by_password(user_id, pwd, grant_params) do
-      {:ok, code} ->
-        OAuth2.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, display_name: display_name)
-
-      _ ->
-        {:error, :unknown_user_or_pwd}
+    with {:ok, code} <- OAuth2.authenticate_user_by_password(user_id, pwd, grant_params),
+         {:ok, server_name} <- User.ID.server_name(user_id),
+         {:ok, host} <- RadioBeam.lookup_delegated_host(server_name) do
+      device_opts = [display_name: display_name]
+      OAuth2.exchange_authz_code_for_tokens(code, code_verifier, client_id, redirect_uri, device_opts, :https, host)
+    else
+      _ -> {:error, :unknown_user_or_pwd}
     end
   end
 

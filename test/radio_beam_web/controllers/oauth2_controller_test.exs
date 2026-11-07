@@ -113,7 +113,7 @@ defmodule RadioBeamWeb.OAuth2ControllerTest do
                  server_name: "localhost",
                  layout: false,
                  flash: %{},
-                 submit_to: "http://www.example.com:80/oauth2/auth",
+                 submit_to: "http://localhost:80/oauth2/auth",
                  oauth_params_to_swap_flow:
                    %{
                      state: "abcdefg123123",

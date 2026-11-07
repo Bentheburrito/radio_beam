@@ -19,9 +19,11 @@ defmodule RadioBeam.Room.ChronicleTest do
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.PDU
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   setup %{backend: backend, dag_backend: dag_backend, room_version: room_version} do
     creator_id = Fixtures.user_id()
-    create_event_attrs = Events.create(&Room.generate_legacy_id/0, creator_id, room_version, %{})
+    create_event_attrs = Events.create(fn -> Room.generate_legacy_id(@server_name) end, creator_id, room_version, %{})
 
     chronicle = backend.new!(create_event_attrs, dag_backend)
     room_id = Chronicle.room_id(chronicle)

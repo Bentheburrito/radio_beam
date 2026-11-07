@@ -7,6 +7,8 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
   alias Vix.Vips.Operation
   alias Vix.Vips.Image
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "download/2" do
     @describetag :tmp_dir
     setup %{tmp_dir: tmp_dir} do
@@ -39,7 +41,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     end
 
     test "returns M_NOT_FOUND (404) when no upload exists for the URI", %{conn: conn} do
-      mxc = MatrixContentURI.new!()
+      mxc = MatrixContentURI.new!(@server_name)
       conn = get(conn, ~p"/_matrix/client/v1/media/download/#{mxc.server_name}/#{mxc.id}", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
@@ -181,7 +183,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     test "returns M_NOT_FOUND (404) if no upload exists for the given mxc", %{conn: conn} do
       params = %{"width" => @width, "height" => @height, "method" => @method}
 
-      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/localhost/whatareyoudoing", params)
+      conn = get(conn, ~p"/_matrix/client/v1/media/thumbnail/#{@server_name}/whatareyoudoing", params)
 
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
@@ -228,14 +230,12 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
         |> put_req_header("content-type", "text/csv")
         |> post(~p"/_matrix/media/v3/upload", "A,B,C\nval1,val2,val3")
 
-      server_name = RadioBeam.server_name()
-      assert %{"content_uri" => "mxc://" <> ^server_name <> "/" <> _} = json_response(conn, 200)
+      assert %{"content_uri" => "mxc://" <> @server_name <> "/" <> _} = json_response(conn, 200)
     end
 
     test "accepts (200) an appropriately sized upload with a default content type", %{conn: conn} do
       conn = post(conn, ~p"/_matrix/media/v3/upload", nil)
-      server_name = RadioBeam.server_name()
-      assert %{"content_uri" => "mxc://" <> ^server_name <> "/" <> _} = json_response(conn, 200)
+      assert %{"content_uri" => "mxc://" <> @server_name <> "/" <> _} = json_response(conn, 200)
     end
 
     test "rejects (401) an upload if an access token is not provided", %{conn: conn} do
@@ -347,7 +347,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     end
 
     test "will not use a supplied mxc that was not reserved", %{conn: conn} do
-      conn = put(conn, ~p"/_matrix/media/v3/upload/localhost/abcdef3452", nil)
+      conn = put(conn, ~p"/_matrix/media/v3/upload/#{@server_name}/abcdef3452", nil)
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "must reserve a content URI"
     end
@@ -372,7 +372,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     end
 
     test "rejects (400) improperly formatted MXCs", %{conn: conn} do
-      conn = put(conn, ~p"/_matrix/media/v3/upload/localhost/wait+why-all%the*math_symbols", nil)
+      conn = put(conn, ~p"/_matrix/media/v3/upload/#{@server_name}/wait+why-all%the*math_symbols", nil)
       assert %{"errcode" => "M_BAD_PARAM", "error" => "Invalid content URI"} = json_response(conn, 400)
     end
   end
@@ -381,8 +381,7 @@ defmodule RadioBeamWeb.ContentRepoControllerTest do
     test "creates and reserves a new MXC (200)", %{conn: conn} do
       conn = post(conn, ~p"/_matrix/media/v1/create", %{})
 
-      server_name = RadioBeam.server_name()
-      assert %{"content_uri" => "mxc://" <> ^server_name <> "/" <> _} = json_response(conn, 200)
+      assert %{"content_uri" => "mxc://" <> @server_name <> "/" <> _} = json_response(conn, 200)
     end
 
     test "returns M_LIMIT_EXCEEDED (429) when the user has too many pending uploads", %{conn: conn, account: account} do

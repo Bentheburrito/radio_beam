@@ -2,6 +2,8 @@ defmodule RadioBeam.User.Authentication do
   @moduledoc """
   Account authentication and authorization
   """
+  alias RadioBeam.User
+  alias RadioBeam.User.Authentication.ClientServerRequest
   alias RadioBeam.User.Authentication.OAuth2
   alias RadioBeam.User.Database
   alias RadioBeam.User.LocalAccount
@@ -20,10 +22,21 @@ defmodule RadioBeam.User.Authentication do
     end
   end
 
-  def authn_and_authz_user_by_access_token(token, ip, path_info) do
+  def authn_and_authz_user_by_access_token(token, ip, path_info, host) do
     with {:ok, user_id, device_id} <- OAuth2.authenticate_user_by_access_token(token, ip),
+         {:ok, server_name} <- validate_user_id_and_host(user_id, host),
          :ok <- validate_unrestricted(user_id, path_info) do
-      {:ok, user_id, device_id}
+      {:ok, ClientServerRequest.new!(user_id, device_id, server_name)}
+    end
+  end
+
+  defp validate_user_id_and_host(user_id, host) do
+    with {:ok, server_name} <- User.ID.server_name(user_id) do
+      case RadioBeam.lookup_delegated_host(server_name) do
+        {:ok, ^host} -> {:ok, server_name}
+        {:ok, expected_host} -> {:error, {:host, expected_host}}
+        {:error, :not_found} -> {:error, :orphaned_user}
+      end
     end
   end
 

@@ -48,81 +48,110 @@ defmodule RadioBeamWeb.OAuth2Controller do
   end
 
   def authenticate(%{method: "GET"} = conn, params) do
-    case OAuth2.validate_authz_code_grant_params(params) do
-      {:ok, bound_values} ->
-        conn
-        |> with_login_assigns(bound_values)
-        |> put_session(:client_id, bound_values.client_id)
-        |> put_session(:state, bound_values.state)
-        |> put_session(:redirect_uri, bound_values.redirect_uri)
-        |> put_session(:response_type, bound_values.response_type)
-        |> put_session(:response_mode, bound_values.response_mode)
-        |> put_session(:code_challenge, bound_values.code_challenge)
-        |> put_session(:code_challenge_method, bound_values.code_challenge_method)
-        |> put_session(:scope, bound_values.scope)
-        |> put_session(:prompt, bound_values.prompt)
-        |> render(:login)
+    case RadioBeam.lookup_server_name(conn.host) do
+      {:ok, server_name} ->
+        case OAuth2.validate_authz_code_grant_params(params) do
+          {:ok, bound_values} ->
+            conn
+            |> with_login_assigns(bound_values, server_name)
+            |> put_session(:client_id, bound_values.client_id)
+            |> put_session(:state, bound_values.state)
+            |> put_session(:redirect_uri, bound_values.redirect_uri)
+            |> put_session(:response_type, bound_values.response_type)
+            |> put_session(:response_mode, bound_values.response_mode)
+            |> put_session(:code_challenge, bound_values.code_challenge)
+            |> put_session(:code_challenge_method, bound_values.code_challenge_method)
+            |> put_session(:scope, bound_values.scope)
+            |> put_session(:prompt, bound_values.prompt)
+            |> render(:login)
 
-      {:error, :client_not_found} ->
-        conn
-        |> assign(:errors, %{"Missing Client Registration" => "Clients are required to register with this homeserver."})
-        |> render(:invalid_authz_grant_params)
+          {:error, :client_not_found} ->
+            conn
+            |> assign(:errors, %{
+              "Missing Client Registration" => "Clients are required to register with this homeserver."
+            })
+            |> render(:invalid_authz_grant_params)
 
-      {:error, :redirect_uri} ->
+          {:error, :redirect_uri} ->
+            conn
+            |> assign(:errors, %{
+              "Unknown redirection URI" =>
+                "The provided redirection URI does not match any URIs the client registered with."
+            })
+            |> render(:invalid_authz_grant_params)
+
+          {:error, :state} ->
+            error_params = oauth_error("invalid_request", "This homeserver requires a client-provided `state` value.")
+            redirect_with(conn, URI.new!(params["redirect_uri"]), params["response_mode"] || "query", error_params)
+
+          {:error, :registration_disabled} ->
+            %{query_params: query_params} = fetch_query_params(conn)
+
+            conn
+            # drop "prompt" so we go to the login flow
+            |> assign(:oauth_params, Map.delete(query_params, "prompt"))
+            |> render(:registration_disabled)
+
+          {:error, error} ->
+            error_params = oauth_error("invalid_request", "#{inspect(error)}", params["state"])
+            redirect_with(conn, URI.new!(params["redirect_uri"]), params["response_mode"] || "query", error_params)
+        end
+
+      {:error, :not_found} ->
         conn
         |> assign(:errors, %{
-          "Unknown redirection URI" =>
-            "The provided redirection URI does not match any URIs the client registered with."
+          "Something went very wrong..." =>
+            "The homeserver is not configured for this host, #{conn.host}. Contact your server admin if you believe this is a mistake."
         })
         |> render(:invalid_authz_grant_params)
-
-      {:error, :state} ->
-        error_params = oauth_error("invalid_request", "This homeserver requires a client-provided `state` value.")
-        redirect_with(conn, URI.new!(params["redirect_uri"]), params["response_mode"] || "query", error_params)
-
-      {:error, :registration_disabled} ->
-        %{query_params: query_params} = fetch_query_params(conn)
-
-        conn
-        # drop "prompt" so we go to the login flow
-        |> assign(:oauth_params, Map.delete(query_params, "prompt"))
-        |> render(:registration_disabled)
-
-      {:error, error} ->
-        error_params = oauth_error("invalid_request", "#{inspect(error)}", params["state"])
-        redirect_with(conn, URI.new!(params["redirect_uri"]), params["response_mode"] || "query", error_params)
     end
   end
 
   def authenticate(%{method: "POST"} = conn, %{"user_id_localpart" => localpart, "password" => password}) do
-    user_id = "@#{localpart}:#{RadioBeam.server_name()}"
+    case RadioBeam.lookup_server_name(conn.host) do
+      {:ok, server_name} ->
+        user_id = "@#{localpart}:#{server_name}"
 
-    case get_auth_params_from_session(conn) do
-      {:ok, bound_values} ->
-        case OAuth2.authenticate_user_by_password(user_id, password, bound_values) do
-          {:ok, code} ->
-            response_params = %{code: code, state: bound_values.state}
-            redirect_with(conn, bound_values.redirect_uri, bound_values.response_mode, response_params)
+        case get_auth_params_from_session(conn) do
+          {:ok, bound_values} ->
+            case OAuth2.authenticate_user_by_password(user_id, password, bound_values) do
+              {:ok, code} ->
+                response_params = %{code: code, state: bound_values.state}
+                redirect_with(conn, bound_values.redirect_uri, bound_values.response_mode, response_params)
 
-          {:error, error} ->
-            form_errors =
-              case error do
-                [user_id: error] -> [user_id_localpart: {error, []}]
-                [pwd_hash: "password is too weak"] -> [password: {OAuth2.weak_password_message(), []}]
-                :already_exists -> [user_id_localpart: {"That username is already taken.", []}]
-                :unknown_username_or_password -> [user_id_localpart: {"Unknown username or password", []}]
-              end
+              {:error, error} ->
+                form_errors =
+                  case error do
+                    [user_id: error] -> [user_id_localpart: {error, []}]
+                    [pwd_hash: "password is too weak"] -> [password: {OAuth2.weak_password_message(), []}]
+                    :already_exists -> [user_id_localpart: {"That username is already taken.", []}]
+                    :unknown_username_or_password -> [user_id_localpart: {"Unknown username or password", []}]
+                  end
 
+                conn
+                |> with_login_assigns(
+                  bound_values,
+                  server_name,
+                  %{"user_id_localpart" => localpart, "password" => ""},
+                  form_errors
+                )
+                |> render(:login)
+            end
+
+          {:error, :missing_values_in_session} ->
             conn
-            |> with_login_assigns(bound_values, %{"user_id_localpart" => localpart, "password" => ""}, form_errors)
-            |> render(:login)
+            |> assign(:errors, %{
+              "Something went very wrong..." =>
+                "We did not find your authentication information for this session. Please make sure you have cookies enabled."
+            })
+            |> render(:invalid_authz_grant_params)
         end
 
-      {:error, :missing_values_in_session} ->
+      {:error, :not_found} ->
         conn
         |> assign(:errors, %{
           "Something went very wrong..." =>
-            "We did not find your authentication information for this session. Please make sure you have cookies enabled."
+            "The homeserver is not configured for this host, #{conn.host}. Contact your server admin if you believe this is a mistake."
         })
         |> render(:invalid_authz_grant_params)
     end
@@ -132,7 +161,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
     json_error(conn, 400, :endpoint_error, [:invalid_param, "Missing user localpart or password"])
   end
 
-  defp with_login_assigns(conn, bound_values, form_attrs \\ %{}, form_errors \\ []) do
+  defp with_login_assigns(conn, bound_values, server_name, form_attrs \\ %{}, form_errors \\ []) do
     {:ok, client_metadata} = OAuth2.lookup_client(bound_values.client_id)
 
     oauth_params_to_swap_flow =
@@ -151,7 +180,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
     conn
     |> assign(:form, Phoenix.Component.to_form(form_attrs, errors: form_errors))
     |> assign(:submit_to, OAuth2.metadata(conn.scheme, "#{conn.host}:#{conn.port}").authorization_endpoint)
-    |> assign(:server_name, RadioBeam.server_name())
+    |> assign(:server_name, server_name)
     |> assign(:prompt, bound_values.prompt)
     |> assign(:client_name, client_metadata.client_name)
     |> assign(:scope, bound_values.scope)

@@ -25,9 +25,11 @@ defmodule RadioBeam do
       Transaction,
       User,
       User.Authentication,
+      User.Authentication.ClientServerRequest,
       User.Authentication.LegacyAPI,
       User.Authentication.OAuth2,
       User.EventFilter,
+      User.ID,
       User.KeyStore,
       User.RoomMemberships
     ]
@@ -82,8 +84,23 @@ defmodule RadioBeam do
     :ok
   end
 
-  def server_name, do: Config.server_name()
-  def admins, do: Config.admins()
+  def local_homeservers, do: Config.local_homeservers()
+
+  def lookup_server_name(delegated_host) do
+    case Enum.find(RadioBeam.local_homeservers(), &(&1.delegated_host == delegated_host)) do
+      %{server_display_name: server_name} -> {:ok, server_name}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def lookup_delegated_host(server_name) do
+    case Enum.find(RadioBeam.local_homeservers(), &(&1.server_display_name == server_name)) do
+      %{delegated_host: host} -> {:ok, host}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  def admins(server_name), do: Config.admins(server_name)
 
   def supported_room_versions, do: Config.supported_room_versions()
   def default_room_version, do: Config.default_room_version()

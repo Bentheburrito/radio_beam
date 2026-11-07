@@ -102,7 +102,9 @@ defmodule RadioBeamWeb.AdminController do
 
   @not_found_msg "user not found, or you don't have permission to view information via this endpoint."
   def whois(%{assigns: %{user_id: user_id}} = conn, %{"user_id" => target_id}) do
-    if user_id in RadioBeam.admins() and User.exists?(target_id) do
+    {:ok, server_name} = User.ID.server_name(user_id)
+
+    if user_id in RadioBeam.admins(server_name) and User.exists?(target_id) do
       case User.get_all_device_info(target_id) do
         device_info when is_list(device_info) ->
           json(conn, %{user_id: target_id, devices: device_sessions(device_info)})

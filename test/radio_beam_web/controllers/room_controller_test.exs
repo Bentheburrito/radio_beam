@@ -5,6 +5,8 @@ defmodule RadioBeamWeb.RoomControllerTest do
   alias RadioBeam.Room.UserTimeline
   alias RadioBeam.Sync.NextBatch
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "create/2" do
     test "successfully creates a room with the spec's example req body", %{conn: conn} do
       req_body = %{
@@ -23,8 +25,6 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
 
     test "successfully creates a room with all options specified", %{conn: conn} do
-      server_name = RadioBeam.server_name()
-
       version = "10"
 
       req_body = %{
@@ -38,7 +38,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
             "content" => %{"join_rule" => "public"}
           }
         ],
-        "invite" => ["@bwyatt:#{server_name}"],
+        "invite" => ["@bwyatt:#{@server_name}"],
         # TODO
         "invite_3pid" => [],
         "is_direct" => false,
@@ -140,7 +140,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
 
     test "successfully invites a user", %{conn: conn, room_id: room_id} do
-      invitee_id = "@letmeinpls:localhost"
+      invitee_id = "@letmeinpls:#{@server_name}"
 
       conn =
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{
@@ -152,10 +152,10 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
 
     test "rejects if inviter isn't in the room", %{conn: conn} do
-      account = Fixtures.create_account("@aintevenhere:localhost")
+      account = Fixtures.create_account("@aintevenhere:#{@server_name}")
       {:ok, room_id} = Room.create(account.user_id)
 
-      invitee_id = "@lmao:localhost"
+      invitee_id = "@lmao:#{@server_name}"
 
       conn =
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{
@@ -173,7 +173,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       {:ok, _} = Room.invite(room_id, creator_id, account.user_id)
       {:ok, _} = Room.join(room_id, account.user_id)
 
-      invitee_id = "@lmao:localhost"
+      invitee_id = "@lmao:#{@server_name}"
 
       conn =
         post(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/invite", %{"user_id" => invitee_id, "reason" => "join us :)"})
@@ -183,10 +183,10 @@ defmodule RadioBeamWeb.RoomControllerTest do
     end
 
     test "notifies when the room doesn't exist", %{conn: conn} do
-      invitee_id = "@lmao:localhost"
+      invitee_id = "@lmao:#{@server_name}"
 
       conn =
-        post(conn, ~p"/_matrix/client/v3/rooms/!idontexist:localhost/invite", %{
+        post(conn, ~p"/_matrix/client/v3/rooms/!idontexist:#{@server_name}/invite", %{
           "user_id" => invitee_id,
           "reason" => "join us :)"
         })
@@ -198,7 +198,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "join/2" do
     test "successfully joins the invited sender to a room", %{conn: conn, account: account} do
-      creator = Fixtures.create_account("@calicocutpantsenjoyer:#{RadioBeam.server_name()}")
+      creator = Fixtures.create_account("@calicocutpantsenjoyer:#{@server_name}")
 
       {:ok, room_id} = Room.create(creator.user_id, preset: :private_chat)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
@@ -240,7 +240,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       conn =
         post(
           conn,
-          ~p"/_matrix/client/v3/join/#{URI.encode("#glorp:#{RadioBeam.server_name()}")}",
+          ~p"/_matrix/client/v3/join/#{URI.encode("#glorp:#{@server_name}")}",
           %{
             "reason" => "you gotta give"
           }
@@ -257,7 +257,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
       conn =
         post(
           conn,
-          ~p"/_matrix/client/v3/join/#{URI.encode("#glerp:#{RadioBeam.server_name()}")}",
+          ~p"/_matrix/client/v3/join/#{URI.encode("#glerp:#{@server_name}")}",
           %{
             "reason" => "you gotta give"
           }
@@ -354,7 +354,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "leave/2" do
     test "successfully leaves a room the sender has joined", %{conn: conn, account: account} do
-      creator = Fixtures.create_account("@calicocutpantssupporter:#{RadioBeam.server_name()}")
+      creator = Fixtures.create_account("@calicocutpantssupporter:#{@server_name}")
 
       {:ok, room_id} = Room.create(creator.user_id, preset: :private_chat)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
@@ -496,13 +496,24 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
   describe "get_joined_members/2" do
     test "returns an object of members IDs to profile info (200)", %{conn: conn, account: account} do
+      membership_queue1 = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue1)
+
       {:ok, room_id} = Room.create(account.user_id)
+
+      Fixtures.assert_processed_count(membership_queue1, 1)
 
       content = %{"msgtype" => "m.text", "body" => "hi hi hello"}
       {:ok, _event_id} = Room.send(room_id, account.user_id, "m.room.message", content)
 
       account2 = Fixtures.create_account()
-      {:ok, _event_id} = Room.invite(room_id, account.user_id, account2.user_id)
+
+      membership_queue2 = {RadioBeam.User.RoomMemberships, account2.user_id}
+      Fixtures.listen_to_queue_messages(membership_queue2)
+
+      {:ok, event_id} = Room.invite(room_id, account.user_id, account2.user_id)
+
+      Fixtures.assert_caught_up_to_event(membership_queue2, event_id)
 
       conn = get(conn, ~p"/_matrix/client/v3/rooms/#{room_id}/joined_members", %{})
 
@@ -829,7 +840,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
     test "returns an M_NOT_FOUND (404) error when the room doesn't exist", %{conn: conn} do
       query_params = %{dir: "b", ts: RadioBeam.Time.now()}
 
-      conn = get(conn, ~p"/_matrix/client/v3/rooms/!lmao:localhost/timestamp_to_event?#{query_params}", %{})
+      conn = get(conn, ~p"/_matrix/client/v3/rooms/!lmao:#{@server_name}/timestamp_to_event?#{query_params}", %{})
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
   end
@@ -924,7 +935,7 @@ defmodule RadioBeamWeb.RoomControllerTest do
 
     test "returns an M_NOT_FOUND (404) error when the room doesn't exist", %{conn: conn, account: %{user_id: user_id}} do
       req_body = %{typing: true, timeout: 5_000}
-      conn = put(conn, ~p"/_matrix/client/v3/rooms/!lmaoooo12312:localhost/typing/#{user_id}", req_body)
+      conn = put(conn, ~p"/_matrix/client/v3/rooms/!lmaoooo12312:#{@server_name}/typing/#{user_id}", req_body)
 
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end

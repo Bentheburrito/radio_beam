@@ -18,11 +18,12 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookie do
   end
 
   def call(%{assigns: %{access_token: access_token}} = conn, _opts) do
-    case Authentication.authn_and_authz_user_by_access_token(access_token, conn.remote_ip, conn.path_info) do
-      {:ok, user_id, device_id} ->
+    case Authentication.authn_and_authz_user_by_access_token(access_token, conn.remote_ip, conn.path_info, conn.host) do
+      {:ok, request} ->
         conn
-        |> assign(:user_id, user_id)
-        |> assign(:device_id, device_id)
+        |> assign(:user_id, request.user_id)
+        |> assign(:device_id, request.device_id)
+        |> assign(:cs_request, request)
 
       {:error, :account_locked} ->
         conn
@@ -41,6 +42,28 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookie do
 
       {:error, :invalid_token} ->
         redirect(conn, to: "/account/login") |> halt()
+
+      {:error, :not_found} ->
+        redirect(conn, to: "/account/login") |> halt()
+
+      {:error, {:host, expected_host}} ->
+        Logger.warning(
+          "user client request used wrong host: #{inspect(conn.host)}, expected #{inspect(expected_host)}. (Did you get your wires crossed?)"
+        )
+
+        conn
+        |> redirect(to: "/account/login")
+        |> halt()
+
+      {:error, :orphaned_user} ->
+        Logger.error(
+          "A valid user session was identified as a part of a browser session, but the corresponding homeserver on host #{conn.host} is (no longer) configured in RadioBeam"
+        )
+
+        conn
+        |> put_flash(:error, "Homeserver has moved. Contact your server administrator to remedy this error")
+        |> redirect(to: "/account/login")
+        |> halt()
 
       {:error, error} ->
         Logger.error(

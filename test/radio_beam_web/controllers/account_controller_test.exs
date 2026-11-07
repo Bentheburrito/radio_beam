@@ -4,6 +4,8 @@ defmodule RadioBeamWeb.AccountControllerTest do
   alias RadioBeam.Room
   alias RadioBeam.User
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "put_config/2" do
     test "successfully puts global account data", %{conn: conn, account: %{user_id: user_id}} do
       conn = put(conn, ~p"/_matrix/client/v3/user/#{user_id}/account_data/m.some_config", %{"key" => "value"})
@@ -14,7 +16,9 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
     test "cannot put account data under another user", %{conn: conn} do
       conn =
-        put(conn, ~p"/_matrix/client/v3/user/@someoneelse:localhost/account_data/m.some_config", %{"key" => "value"})
+        put(conn, ~p"/_matrix/client/v3/user/@someoneelse:#{@server_name}/account_data/m.some_config", %{
+          "key" => "value"
+        })
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "You cannot put account data for other users"
@@ -48,9 +52,13 @@ defmodule RadioBeamWeb.AccountControllerTest do
       {:ok, room_id} = Room.create(account.user_id)
 
       conn =
-        put(conn, ~p"/_matrix/client/v3/user/@someoneelse:localhost/rooms/#{room_id}/account_data/m.some_config", %{
-          "key" => "value"
-        })
+        put(
+          conn,
+          ~p"/_matrix/client/v3/user/@someoneelse:#{@server_name}/rooms/#{room_id}/account_data/m.some_config",
+          %{
+            "key" => "value"
+          }
+        )
 
       assert %{"errcode" => "M_FORBIDDEN", "error" => error} = json_response(conn, 403)
       assert error =~ "You cannot put account data for other users"
@@ -74,7 +82,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
     test "cannot set room account data for a non-existent room", %{conn: conn, account: %{user_id: user_id}} do
       conn =
-        put(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!what:localhost/account_data/m.some_config", %{
+        put(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!what:#{@server_name}/account_data/m.some_config", %{
           "key" => "value"
         })
 
@@ -99,7 +107,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
     end
 
     test "cannot get global account config for another user", %{conn: conn} do
-      conn = get(conn, ~p"/_matrix/client/v3/user/@someoneelse:localhost/account_data/m.some_config", %{})
+      conn = get(conn, ~p"/_matrix/client/v3/user/@someoneelse:#{@server_name}/account_data/m.some_config", %{})
 
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
     end
@@ -118,7 +126,11 @@ defmodule RadioBeamWeb.AccountControllerTest do
 
     test "cannot get room account config for another user", %{conn: conn, room_id: room_id} do
       conn =
-        get(conn, ~p"/_matrix/client/v3/user/@someoneelse:localhost/rooms/#{room_id}/account_data/m.some_config", %{})
+        get(
+          conn,
+          ~p"/_matrix/client/v3/user/@someoneelse:#{@server_name}/rooms/#{room_id}/account_data/m.some_config",
+          %{}
+        )
 
       assert %{"errcode" => "M_FORBIDDEN"} = json_response(conn, 403)
     end
@@ -134,7 +146,8 @@ defmodule RadioBeamWeb.AccountControllerTest do
     end
 
     test "cannot get room account config for a room that doesn't exist", %{conn: conn, account: %{user_id: user_id}} do
-      conn = get(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!what:localhost/account_data/m.some_config", %{})
+      conn =
+        get(conn, ~p"/_matrix/client/v3/user/#{user_id}/rooms/!what:#{@server_name}/account_data/m.some_config", %{})
 
       assert %{"errcode" => "M_NOT_FOUND"} = json_response(conn, 404)
     end
@@ -244,10 +257,9 @@ defmodule RadioBeamWeb.AccountControllerTest do
     } do
       conn = get(conn, ~p"/account", %{})
 
-      server_name = RadioBeam.server_name()
       device_info = User.get_all_device_info(user_id)
 
-      assert %{server_name: ^server_name, user_id: ^user_id, device_id: ^device_id, devices: ^device_info} =
+      assert %{server_name: @server_name, user_id: ^user_id, device_id: ^device_id, devices: ^device_info} =
                conn.assigns
 
       assert html = html_response(conn, 200)
@@ -496,7 +508,7 @@ defmodule RadioBeamWeb.AccountControllerTest do
     end
 
     test "returns an empty object (200) when putting a new  push rule", %{conn: conn} do
-      for {kind, rule_id} <- [{:content, "blahhhmynewrule"}, {:room, "!roomid"}, {:sender, "@ok:localhost"}] do
+      for {kind, rule_id} <- [{:content, "blahhhmynewrule"}, {:room, "!roomid"}, {:sender, "@ok:#{@server_name}"}] do
         conn =
           put(conn, ~p"/_matrix/client/v3/pushrules/global/#{kind}/#{rule_id}", %{
             "actions" => ["notify", %{"set_tweak" => "sound", "value" => "harp"}],

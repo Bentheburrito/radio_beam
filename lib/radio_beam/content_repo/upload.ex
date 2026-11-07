@@ -27,13 +27,19 @@ defmodule RadioBeam.ContentRepo.Upload do
           uploaded_by_id: User.id()
         }
 
-  def new("@" <> _ = uploaded_by_id, %MatrixContentURI{} = mxc \\ MatrixContentURI.new!()) do
+  def new("@" <> _ = uploaded_by_id, %MatrixContentURI{} = mxc) do
     %__MODULE__{
       id: mxc,
       file: :reserved,
       created_at: DateTime.utc_now(),
       uploaded_by_id: uploaded_by_id
     }
+  end
+
+  def new("@" <> _ = uploaded_by_id) do
+    with {:ok, server_name} <- User.ID.server_name(uploaded_by_id) do
+      new(uploaded_by_id, MatrixContentURI.new!(server_name))
+    end
   end
 
   def put_file(%__MODULE__{file: file} = upload, %FileInfo{} = file_info) when file == :reserved do

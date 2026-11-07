@@ -8,6 +8,8 @@ defmodule RadioBeam.ContentRepoTest do
   alias RadioBeam.ContentRepo
   alias RadioBeam.ContentRepo.MatrixContentURI
 
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+
   describe "download_info_for/2" do
     @describetag :tmp_dir
     setup %{tmp_dir: tmp_dir} do
@@ -36,7 +38,8 @@ defmodule RadioBeam.ContentRepoTest do
     end
 
     test "returns :not_found when an upload doesn't exist under the MXC", %{tmp_dir: tmp_dir} do
-      assert {:error, :not_found} = ContentRepo.download_info_for(MatrixContentURI.new!(), repo_path: tmp_dir)
+      assert {:error, :not_found} =
+               ContentRepo.download_info_for(MatrixContentURI.new!(@server_name), repo_path: tmp_dir)
     end
   end
 

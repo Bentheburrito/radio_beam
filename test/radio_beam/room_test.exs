@@ -7,6 +7,7 @@ defmodule RadioBeam.RoomTest do
   alias RadioBeam.RoomRegistry
 
   @room_versions_to_test Map.keys(RadioBeam.Config.supported_room_versions())
+  @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
 
   describe "create/4" do
     setup do
@@ -25,8 +26,6 @@ defmodule RadioBeam.RoomTest do
     end
 
     test "successfully creates a room with all the different optional args", %{creator: creator, to_invite: invitee} do
-      server_name = RadioBeam.server_name()
-
       for room_version <- @room_versions_to_test do
         maybe_deprecated_string_pl = if room_version in ~w|3 4 5 6 7 8 9|, do: "60", else: 60
 
@@ -64,7 +63,7 @@ defmodule RadioBeam.RoomTest do
         assert {:ok, %{content: %{"name" => "The Computer Room"}}} =
                  Room.get_state(room_id, creator.user_id, "m.room.name", "")
 
-        {:ok, alias} = Room.Alias.new("##{alias_localpart}:#{server_name}")
+        {:ok, alias} = Room.Alias.new("##{alias_localpart}:#{@server_name}")
         assert {:ok, ^room_id} = Room.lookup_id_by_alias(alias)
         # TODO: assert invite_3pid, and visibility
       end

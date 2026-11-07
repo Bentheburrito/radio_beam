@@ -99,7 +99,10 @@ defmodule RadioBeam.Admin do
   end
 
   defp validate_actionable_user(user_id) do
-    if user_id in Config.admins(), do: {:error, :unauthorized}, else: :ok
+    case User.ID.server_name(user_id) do
+      {:ok, server_name} -> if user_id in Config.admins(server_name), do: {:error, :unauthorized}, else: :ok
+      {:error, :invalid} -> {:error, :invalid_user_id}
+    end
   end
 
   def get_account_locked_status(user_id, admin_id) do
@@ -117,11 +120,17 @@ defmodule RadioBeam.Admin do
   end
 
   defp validate_admin(user_id) do
-    if user_id in Config.admins() do
-      :ok
-    else
-      Logger.error("non-admin #{inspect(user_id)} tried to take an action")
-      {:error, :unauthorized}
+    case User.ID.server_name(user_id) do
+      {:ok, server_name} ->
+        if user_id in Config.admins(server_name) do
+          :ok
+        else
+          Logger.error("non-admin #{inspect(user_id)} tried to take an administrative action")
+          {:error, :unauthorized}
+        end
+
+      {:error, :invalid} ->
+        {:error, :invalid_user_id}
     end
   end
 end

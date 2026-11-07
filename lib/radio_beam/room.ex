@@ -24,9 +24,8 @@ defmodule RadioBeam.Room do
   @type event_id() :: String.t()
 
   ### API ###
-
-  def generate_legacy_id(domain \\ RadioBeam.Config.server_name()),
-    do: domain |> Polyjuice.Util.Identifiers.V1.RoomIdentifier.generate() |> to_string()
+  def generate_legacy_id(domain), do: "!#{legacy_id_localpart()}:#{domain}"
+  defp legacy_id_localpart, do: 32 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower)
 
   @doc """
   Create a new room with the given options. Returns `{:ok, room_id}` if the 
