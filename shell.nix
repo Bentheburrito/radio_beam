@@ -20,7 +20,10 @@ mkShellNoCC {
   # ];
   #
   shellHook = ''
+    # why no --version flag??????
+    tailwind_version=`${tailwindcss_4}/bin/tailwindcss --help | head -1 | sed "s/≈ tailwindcss v//"`
+
     ln -sf ${esbuild}/bin/esbuild ./_build/esbuild-${target}
-    ln -sf ${tailwindcss_4}/bin/tailwindcss ./_build/tailwind-${target}
+    ln -sf ${tailwindcss_4}/bin/tailwindcss ./_build/tailwind-${target}-$tailwind_version
   '';
 }

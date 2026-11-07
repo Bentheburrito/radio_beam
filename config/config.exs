@@ -101,7 +101,7 @@ config :radio_beam, RadioBeam.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,
-  version: "0.25.5",
+  version: "0.27.2",
   radio_beam: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
@@ -111,7 +111,7 @@ config :esbuild,
 
 # Configure tailwind (the version is required)
 config :tailwind,
-  version: "4.1.18",
+  version: "4.3.3",
   radio_beam: [
     args: ~w(
       --input=assets/css/app.css
