@@ -18,7 +18,9 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookie do
   end
 
   def call(%{assigns: %{access_token: access_token}} = conn, _opts) do
-    case Authentication.authn_and_authz_user_by_access_token(access_token, conn.remote_ip, conn.path_info, conn.host) do
+    host = "#{conn.host}:#{conn.port}"
+
+    case Authentication.authn_and_authz_user_by_access_token(access_token, conn.remote_ip, conn.path_info, host) do
       {:ok, request} ->
         conn
         |> assign(:user_id, request.user_id)
@@ -48,7 +50,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookie do
 
       {:error, {:host, expected_host}} ->
         Logger.warning(
-          "user client request used wrong host: #{inspect(conn.host)}, expected #{inspect(expected_host)}. (Did you get your wires crossed?)"
+          "user client request used wrong host: #{conn.host}:#{conn.port}, expected #{inspect(expected_host)}. (Did you get your wires crossed?)"
         )
 
         conn
@@ -57,7 +59,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookie do
 
       {:error, :orphaned_user} ->
         Logger.error(
-          "A valid user session was identified as a part of a browser session, but the corresponding homeserver on host #{conn.host} is (no longer) configured in RadioBeam"
+          "A valid user session was identified as a part of a browser session, but the corresponding homeserver on host #{conn.host}:#{conn.port} is (no longer) configured in RadioBeam"
         )
 
         conn

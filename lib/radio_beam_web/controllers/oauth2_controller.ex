@@ -48,7 +48,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
   end
 
   def authenticate(%{method: "GET"} = conn, params) do
-    case RadioBeam.lookup_server_name(conn.host) do
+    case RadioBeam.lookup_server_name("#{conn.host}:#{conn.port}") do
       {:ok, server_name} ->
         case OAuth2.validate_authz_code_grant_params(params) do
           {:ok, bound_values} ->
@@ -101,14 +101,16 @@ defmodule RadioBeamWeb.OAuth2Controller do
         conn
         |> assign(:errors, %{
           "Something went very wrong..." =>
-            "The homeserver is not configured for this host, #{conn.host}. Contact your server admin if you believe this is a mistake."
+            "The homeserver is not configured for this host, #{conn.host}:#{conn.port}. Contact your server admin if you believe this is a mistake."
         })
         |> render(:invalid_authz_grant_params)
     end
   end
 
   def authenticate(%{method: "POST"} = conn, %{"user_id_localpart" => localpart, "password" => password}) do
-    case RadioBeam.lookup_server_name(conn.host) do
+    host = "#{conn.host}:#{conn.port}"
+
+    case RadioBeam.lookup_server_name(host) do
       {:ok, server_name} ->
         user_id = "@#{localpart}:#{server_name}"
 
@@ -151,7 +153,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
         conn
         |> assign(:errors, %{
           "Something went very wrong..." =>
-            "The homeserver is not configured for this host, #{conn.host}. Contact your server admin if you believe this is a mistake."
+            "The homeserver is not configured for this host, #{conn.host}:#{conn.port}. Contact your server admin if you believe this is a mistake."
         })
         |> render(:invalid_authz_grant_params)
     end

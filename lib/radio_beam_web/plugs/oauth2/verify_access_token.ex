@@ -13,7 +13,9 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken do
   def init(default), do: default
 
   def call(%{assigns: %{access_token: access_token}} = conn, _opts) do
-    case Authentication.authn_and_authz_user_by_access_token(access_token, conn.remote_ip, conn.path_info, conn.host) do
+    host = "#{conn.host}:#{conn.port}"
+
+    case Authentication.authn_and_authz_user_by_access_token(access_token, conn.remote_ip, conn.path_info, host) do
       {:ok, %Authentication.ClientServerRequest{} = request} ->
         conn
         |> assign(:cs_request, request)
@@ -37,14 +39,14 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessToken do
 
       {:error, {:host, expected_host}} ->
         Logger.warning(
-          "user client request used wrong host: #{inspect(conn.host)}, expected #{inspect(expected_host)}. (Did you get your wires crossed?)"
+          "user client request used wrong host: #{conn.host}:#{conn.port}, expected #{inspect(expected_host)}. (Did you get your wires crossed?)"
         )
 
         conn |> json_error(401, :unknown_token, ["Unknown token", false]) |> halt()
 
       {:error, :orphaned_user} ->
         Logger.error(
-          "A valid user session was identified as a part of a request, but the corresponding homeserver on host #{conn.host} is (no longer) configured in RadioBeam"
+          "A valid user session was identified as a part of a request, but the corresponding homeserver on host #{conn.host}:#{conn.port} is (no longer) configured in RadioBeam"
         )
 
         conn

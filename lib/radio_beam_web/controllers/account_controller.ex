@@ -75,9 +75,10 @@ defmodule RadioBeamWeb.AccountController do
   end
 
   def login(conn, _params) do
-    base_url = "https://#{conn.host}:#{conn.port}"
+    host = "#{conn.host}:#{conn.port}"
+    base_url = "https://#{host}"
     redirect_uri = "#{base_url}/account/callback"
-    {:ok, server_name} = RadioBeam.lookup_server_name(conn.host)
+    {:ok, server_name} = RadioBeam.lookup_server_name(host)
 
     {:ok, client} =
       OAuth2.register_client(%{

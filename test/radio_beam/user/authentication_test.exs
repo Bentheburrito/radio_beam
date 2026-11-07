@@ -4,6 +4,7 @@ defmodule RadioBeam.User.AuthenticationTest do
   alias RadioBeam.User.Authentication
 
   @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
+  @host "#{@server_name}:80"
 
   describe "authn_and_authz_user_by_access_token/3" do
     setup %{account: %{user_id: user_id}} do
@@ -37,7 +38,7 @@ defmodule RadioBeam.User.AuthenticationTest do
 
       for path_info <- paths do
         assert {:ok, %Authentication.ClientServerRequest{user_id: ^user_id}} =
-                 Authentication.authn_and_authz_user_by_access_token(token, {127, 0, 0, 1}, path_info, @server_name)
+                 Authentication.authn_and_authz_user_by_access_token(token, {127, 0, 0, 1}, path_info, @host)
       end
     end
 
@@ -50,7 +51,7 @@ defmodule RadioBeam.User.AuthenticationTest do
 
       for path_info <- paths do
         assert {:error, :account_suspended} =
-                 Authentication.authn_and_authz_user_by_access_token(token, {127, 0, 0, 1}, path_info, @server_name)
+                 Authentication.authn_and_authz_user_by_access_token(token, {127, 0, 0, 1}, path_info, @host)
       end
     end
   end

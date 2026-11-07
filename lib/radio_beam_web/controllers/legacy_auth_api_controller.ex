@@ -20,7 +20,7 @@ defmodule RadioBeamWeb.LegacyAuthAPIController do
   def register(conn, _params) do
     %{"username" => {_version, localpart}, "password" => pwd, "inhibit_login" => inhibit_login?} = conn.assigns.request
 
-    case LegacyAPI.register(localpart, conn.host, pwd) do
+    case LegacyAPI.register(localpart, "#{conn.host}:#{conn.port}", pwd) do
       {:ok, user_id} ->
         if inhibit_login? do
           json(conn, %{user_id: user_id})
@@ -92,9 +92,11 @@ defmodule RadioBeamWeb.LegacyAuthAPIController do
   end
 
   defp fully_form_user_id(conn) do
+    host = "#{conn.host}:#{conn.port}"
+
     case conn.assigns.request["identifier"]["user"] do
       {_version, localpart} ->
-        case RadioBeam.lookup_server_name(conn.host) do
+        case RadioBeam.lookup_server_name(host) do
           {:ok, server_name} -> {:ok, "@#{localpart}:#{server_name}"}
           {:error, :not_found} -> conn |> put_status(403) |> json(Errors.forbidden("Unknown username or password"))
         end
