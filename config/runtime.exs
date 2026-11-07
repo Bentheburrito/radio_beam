@@ -4,6 +4,9 @@ envfile = ".env"
 
 if Config.config_env() in [:dev, :test] and File.exists?(envfile) do
   DotenvParser.load_file(envfile)
+
+  if Config.config_env() == :test,
+    do: System.put_env("LOCAL_HOMESERVERS_CONFIG_PATH", "test/support/fixtures/test_homeservers.json")
 end
 
 local_homeservers =

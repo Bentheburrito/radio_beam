@@ -59,7 +59,7 @@ defmodule RadioBeamWeb.Router do
     plug :put_root_layout, html: {RadioBeamWeb.Layouts, :root}
     plug :protect_from_forgery
     plug Plugs.CSP
-    plug Plugs.OAuth2.VerifyAccessTokenCookie
+    plug Plugs.OAuth2.VerifyWebBrowserSession
     plug Plugs.RateLimit
   end
 

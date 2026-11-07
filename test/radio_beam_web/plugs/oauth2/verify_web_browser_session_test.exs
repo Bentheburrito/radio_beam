@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
+defmodule RadioBeamWeb.Plugs.OAuth2.VerifyWebBrowserSessionTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog, only: [capture_log: 1]
@@ -6,7 +6,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
   import Plug.Test
 
   alias RadioBeam.User.Authentication.OAuth2
-  alias RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookie
+  alias RadioBeamWeb.Plugs.OAuth2.VerifyWebBrowserSession
 
   @server_name RadioBeam.local_homeservers() |> hd() |> Map.fetch!(:server_display_name)
 
@@ -27,7 +27,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
       conn =
         init_conn()
         |> init_test_session(%{"access_token" => access_token})
-        |> VerifyAccessTokenCookie.call([])
+        |> VerifyWebBrowserSession.call([])
 
       assert ^user_id = conn.assigns.user_id
       assert ^device_id = conn.assigns.device_id
@@ -37,7 +37,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
       conn =
         init_conn()
         |> init_test_session(%{})
-        |> VerifyAccessTokenCookie.call([])
+        |> VerifyWebBrowserSession.call([])
 
       assert {302, headers, body} = sent_resp(conn)
       Enum.any?(headers, &(&1 == {"location", "/account/login"}))
@@ -48,7 +48,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
       conn =
         init_conn()
         |> init_test_session(%{"access_token" => "55burgers55fries"})
-        |> VerifyAccessTokenCookie.call([])
+        |> VerifyWebBrowserSession.call([])
 
       assert {302, headers, body} = sent_resp(conn)
       Enum.any?(headers, &(&1 == {"location", "/account/login"}))
@@ -63,7 +63,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
       conn =
         init_conn()
         |> init_test_session(%{"access_token" => access_token})
-        |> VerifyAccessTokenCookie.call([])
+        |> VerifyWebBrowserSession.call([])
 
       assert {302, headers, body} = sent_resp(conn)
       Enum.any?(headers, &(&1 == {"location", "/account/login"}))
@@ -82,7 +82,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
         init_conn()
         |> init_test_session(%{"access_token" => access_token})
         |> fetch_flash()
-        |> VerifyAccessTokenCookie.call([])
+        |> VerifyWebBrowserSession.call([])
 
       assert {302, headers, body} = sent_resp(conn)
       Enum.any?(headers, &(&1 == {"location", "/account/login"}))
@@ -102,7 +102,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
         init_conn()
         |> init_test_session(%{"access_token" => access_token})
         |> fetch_flash()
-        |> VerifyAccessTokenCookie.call([])
+        |> VerifyWebBrowserSession.call([])
 
       assert {302, headers, body} = sent_resp(conn)
       Enum.any?(headers, &(&1 == {"location", "/account/login"}))
@@ -121,7 +121,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
       conn =
         init_conn()
         |> init_test_session(%{"access_token" => access_token})
-        |> VerifyAccessTokenCookie.call([])
+        |> VerifyWebBrowserSession.call([])
 
       assert {302, headers, body} = sent_resp(conn)
       Enum.any?(headers, &(&1 == {"location", "/account/login"}))
@@ -137,7 +137,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
             init_conn()
             |> init_test_session(%{"access_token" => access_token})
             |> Map.put(:host, "some.other.site")
-            |> VerifyAccessTokenCookie.call([])
+            |> VerifyWebBrowserSession.call([])
 
           assert {302, headers, body} = sent_resp(conn)
           Enum.any?(headers, &(&1 == {"location", "/account/login"}))
@@ -159,7 +159,7 @@ defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookieTest do
             init_conn()
             |> init_test_session(%{"access_token" => access_token})
             |> fetch_flash()
-            |> VerifyAccessTokenCookie.call([])
+            |> VerifyWebBrowserSession.call([])
 
           assert {302, headers, body} = sent_resp(conn)
           Enum.any?(headers, &(&1 == {"location", "/account/login"}))

@@ -1,4 +1,4 @@
-defmodule RadioBeamWeb.Plugs.OAuth2.VerifyAccessTokenCookie do
+defmodule RadioBeamWeb.Plugs.OAuth2.VerifyWebBrowserSession do
   @moduledoc """
   Requires a user to have logged in previously, else they are redirected to the
   account management home page to authenticate.
