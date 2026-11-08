@@ -19,19 +19,19 @@ A [Matrix](https://matrix.org/) homeserver, powered by
 
 ## Matrix Spec-compliance Table
 
-RadioBeam is in early development. You can track which specification modules
-have been implemented so far in the tables below. Some modules may not be
-implemented (or at least not fully implemented) in favor of upcoming modules in
-specification updates. For example, limited Legacy Auth API functionality will
-be supported, in favor of the newer OAuth2 APIs.
+RadioBeam is in early development. See the tables below for which specification
+modules have been implemented so far. Some modules may not be (fully)
+implemented in favor of upcoming modules intended to supercede them. For
+example, limited Legacy Auth API functionality will be supported, in favor of
+the newer OAuth2 APIs.
 
 ### Client-Server API
 
 | Module                              | Status                | Additional Notes |
 |-------------------------------------|-----------------------|------------------|
 | Client Config                       | ✅Implemented         |                  |
-| Content Repository                  | ☑️Mostly Complete     | [#6](https://github.com/Bentheburrito/radio_beam/issues/6), [#12](https://github.com/Bentheburrito/radio_beam/issues/12), [#13](https://github.com/Bentheburrito/radio_beam/issues/13)     |
-| Device Management                   | ☑️Mostly Complete     | Deleting/logging out of devices is not planned via this API (User-Interactive Authenticated is not planned. Removing devices will be done via a web UI on the homeserver. |
+| Content Repository                  | ☑️Mostly Complete      | [#6](https://github.com/Bentheburrito/radio_beam/issues/6), [#12](https://github.com/Bentheburrito/radio_beam/issues/12), [#13](https://github.com/Bentheburrito/radio_beam/issues/13)     |
+| Device Management                   | ☑️Mostly Complete      | Deleting/logging out of devices is not planned via this API (User-Interactive Authenticated is not planned. Removing devices will be done via a web UI on the homeserver. |
 | Direct Messaging                    | ✅Implemented         |                  |
 | End-to-End Encryption               | ✅Implemented         |                  |
 | Event Annotations and reactions     | ✅Implemented         |                  |
@@ -43,9 +43,9 @@ be supported, in favor of the newer OAuth2 APIs.
 | Moderation Policy Lists             | ❓Not Scoped          |                  |
 | OpenID                              | ❓Not Scoped          | Possibly prefer the OAuth 2.0 APIs instead |
 | Presence                            | ❌Not Planned         | There seems to be efforts to improve presence, such as [MSC4495](https://github.com/matrix-org/matrix-spec-proposals/pull/4495), so the current state of presence isn't prioritized |
-| Push Notifications                  | 🗒️Planned/Not Started |                  |
-| Read and Unread Markers             | ☑️Mostly Complete     | Complete impl pending Push Notifications |
-| Receipts                            | ☑️Mostly Complete     | Complete impl pending Push Notifications |
+| Push Notifications                  | ☑️Mostly Complete      | Pushers need to be sent events proactively |
+| Read and Unread Markers             | ☑️Mostly Complete      | Complete impl pending Push Notifications |
+| Receipts                            | ☑️Mostly Complete      | Complete impl pending Push Notifications |
 | Reference Relations                 | ✅Implemented         |                  |
 | Reporting Content                   | ✅Implemented         |                  |
 | Room History Visibility             | ✅Implemented         |                  |
@@ -54,14 +54,14 @@ be supported, in favor of the newer OAuth2 APIs.
 | Room Upgrades                       | ✅Implemented         |                  |
 | SSO Client Login/Authentication     | ❌Not Planned         | Prefer the OAuth 2.0 APIs instead |
 | Secrets                             | ✅Implemented         |                  |
-| Send-to-Device Messaging            | ☑️Mostly Complete     | Sending over federation remaining |
-| Server Access Control Lists (ACLs)  | 🗒️Planned/Not Started |                  |
+| Send-to-Device Messaging            | ☑️Mostly Complete      | Sending over federation remaining |
+| Server Access Control Lists (ACLs)  | 🗒️Planned/Not Started  |                  |
 | Server Administration               | ✅Implemented         |                  |
-| Server Notices                      | 🗒️Planned/Not Started |                  |
-| Server Side Search                  | 🗒️Planned/Not Started |                  |
-| Spaces                              | 🗒️Planned/Not Started |                  |
-| Third-party Invites                 | 🗒️Planned/Not Started |                  |
-| Third-party Networks                | 🗒️Planned/Not Started |                  |
+| Server Notices                      | 🗒️Planned/Not Started  |                  |
+| Server Side Search                  | 🗒️Planned/Not Started  |                  |
+| Spaces                              | ☑️Mostly Complete      |                  |
+| Third-party Invites                 | 🗒️Planned/Not Started  |                  |
+| Third-party Networks                | 🗒️Planned/Not Started  |                  |
 | Threading                           | ✅Implemented         |                  |
 | Typing Notifications                | ✅Implemented         |                  |
 | User and Room Mentions              | ❓Not Scoped          |                  |
@@ -82,14 +82,14 @@ unstable/Matrix 2.0 features
 |-------------------------------------|-----------------------|------------------|
 | Room Versions 1-2                   | ❌Not Planned         |                  |
 | Room Versions 3-11                  | ✅Implemented         |                  |
-| Room Versions 12                    | ☑️Mostly Complete     |                  |
+| Room Versions 12                    | ☑️Mostly Complete      |                  |
 | Account Administrative Contact Info | ❌Not Planned         |                  |
 | Account Locking / Suspension        | ✅Implemented         |                  |
-| Application Service API             | 🗒️Planned/Not Started |                  |
+| Application Service API             | 🗒️Planned/Not Started  |                  |
 | Legacy Auth / User-Interactive Auth | ❌Not Planned/Partial | UIA is not planned. Some Legacy Auth APIs are implemented, but should be considered deprecated |
-| Matrix-RTC / Next-gen VoIP          | 🗒️Planned/Not Started |                  |
-| OAuth 2.0                           | ☑️Mostly Complete     | Initial implementation of registration and login via authz grant, token refreshing, token refreshing - needs more testing |
-| Simplified Sliding Sync             | 🗒️Planned/Not Started |                  |
+| Matrix-RTC / Next-gen VoIP          | 🗒️Planned/Not Started  |                  |
+| OAuth 2.0                           | ☑️Mostly Complete      | Initial implementation of registration and login via authz grant, token refreshing, token refreshing - needs more testing |
+| Simplified Sliding Sync             | 🗒️Planned/Not Started  |                  |
 
 ## Non-protocol Features
 
