@@ -31,6 +31,9 @@ defmodule RadioBeam.Room.Chronicle do
   @callback fetch_pdu!(t(), Room.event_id()) :: PDU.t()
   @callback replace!(t(), AuthorizedEvent.t()) :: t()
 
+  @callback put_relation(t(), parent_event_id :: Room.event_id(), relation_info :: term()) :: t()
+  @callback get_relation(t(), parent_event_id :: Room.event_id()) :: relation_info :: term() | nil
+
   def room_id(%chronicle_backend{} = chronicle), do: chronicle_backend.room_id(chronicle)
   def room_version(%chronicle_backend{} = chronicle), do: chronicle_backend.room_version(chronicle)
   def get_create_event(%chronicle_backend{} = chronicle), do: chronicle_backend.get_create_event(chronicle)
@@ -49,4 +52,9 @@ defmodule RadioBeam.Room.Chronicle do
 
   def replace!(%chronicle_backend{} = chronicle, %AuthorizedEvent{} = event),
     do: chronicle_backend.replace!(chronicle, event)
+
+  def put_relation(%chronicle_backend{} = chronicle, event_id, relation_info),
+    do: chronicle_backend.put_relation(chronicle, event_id, relation_info)
+
+  def get_relation(%chronicle_backend{} = chronicle, event_id), do: chronicle_backend.get_relation(chronicle, event_id)
 end

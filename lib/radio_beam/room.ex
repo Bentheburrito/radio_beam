@@ -15,7 +15,7 @@ defmodule RadioBeam.Room do
   alias RadioBeam.Room.Relations
   alias RadioBeam.User
 
-  @attrs ~w|id chronicle redactions relationships|a
+  @attrs ~w|id chronicle redactions|a
   @enforce_keys @attrs
   defstruct @attrs
 

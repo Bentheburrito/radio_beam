@@ -13,8 +13,8 @@ defmodule RadioBeam.Room.Core.RelationshipsTest do
 
     test "noops relationships if the event is not related to others", %{room: room, creator_id: creator_id} do
       msg_event = Events.text_message(room.id, creator_id, "hello world")
-      {:sent, %{relationships: relationships}, _event_id, _pdus} = Room.Core.send(room, msg_event, default_deps())
-      assert relationships == room.relationships
+      {:sent, room, event_id, _pdus} = Room.Core.send(room, msg_event, default_deps())
+      assert is_nil(Room.Chronicle.get_relation(room.chronicle, event_id))
     end
 
     test "applies a m.reaction event, as long as it's not a duplicate", %{room: room, creator_id: creator_id} do
@@ -26,8 +26,8 @@ defmodule RadioBeam.Room.Core.RelationshipsTest do
       reaction_event = Events.message(room.id, creator_id, "m.reaction", rel)
       {:sent, room, reaction_event_id, _pdus} = Room.Core.send(room, reaction_event, default_deps())
 
-      assert [{reaction_event_id, key, creator_id}] ==
-               room.relationships.children_by_event_id[msg_event.id]["m.reaction"]
+      assert %{"m.reaction" => [{reaction_event_id, key, creator_id}]} ==
+               Room.Chronicle.get_relation(room.chronicle, msg_event.id)
 
       {:error, :duplicate_annotation} = Room.Core.send(room, reaction_event, default_deps())
 
@@ -36,8 +36,8 @@ defmodule RadioBeam.Room.Core.RelationshipsTest do
       reaction_event = Events.message(room.id, creator_id, "m.reaction", rel)
       {:sent, room, reaction_event_id2, _pdus} = Room.Core.send(room, reaction_event, default_deps())
 
-      assert [{reaction_event_id2, key2, creator_id}, {reaction_event_id, key, creator_id}] ==
-               room.relationships.children_by_event_id[msg_event.id]["m.reaction"]
+      assert %{"m.reaction" => [{reaction_event_id2, key2, creator_id}, {reaction_event_id, key, creator_id}]} ==
+               Room.Chronicle.get_relation(room.chronicle, msg_event.id)
     end
   end
 

@@ -43,8 +43,7 @@ defmodule RadioBeam.Room.Core do
       room = %Room{
         id: Chronicle.room_id(chronicle),
         chronicle: chronicle,
-        redactions: Redactions.new!(),
-        relationships: Relationships.new!()
+        redactions: Redactions.new!()
       }
 
       init_acc = {room, :queue.from_list([Chronicle.fetch_pdu!(chronicle, create_event.id)])}

@@ -9,10 +9,12 @@ defmodule RadioBeam.Room.Chronicle.Map do
   alias RadioBeam.Room.Events
   alias RadioBeam.Room.PDU
 
-  defstruct ~w|dag resolved_state_before_event|a
+  defstruct ~w|dag resolved_state_before_event relations_by_event_id|a
 
   @opaque t() :: %__MODULE__{
             dag: DAG.t(),
+            # children_by_event_id: %{event_id => %{event_type => [event_id_or_type_specific_data]}}
+            relations_by_event_id: %{},
             resolved_state_before_event: %{
               RadioBeam.Room.event_id() => %{{String.t(), String.t()} => RadioBeam.Room.event_id()}
             }
@@ -25,7 +27,7 @@ defmodule RadioBeam.Room.Chronicle.Map do
     with {:ok, %AuthorizedEvent{} = create_event} <- authorize_event(blank_mapping, version, create_event_attrs) do
       dag = dag_backend.new!(create_event.id, create_event)
 
-      %__MODULE__{dag: dag, resolved_state_before_event: %{create_event.id => %{}}}
+      %__MODULE__{dag: dag, relations_by_event_id: %{}, resolved_state_before_event: %{create_event.id => %{}}}
     end
   end
 
@@ -87,6 +89,14 @@ defmodule RadioBeam.Room.Chronicle.Map do
 
   def replace!(%__MODULE__{} = chronicle, %AuthorizedEvent{} = event) do
     update_in(chronicle.dag, &DAG.replace!(&1, event.id, event))
+  end
+
+  def put_relation(%__MODULE__{} = chronicle, parent_event_id, relation_info) do
+    put_in(chronicle.relations_by_event_id[parent_event_id], relation_info)
+  end
+
+  def get_relation(%__MODULE__{} = chronicle, parent_event_id) do
+    get_in(chronicle.relations_by_event_id[parent_event_id])
   end
 
   # given a %Chronicle{} and its DAG's forward extremeties, returns the current

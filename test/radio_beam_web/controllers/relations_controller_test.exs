@@ -131,6 +131,8 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       account2 = Fixtures.create_account()
       {:ok, room_id} = Room.create(account2.user_id)
       Fixtures.listen_to_queue_messages({UserTimeline, room_id})
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue)
       {:ok, parent_event_id} = Room.send_text_message(room_id, account2.user_id, "this is another parent event")
 
       {:ok, _} = Room.invite(room_id, account2.user_id, account.user_id)
@@ -141,7 +143,8 @@ defmodule RadioBeamWeb.RelationsContnrollerTest do
       content = relates_to(parent_event_id, "details coming soon")
       {:ok, _child_id2} = Room.send(room_id, account2.user_id, "m.room.message", content)
 
-      {:ok, _} = Room.leave(room_id, account.user_id, "details never came :/")
+      {:ok, event_id} = Room.leave(room_id, account.user_id, "details never came :/")
+      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
 
       content = relates_to(parent_event_id, "so impatient :/")
       {:ok, child_id3} = Room.send(room_id, account2.user_id, "m.room.message", content)
