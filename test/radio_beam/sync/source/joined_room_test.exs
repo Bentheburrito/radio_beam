@@ -24,7 +24,10 @@ defmodule RadioBeam.Sync.Source.JoinedRoomTest do
     test "will immediately notify_waiting", %{inputs: inputs} do
       me = self()
 
-      Task.start(fn -> JoinedRoom.run(inputs, inspect(JoinedRoom), me) end)
+      Task.start(fn ->
+        JoinedRoom.init(inputs, inspect(JoinedRoom))
+        JoinedRoom.run(inputs, inspect(JoinedRoom), me)
+      end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
     end
@@ -32,7 +35,11 @@ defmodule RadioBeam.Sync.Source.JoinedRoomTest do
     test "returns when user joins a new room, after notifying waiting", %{inputs: inputs} do
       me = self()
 
-      task = Task.async(fn -> JoinedRoom.run(inputs, inspect(JoinedRoom), me) end)
+      task =
+        Task.async(fn ->
+          JoinedRoom.init(inputs, inspect(JoinedRoom))
+          JoinedRoom.run(inputs, inspect(JoinedRoom), me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))

@@ -15,7 +15,10 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
     test "will notify_waiting if there are no immediate updates", %{inputs: inputs} do
       me = self()
 
-      Task.start(fn -> CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me) end)
+      Task.start(fn ->
+        CryptoIdentityUpdates.init(inputs, CryptoIdentityUpdates)
+        CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me)
+      end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
     end
@@ -25,7 +28,11 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
       creator_id = add_to_new_room(inputs.user_id)
       add_device_keys(creator_id)
 
-      task = Task.async(fn -> CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me) end)
+      task =
+        Task.async(fn ->
+          CryptoIdentityUpdates.init(inputs, CryptoIdentityUpdates)
+          CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me)
+        end)
 
       refute_receive {:sync_waiting, _}
       assert {:ok, %{changed: [^creator_id], left: []}, nil} = Task.await(task)
@@ -34,7 +41,11 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
     test "returns once device-key changes are available, after notifying waiting", %{inputs: inputs} do
       me = self()
 
-      task = Task.async(fn -> CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me) end)
+      task =
+        Task.async(fn ->
+          CryptoIdentityUpdates.init(inputs, CryptoIdentityUpdates)
+          CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))
@@ -48,7 +59,11 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
     test "returns once cross-signing changes are available, after notifying waiting", %{inputs: inputs} do
       me = self()
 
-      task = Task.async(fn -> CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me) end)
+      task =
+        Task.async(fn ->
+          CryptoIdentityUpdates.init(inputs, CryptoIdentityUpdates)
+          CryptoIdentityUpdates.run(inputs, CryptoIdentityUpdates, me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))
@@ -77,6 +92,8 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
 
       task =
         Task.async(fn ->
+          CryptoIdentityUpdates.init(inputs, CryptoIdentityUpdates)
+
           inputs
           |> Map.put(:full_last_batch, next_batch)
           |> CryptoIdentityUpdates.run(CryptoIdentityUpdates, me)
@@ -98,6 +115,8 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdatesTest do
 
       task =
         Task.async(fn ->
+          CryptoIdentityUpdates.init(inputs, CryptoIdentityUpdates)
+
           inputs
           |> Map.put(:full_last_batch, next_batch)
           |> CryptoIdentityUpdates.run(CryptoIdentityUpdates, me)

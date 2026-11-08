@@ -40,6 +40,8 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoomTest do
     test "returns a JoinedRoomResult", %{inputs: inputs, room_id: room_id} do
       me = self()
 
+      :ok = ParticipatingRoom.init(inputs, room_id)
+
       assert {:ok, %JoinedRoomResult{room_id: ^room_id, timeline_events: events}, "$" <> _ = _event_id} =
                ParticipatingRoom.run(inputs, room_id, me)
 
@@ -52,10 +54,15 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoomTest do
       queue: queue
     } do
       me = self()
+      :ok = ParticipatingRoom.init(inputs, room_id)
 
       assert {:ok, %JoinedRoomResult{room_id: ^room_id}, event_id} = ParticipatingRoom.run(inputs, room_id, me)
 
-      task = Task.async(fn -> inputs |> Map.put(:last_batch, event_id) |> ParticipatingRoom.run(room_id, me) end)
+      task =
+        Task.async(fn ->
+          :ok = ParticipatingRoom.init(inputs, room_id)
+          inputs |> Map.put(:last_batch, event_id) |> ParticipatingRoom.run(room_id, me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))
@@ -72,10 +79,15 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoomTest do
       room_id: room_id
     } do
       me = self()
+      :ok = ParticipatingRoom.init(inputs, room_id)
 
       assert {:ok, %JoinedRoomResult{room_id: ^room_id}, event_id} = ParticipatingRoom.run(inputs, room_id, me)
 
-      task = Task.async(fn -> inputs |> Map.put(:last_batch, event_id) |> ParticipatingRoom.run(room_id, me) end)
+      task =
+        Task.async(fn ->
+          :ok = ParticipatingRoom.init(inputs, room_id)
+          inputs |> Map.put(:last_batch, event_id) |> ParticipatingRoom.run(room_id, me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))

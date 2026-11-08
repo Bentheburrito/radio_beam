@@ -18,6 +18,11 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdates do
   def inputs, do: [:user_id, :full_last_batch]
 
   @impl Source
+  def init(_inputs, _key) do
+    PubSub.subscribe(PubSub.user_membership_or_crypto_id_changed())
+  end
+
+  @impl Source
   def run(inputs, key, sink_pid) do
     user_id = inputs.user_id
 
@@ -27,20 +32,14 @@ defmodule RadioBeam.Sync.Source.CryptoIdentityUpdates do
         full_last_batch -> full_last_batch
       end
 
-    if is_nil(inputs[:pubsub_active]) do
-      PubSub.subscribe(PubSub.user_membership_or_crypto_id_changed())
-    end
-
     empty = MapSet.new()
 
     case KeyStore.all_changed_since(user_id, &NextBatch.fetch(batch, &1), NextBatch.timestamp(batch)) do
       %{changed: ^empty, left: ^empty} ->
-        if is_nil(inputs[:pubsub_active]) do
-          Source.notify_waiting(sink_pid, key)
-        end
+        if is_nil(inputs[:notified]), do: Source.notify_waiting(sink_pid, key)
 
         receive do
-          :crypto_id_changed -> run(inputs, key, sink_pid)
+          :crypto_id_changed -> inputs |> Map.put(:notified, true) |> run(key, sink_pid)
         end
 
       update_map ->

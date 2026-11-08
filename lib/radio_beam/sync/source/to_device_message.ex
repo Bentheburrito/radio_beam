@@ -17,15 +17,14 @@ defmodule RadioBeam.Sync.Source.ToDeviceMessage do
   def inputs, do: ~w|user_id device_id|a
 
   @impl Source
+  def init(inputs, _key) do
+    inputs.user_id |> PubSub.to_device_message_available(inputs.device_id) |> PubSub.subscribe()
+  end
+
+  @impl Source
   def run(inputs, key, sink_pid) do
     user_id = inputs.user_id
     device_id = inputs.device_id
-
-    if is_nil(inputs[:pubsub_active]) do
-      user_id
-      |> PubSub.to_device_message_available(device_id)
-      |> PubSub.subscribe()
-    end
 
     {maybe_last_batch, next_batch} =
       case Map.get(inputs, :last_batch) do
@@ -42,8 +41,7 @@ defmodule RadioBeam.Sync.Source.ToDeviceMessage do
         Source.notify_waiting(sink_pid, key)
 
         receive do
-          {:device_message_available, ^user_id, ^device_id} ->
-            inputs |> Map.put(:pubsub_active, true) |> run(key, sink_pid)
+          {:device_message_available, ^user_id, ^device_id} -> run(inputs, key, sink_pid)
         end
 
       {:ok, unsent_messages} ->

@@ -23,7 +23,6 @@ defmodule RadioBeam.Sync do
     |> Enum.map(fn {type, content} -> %{"type" => type, "content" => content} end)
   end
 
-  # TODO: make this a Source
   defp device_otk_usages(user_id, device_id) do
     case KeyStore.one_time_key_info(user_id, device_id) do
       {:ok, info} -> info

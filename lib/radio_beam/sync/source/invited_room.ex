@@ -7,6 +7,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoom do
 
   alias RadioBeam.PubSub
   alias RadioBeam.Room
+  alias RadioBeam.Room.PDU
   alias RadioBeam.Room.Sync.InvitedRoomResult
   alias RadioBeam.Sync.Source
 
@@ -16,14 +17,15 @@ defmodule RadioBeam.Sync.Source.InvitedRoom do
   @impl Source
   def inputs, do: [:user_id, :ignored_user_ids]
 
+  @impl Source
+  def init(inputs, _key) do
+    inputs.user_id |> PubSub.invite_events() |> PubSub.subscribe()
+  end
+
   @mod inspect(__MODULE__)
   @impl Source
   def run(inputs, @mod = key, sink_pid) do
     user_id = inputs.user_id
-
-    user_id
-    |> PubSub.invite_events()
-    |> PubSub.subscribe()
 
     Source.notify_waiting(sink_pid, key)
 
@@ -33,25 +35,17 @@ defmodule RadioBeam.Sync.Source.InvitedRoom do
   def run(%{last_batch: "sent"}, _key, _sink_pid), do: {:no_update, "sent"}
 
   def run(inputs, "!" <> _ = room_id, _sink_pid) do
-    with {:ok, room} <- RadioBeam.Room.Database.fetch_room(room_id) do
-      case RadioBeam.Room.Core.get_state_mapping(room, "m.room.member", inputs.user_id) do
-        {:ok, event_id} ->
-          case RadioBeam.Room.Chronicle.fetch_pdu!(room.chronicle, event_id) do
-            %{event: %{sender: sender_id, content: %{"membership" => "invite"}}} ->
-              if sender_id in inputs.ignored_user_ids do
-                {:no_update, nil}
-              else
-                invite_state_events = Room.get_invite_state_events(room.id, inputs.user_id)
-                {:ok, InvitedRoomResult.new!(room.id, invite_state_events), "sent"}
-              end
-
-            _ ->
-              {:no_update, nil}
-          end
-
-        {:error, :not_found} ->
+    case RadioBeam.Room.fetch_state_pdu_at(room_id, :current_state, "m.room.member", inputs.user_id, true) do
+      {:ok, %PDU{event: %{sender: sender_id, content: %{"membership" => "invite"}}}} ->
+        if sender_id in inputs.ignored_user_ids do
           {:no_update, nil}
-      end
+        else
+          invite_state_events = Room.get_invite_state_events(room_id, inputs.user_id)
+          {:ok, InvitedRoomResult.new!(room_id, invite_state_events), "sent"}
+        end
+
+      _ ->
+        {:no_update, nil}
     end
   end
 

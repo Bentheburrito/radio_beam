@@ -261,18 +261,21 @@ defmodule RadioBeam.SyncTest do
 
       {:ok, room_id} = Room.create(creator.user_id)
 
-      memberships_queue = {RadioBeam.User.RoomMemberships, annoying_account.user_id}
+      memberships_queue = {RadioBeam.User.RoomMemberships, account.user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
+      annoying_memberships_queue = {RadioBeam.User.RoomMemberships, annoying_account.user_id}
+      Fixtures.listen_to_queue_messages(annoying_memberships_queue)
       tl_queue = {RadioBeam.Room.UserTimeline, room_id}
       Fixtures.listen_to_queue_messages(tl_queue)
 
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, account.user_id)
-      {:ok, _event_id} = Room.join(room_id, account.user_id)
+      {:ok, join_event_id} = Room.join(room_id, account.user_id)
       {:ok, _event_id} = Room.invite(room_id, creator.user_id, annoying_account.user_id)
-      {:ok, event_id} = Room.join(room_id, annoying_account.user_id)
+      {:ok, annoying_join_event_id} = Room.join(room_id, annoying_account.user_id)
 
-      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
-      Fixtures.assert_caught_up_to_event(tl_queue, event_id)
+      Fixtures.assert_caught_up_to_event(memberships_queue, join_event_id)
+      Fixtures.assert_caught_up_to_event(annoying_memberships_queue, annoying_join_event_id)
+      Fixtures.assert_caught_up_to_event(tl_queue, annoying_join_event_id)
 
       Room.send_text_message(room_id, annoying_account.user_id, "blah blah blah")
       {:ok, event_id} = Room.send_text_message(room_id, annoying_account.user_id, "you shouldn't see this")
@@ -289,7 +292,7 @@ defmodule RadioBeam.SyncTest do
 
       {:ok, event_id} = Room.leave(room_id, annoying_account.user_id)
 
-      Fixtures.assert_caught_up_to_event(memberships_queue, event_id)
+      Fixtures.assert_caught_up_to_event(annoying_memberships_queue, event_id)
 
       {:ok, event_id} = Room.send_text_message(room_id, creator.user_id, "welp, bye")
 

@@ -15,7 +15,10 @@ defmodule RadioBeam.Sync.Source.ToDeviceMessageTest do
     test "will immediately notify_waiting", %{inputs: inputs} do
       me = self()
 
-      Task.start(fn -> ToDeviceMessage.run(inputs, inspect(ToDeviceMessage), me) end)
+      Task.start(fn ->
+        ToDeviceMessage.init(inputs, inspect(ToDeviceMessage))
+        ToDeviceMessage.run(inputs, inspect(ToDeviceMessage), me)
+      end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
     end
@@ -23,7 +26,11 @@ defmodule RadioBeam.Sync.Source.ToDeviceMessageTest do
     test "returns when user joins a new room, after notifying waiting", %{inputs: inputs} do
       me = self()
 
-      task = Task.async(fn -> ToDeviceMessage.run(inputs, inspect(ToDeviceMessage), me) end)
+      task =
+        Task.async(fn ->
+          ToDeviceMessage.init(inputs, inspect(ToDeviceMessage))
+          ToDeviceMessage.run(inputs, inspect(ToDeviceMessage), me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))

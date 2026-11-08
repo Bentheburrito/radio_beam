@@ -17,12 +17,13 @@ defmodule RadioBeam.Sync.Source.JoinedRoom do
   def inputs, do: ~w|account_data user_id event_filter known_memberships|a
 
   @impl Source
+  def init(inputs, _key) do
+    inputs.user_id |> PubSub.user_joined_room() |> PubSub.subscribe()
+  end
+
+  @impl Source
   def run(inputs, key, sink_pid) do
     user_id = inputs.user_id
-
-    user_id
-    |> PubSub.user_joined_room()
-    |> PubSub.subscribe()
 
     Source.notify_waiting(sink_pid, key)
 
@@ -30,7 +31,6 @@ defmodule RadioBeam.Sync.Source.JoinedRoom do
       {:room_joined, %Event{type: "m.room.member", state_key: ^user_id} = membership_event} ->
         {:ok, room} = RadioBeam.Room.Database.fetch_room(membership_event.room_id)
 
-        # TODO: known_memberships
         joined_room_result =
           JoinedRoomResult.new(
             room,

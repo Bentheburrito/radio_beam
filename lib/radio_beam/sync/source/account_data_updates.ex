@@ -18,16 +18,15 @@ defmodule RadioBeam.Sync.Source.AccountDataUpdates do
   def inputs, do: [:user_id]
 
   @impl Source
+  def init(inputs, _key) do
+    inputs.user_id |> PubSub.account_data_updated() |> PubSub.subscribe()
+    inputs.user_id |> PubSub.push_rules_updated() |> PubSub.subscribe()
+    :ok
+  end
+
+  @impl Source
   def run(inputs, key, sink_pid) do
     user_id = inputs.user_id
-
-    user_id
-    |> PubSub.account_data_updated()
-    |> PubSub.subscribe()
-
-    user_id
-    |> PubSub.push_rules_updated()
-    |> PubSub.subscribe()
 
     Source.notify_waiting(sink_pid, key)
 

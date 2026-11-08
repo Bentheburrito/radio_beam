@@ -66,6 +66,9 @@ defmodule RadioBeam.Sync.Source do
   """
   @callback inputs() :: [input()]
 
+  @doc "Perform any set-up work that needs to happen (e.g. PubSub subscriptions)"
+  @callback init(inputs :: %{input() => term()}, key()) :: :ok
+
   @doc """
   Runs the source, fetching data to return in the /sync response.
 
@@ -117,6 +120,8 @@ defmodule RadioBeam.Sync.Source do
   end
 
   def run(%__MODULE__{} = source, inputs, sink_pid) do
+    :ok = source.mod.init(inputs, source.key)
+
     case source.mod.run(inputs, source.key, sink_pid) do
       {:ok, result, next_batch} -> {:sync_data, source.key, result, next_batch}
       {:no_update, next_batch} -> {:sync_data, source.key, :no_update, next_batch}

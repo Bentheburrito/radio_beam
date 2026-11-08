@@ -21,15 +21,17 @@ defmodule RadioBeam.Sync.Source.ParticipatingRoom do
   def top_level_path(_room_id, timeline), do: ["rooms", "join", timeline.room_id]
 
   @impl Source
-  def inputs,
-    do: ~w|account_data user_id device_id ignored_user_ids event_filter known_memberships full_state? full_last_batch|a
+  def inputs do
+    ~w|account_data user_id device_id ignored_user_ids event_filter known_memberships full_state? full_last_batch|a
+  end
+
+  @impl Source
+  def init(_inputs, room_id) do
+    room_id |> PubSub.all_room_events() |> PubSub.subscribe()
+  end
 
   @impl Source
   def run(inputs, room_id, sink_pid) do
-    room_id
-    |> PubSub.all_room_events()
-    |> PubSub.subscribe()
-
     since_ts =
       case Map.fetch(inputs, :full_last_batch) do
         {:ok, %NextBatch{} = token} -> NextBatch.timestamp(token)

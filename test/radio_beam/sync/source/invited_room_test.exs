@@ -15,7 +15,10 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
     test "will immediately notify_waiting", %{inputs: inputs} do
       me = self()
 
-      Task.start(fn -> InvitedRoom.run(inputs, inspect(InvitedRoom), me) end)
+      Task.start(fn ->
+        InvitedRoom.init(inputs, inspect(InvitedRoom))
+        InvitedRoom.run(inputs, inspect(InvitedRoom), me)
+      end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
     end
@@ -23,7 +26,11 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
     test "returns when user is invited to a new room, after notifying waiting", %{inputs: inputs} do
       me = self()
 
-      task = Task.async(fn -> InvitedRoom.run(inputs, inspect(InvitedRoom), me) end)
+      task =
+        Task.async(fn ->
+          InvitedRoom.init(inputs, inspect(InvitedRoom))
+          InvitedRoom.run(inputs, inspect(InvitedRoom), me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))
@@ -43,7 +50,11 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
       User.put_account_data(inputs.user_id, :global, "m.ignored_user_list", %{"ignored_users" => %{ignored_id => %{}}})
       inputs = Map.put(inputs, :ignored_user_ids, [ignored_id])
 
-      task = Task.async(fn -> InvitedRoom.run(inputs, inspect(InvitedRoom), me) end)
+      task =
+        Task.async(fn ->
+          InvitedRoom.init(inputs, inspect(InvitedRoom))
+          InvitedRoom.run(inputs, inspect(InvitedRoom), me)
+        end)
 
       assert_receive {:sync_waiting, _}, :timer.seconds(1)
       assert is_nil(Task.yield(task, 0))
@@ -65,6 +76,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
   describe "run/3 with a room ID as the key" do
     test "returns invite state for the room", %{inputs: inputs} do
       me = self()
+      InvitedRoom.init(inputs, inspect(InvitedRoom))
 
       %{user_id: creator_id} = Fixtures.create_account()
       {:ok, room_id} = Room.create(creator_id)
@@ -75,6 +87,7 @@ defmodule RadioBeam.Sync.Source.InvitedRoomTest do
 
     test "ignores new invites from ignored users", %{inputs: inputs} do
       me = self()
+      InvitedRoom.init(inputs, inspect(InvitedRoom))
 
       %{user_id: ignored_id} = Fixtures.create_account()
       User.put_account_data(inputs.user_id, :global, "m.ignored_user_list", %{"ignored_users" => %{ignored_id => %{}}})
