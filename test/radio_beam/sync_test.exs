@@ -341,10 +341,14 @@ defmodule RadioBeam.SyncTest do
 
     test "includes typing and read receipt ephemeral events", %{account: %{user_id: creator_id}, device: device} do
       %{user_id: user_id} = Fixtures.create_account()
+      creator_queue = {RadioBeam.User.RoomMemberships, creator_id}
+      Fixtures.listen_to_queue_messages(creator_queue)
       memberships_queue = {RadioBeam.User.RoomMemberships, user_id}
       Fixtures.listen_to_queue_messages(memberships_queue)
 
       {:ok, room_id1} = Room.create(creator_id)
+
+      Fixtures.assert_processed_count(creator_queue, 1)
 
       tl_queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(tl_queue)
@@ -357,8 +361,10 @@ defmodule RadioBeam.SyncTest do
 
       EphemeralState.put_typing(room_id1, user_id, :timer.seconds(4))
 
+      assert [^user_id] = EphemeralState.all_typing(room_id1, user_id)
+
       assert %{"rooms" => %{"join" => %{^room_id1 => %JoinedRoomResult{typing: [^user_id], receipts: receipts}}}} =
-               Sync.perform_v2(creator_id, device.id, [])
+               Sync.perform_v2(creator_id, device.id, timeout: 500)
 
       assert 0 = map_size(receipts)
 
@@ -383,7 +389,7 @@ defmodule RadioBeam.SyncTest do
       # --- create
 
       sync_task = Task.async(fn -> Sync.perform_v2(user_id, device.id, timeout: :timer.seconds(2)) end)
-      Process.sleep(100)
+      Process.sleep(50)
 
       :ok = User.put_global_notification_push_rule(user_id, :override, "arule", ["notify"], [])
 
@@ -396,7 +402,7 @@ defmodule RadioBeam.SyncTest do
       # --- update
 
       sync_task = Task.async(fn -> Sync.perform_v2(user_id, device.id, timeout: :timer.seconds(2)) end)
-      Process.sleep(100)
+      Process.sleep(50)
 
       :ok = User.put_global_notification_push_rule(user_id, :override, "arule", [], [])
 
@@ -409,7 +415,7 @@ defmodule RadioBeam.SyncTest do
       # --- update
 
       sync_task = Task.async(fn -> Sync.perform_v2(user_id, device.id, timeout: :timer.seconds(2)) end)
-      Process.sleep(100)
+      Process.sleep(50)
 
       :ok = User.delete_global_notification_push_rule(user_id, :override, "arule")
 
@@ -808,13 +814,18 @@ defmodule RadioBeam.SyncTest do
       account2 = Fixtures.create_account()
       account3 = Fixtures.create_account()
 
+      memberships_queue3 = {RadioBeam.User.RoomMemberships, account3.user_id}
+      Fixtures.listen_to_queue_messages(memberships_queue3)
+
       {:ok, room_id1} = Room.create(creator.user_id, name: "Introductions")
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account.user_id)
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account2.user_id)
       {:ok, _event_id} = Room.invite(room_id1, creator.user_id, account3.user_id)
       {:ok, _event_id} = Room.join(room_id1, account.user_id)
       {:ok, _event_id} = Room.join(room_id1, account2.user_id)
-      {:ok, _event_id} = Room.join(room_id1, account3.user_id)
+      {:ok, event_id} = Room.join(room_id1, account3.user_id)
+
+      Fixtures.assert_caught_up_to_event(memberships_queue3, event_id)
 
       queue = {RadioBeam.Room.UserTimeline, room_id1}
       Fixtures.listen_to_queue_messages(queue)
@@ -1052,7 +1063,7 @@ defmodule RadioBeam.SyncTest do
                %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}}
              ] = events
 
-      timeout = 800
+      timeout = 400
       wait_for = div(timeout, 2)
       time_before_wait = System.os_time(:millisecond)
 
@@ -1127,7 +1138,7 @@ defmodule RadioBeam.SyncTest do
                %{type: "m.room.member", state_key: ^user_id, content: %{"membership" => "join"}}
              ] = events
 
-      timeout = 800
+      timeout = 400
       wait_for = div(timeout, 2)
       time_before_wait = System.os_time(:millisecond)
 
@@ -1195,7 +1206,7 @@ defmodule RadioBeam.SyncTest do
           Sync.perform_v2(account.user_id, device.id, filter: filter, timeout: 1000, since: next_batch)
         end)
 
-      Process.sleep(100)
+      Process.sleep(50)
 
       {:ok, event_id} =
         Room.send(room_id, creator.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
@@ -1204,7 +1215,7 @@ defmodule RadioBeam.SyncTest do
 
       assert is_nil(Task.yield(sync_task, 0))
 
-      Process.sleep(100)
+      Process.sleep(50)
 
       {:ok, event_id} =
         Room.send(room_id, account.user_id, "m.room.message", %{"msgtype" => "m.text", "body" => "Hello"})
@@ -1228,7 +1239,7 @@ defmodule RadioBeam.SyncTest do
 
       assert [%{type: "m.room.message"}] = events
 
-      assert System.os_time(:millisecond) - time_before_wait >= 200
+      assert System.os_time(:millisecond) - time_before_wait >= 100
     end
 
     test "will timeout", %{creator: creator, account: account, device: device} do

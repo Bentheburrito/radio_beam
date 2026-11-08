@@ -234,7 +234,7 @@ defmodule RadioBeamWeb.OAuth2Controller do
           scope: scope
         })
 
-      {:error, :invalid_token} ->
+      {:error, error} when error in ~w|invalid_token not_found|a ->
         json_error(conn, 400, :endpoint_error, ["invalid_grant", "refresh token is invalid, expired, revoked."])
 
       {:error, error} ->

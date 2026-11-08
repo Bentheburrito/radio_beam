@@ -29,12 +29,7 @@ defmodule RadioBeam.Sync.SinkServer do
   @sink_supervisor RadioBeam.Sync.SinkServer.Supervisor
   @source_supervisor RadioBeam.Sync.Source.Supervisor
 
-  @task_opts [
-    shutdown: :brutal_kill
-    # max_concurrency: Application.compile_env!(:radio_beam, ~w|sync concurrency|a),
-    # on_timeout: :kill_task,
-    # timeout: :infinity
-  ]
+  @task_opts [shutdown: :brutal_kill]
 
   def start_link({%{} = inputs, _sources_by_key} = init_arg) do
     key = {inputs.user_id, inputs.device_id, Map.get(inputs, :full_last_batch)}
@@ -121,8 +116,7 @@ defmodule RadioBeam.Sync.SinkServer do
           |> Map.take(source.mod.inputs())
           |> Map.put(:last_batch, last_batch)
 
-        task =
-          Task.Supervisor.async_nolink(@source_supervisor, Source, :run, [source, source_inputs, sink_pid], @task_opts)
+        task = Task.Supervisor.async(@source_supervisor, Source, :run, [source, source_inputs, sink_pid], @task_opts)
 
         {task.ref, key}
       end
@@ -222,7 +216,7 @@ defmodule RadioBeam.Sync.SinkServer do
       new_state.sources_by_key |> Stream.map(&elem(&1, 1)) |> Source.aggregate_results(new_state.inputs.full_last_batch)
 
     for from <- new_state.waiting_callers, do: GenServer.reply(from, sync_result)
-    {:stop, :normal, new_state}
+    {:stop, :shutdown, new_state}
   end
 
   defp via(key), do: {:via, Registry, {@registry, key}}
