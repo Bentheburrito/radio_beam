@@ -32,6 +32,7 @@ defmodule RadioBeam.MixProject do
           RadioBeamWeb.Layouts,
           RadioBeamWeb.OAuth2HTML,
           RadioBeamWeb.Telemetry,
+          ~r/Polyjuice.Util/,
           ~r/Database.Mnesia.Tables/
         ]
       ]
